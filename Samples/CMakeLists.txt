@@ -9,6 +9,10 @@ if(TARGET Diligent-AssetLoader AND TARGET DiligentFX)
     add_subdirectory(Shadows)
 endif()
 
+if(TARGET Diligent-AssetLoader)
+    add_subdirectory(RTXPT)
+endif()
+
 add_subdirectory(ImguiDemo)
 add_subdirectory(NuklearDemo)
 

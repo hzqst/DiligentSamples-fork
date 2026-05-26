@@ -31,6 +31,36 @@
 namespace Diligent
 {
 
+namespace
+{
+
+RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
+{
+    RTXPTFeatureCaps Caps{};
+    const auto&      DevInfo = pDevice->GetDeviceInfo();
+    const auto&      RTProps = pDevice->GetAdapterInfo().RayTracing;
+
+    Caps.RayTracing        = DevInfo.Features.RayTracing == DEVICE_FEATURE_STATE_ENABLED;
+    Caps.BindlessResources = DevInfo.Features.BindlessResources == DEVICE_FEATURE_STATE_ENABLED;
+    Caps.ComputeShaders    = DevInfo.Features.ComputeShaders == DEVICE_FEATURE_STATE_ENABLED;
+
+    Caps.StandaloneRayTracingShaders =
+        Caps.RayTracing &&
+        (RTProps.CapFlags & RAY_TRACING_CAP_FLAG_STANDALONE_SHADERS) != 0;
+
+    Caps.RayQuery =
+        Caps.RayTracing &&
+        (RTProps.CapFlags & RAY_TRACING_CAP_FLAG_INLINE_RAY_TRACING) != 0;
+
+    // TODO(RTXPT-Port Phase 5): replace optimistic compiler flags with explicit DXC/ShaderMake availability checks.
+    Caps.DXILCompiler  = true;
+    Caps.SPIRVCompiler = true;
+
+    return Caps;
+}
+
+} // namespace
+
 SampleBase* CreateSample()
 {
     return new RTXPTSample();
@@ -39,12 +69,14 @@ SampleBase* CreateSample()
 void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 {
     SampleBase::Initialize(InitInfo);
+    m_FeatureCaps = MakeFeatureCaps(m_pDevice);
 }
 
 void RTXPTSample::Render()
 {
     const auto ClearColor = float4{0.05f, 0.05f, 0.07f, 1.0f};
     auto*      pRTV       = m_pSwapChain->GetCurrentBackBufferRTV();
+    m_pImmediateContext->SetRenderTargets(1, &pRTV, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor.Data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
@@ -60,8 +92,13 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
 void RTXPTSample::UpdateUI()
 {
     ImGui::Begin("RTXPT Status");
-    ImGui::Text("RTXPT sample shell");
-    ImGui::Text("TODO(RTXPT-Port Phase 1): add full capability dashboard and backend-specific status.");
+    ImGui::Text("Backend: %s", GetRenderDeviceTypeString(m_pDevice->GetDeviceInfo().Type));
+    ImGui::Text("RayTracing: %s", m_FeatureCaps.RayTracing ? "yes" : "no");
+    ImGui::Text("Standalone RT shaders: %s", m_FeatureCaps.StandaloneRayTracingShaders ? "yes" : "no");
+    ImGui::Text("RayQuery: %s", m_FeatureCaps.RayQuery ? "yes" : "no");
+    ImGui::Text("Bindless: %s", m_FeatureCaps.BindlessResources ? "yes" : "no");
+    ImGui::Text("Compute: %s", m_FeatureCaps.ComputeShaders ? "yes" : "no");
+    ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
     ImGui::End();
 }
 

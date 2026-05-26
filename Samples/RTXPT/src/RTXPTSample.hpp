@@ -31,6 +31,17 @@
 namespace Diligent
 {
 
+struct RTXPTFeatureCaps
+{
+    bool RayTracing                  = false;
+    bool StandaloneRayTracingShaders = false;
+    bool RayQuery                    = false;
+    bool BindlessResources           = false;
+    bool ComputeShaders              = false;
+    bool DXILCompiler                = false;
+    bool SPIRVCompiler               = false;
+};
+
 class RTXPTSample final : public SampleBase
 {
 public:
@@ -42,6 +53,9 @@ public:
 
 protected:
     virtual void UpdateUI() override final;
+
+private:
+    RTXPTFeatureCaps m_FeatureCaps;
 };
 
 } // namespace Diligent

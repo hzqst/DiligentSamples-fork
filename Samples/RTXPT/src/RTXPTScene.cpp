@@ -50,7 +50,9 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
         m_LoadedSceneName.clear();
     }
 
-    // TODO(RTXPT-Port Phase 2): parse bistro-programmer-art.scene.json and merge RTXPT camera, material and light metadata.
+    // TODO(RTXPT-Port Phase 2): add full material parsing for RTXPT extension fields.
+    // TODO(RTXPT-Port Phase 3): build BLAS/TLAS from scene geometry.
+    // TODO(RTXPT-Port Phase 4): add TraceRays path and RT PSO/SBT.
     return m_Model != nullptr;
 }
 

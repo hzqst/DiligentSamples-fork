@@ -83,6 +83,15 @@ void RTXPTSample::Render()
     const auto ClearColor = float4{0.05f, 0.05f, 0.07f, 1.0f};
     auto*      pRTV       = m_pSwapChain->GetCurrentBackBufferRTV();
     m_pImmediateContext->SetRenderTargets(1, &pRTV, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+    if (!m_FeatureCaps.RayTracing)
+    {
+        // Fallback stays runnable until the RT path is wired in.
+        m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor.Data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        return;
+    }
+
+    // TODO(RTXPT-Port Phase 4): add TraceRays path and RT PSO/SBT.
     m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor.Data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 

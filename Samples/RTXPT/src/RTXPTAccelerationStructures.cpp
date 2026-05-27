@@ -254,6 +254,7 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
             ScratchDesc.Usage     = USAGE_DEFAULT;
             ScratchDesc.BindFlags = BIND_RAY_TRACING;
             ScratchDesc.Size      = Record.BLAS->GetScratchBufferSizes().Build;
+            m_BLASScratch.Release();
             pDevice->CreateBuffer(ScratchDesc, nullptr, &m_BLASScratch);
         }
 

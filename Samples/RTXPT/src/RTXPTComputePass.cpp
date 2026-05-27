@@ -62,7 +62,7 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
     }
 
     RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
-    pEngineFactory->CreateDefaultShaderSourceStreamFactory(nullptr, &pShaderSourceFactory);
+    pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders", &pShaderSourceFactory);
 
     ShaderCreateInfo ShaderCI;
     ShaderCI.Desc.ShaderType            = SHADER_TYPE_COMPUTE;

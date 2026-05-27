@@ -73,7 +73,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
     m_TLAS = pTLAS;
 
     RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
-    pEngineFactory->CreateDefaultShaderSourceStreamFactory(nullptr, &pShaderSourceFactory);
+    pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders", &pShaderSourceFactory);
 
     ShaderCreateInfo ShaderCI;
     ShaderCI.Desc.UseCombinedTextureSamplers = false;

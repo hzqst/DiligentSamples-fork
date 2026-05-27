@@ -8,6 +8,10 @@ set(SOURCE
     src/RTXPTMaterials.cpp
     src/RTXPTLights.cpp
     src/RTXPTAccelerationStructures.cpp
+    src/RTXPTRenderTargets.cpp
+    src/RTXPTRayTracingPass.cpp
+    src/RTXPTComputePass.cpp
+    src/RTXPTBlitPass.cpp
 )
 
 set(INCLUDE
@@ -16,6 +20,10 @@ set(INCLUDE
     src/RTXPTMaterials.hpp
     src/RTXPTLights.hpp
     src/RTXPTAccelerationStructures.hpp
+    src/RTXPTRenderTargets.hpp
+    src/RTXPTRayTracingPass.hpp
+    src/RTXPTComputePass.hpp
+    src/RTXPTBlitPass.hpp
 )
 
 set(SHADERS

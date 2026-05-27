@@ -31,8 +31,12 @@
 #include "Buffer.h"
 #include "RefCntAutoPtr.hpp"
 #include "RTXPTAccelerationStructures.hpp"
+#include "RTXPTBlitPass.hpp"
+#include "RTXPTComputePass.hpp"
 #include "RTXPTLights.hpp"
 #include "RTXPTMaterials.hpp"
+#include "RTXPTRayTracingPass.hpp"
+#include "RTXPTRenderTargets.hpp"
 #include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
 
@@ -73,6 +77,9 @@ protected:
 private:
     void CreateFrameResources();
     void UpdateFrameConstants(double CurrTime);
+    void CreatePhase4Passes();
+    bool EnsureRenderTargets();
+    void ClearFallback(const float4& ClearColor);
 
     RTXPTFeatureCaps            m_FeatureCaps;
     std::string                 m_AssetsRoot;
@@ -80,9 +87,14 @@ private:
     RTXPTMaterials              m_Materials;
     RTXPTLights                 m_Lights;
     RTXPTAccelerationStructures m_AccelerationStructures;
+    RTXPTRenderTargets          m_RenderTargets;
+    RTXPTRayTracingPass         m_RayTracingPass;
+    RTXPTComputePass            m_DebugComputePass;
+    RTXPTBlitPass               m_BlitPass;
     RefCntAutoPtr<IBuffer>      m_FrameConstantsCB;
     RTXPTFrameConstants         m_LastFrameConstants;
-    Uint32                      m_FrameIndex = 0;
+    Uint32                      m_FrameIndex              = 0;
+    bool                        m_EnableDebugComputePass = true;
 };
 
 } // namespace Diligent

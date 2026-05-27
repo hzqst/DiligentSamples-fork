@@ -1,0 +1,21 @@
+Texture2D<float4> g_Texture;
+
+struct PSInput
+{
+    float4 Pos : SV_POSITION;
+    float2 UV  : TEX_COORD;
+};
+
+struct PSOutput
+{
+    float4 Color : SV_TARGET;
+};
+
+void main(in PSInput Input,
+          out PSOutput Output)
+{
+    float2 Dimensions;
+    g_Texture.GetDimensions(Dimensions.x, Dimensions.y);
+    const int3 Texel = int3(Input.UV * Dimensions, 0);
+    Output.Color     = g_Texture.Load(Texel);
+}

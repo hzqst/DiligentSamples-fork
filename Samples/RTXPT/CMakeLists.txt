@@ -18,6 +18,16 @@ set(INCLUDE
     src/RTXPTAccelerationStructures.hpp
 )
 
+set(SHADERS
+    assets/shaders/RTXPTCommon.fxh
+    assets/shaders/RTXPTMinimal.rgen
+    assets/shaders/RTXPTMinimal.rmiss
+    assets/shaders/RTXPTMinimal.rchit
+    assets/shaders/RTXPTDebugCompute.csh
+    assets/shaders/RTXPTBlit.vsh
+    assets/shaders/RTXPTBlit.psh
+)
+
 add_sample_app(RTXPT
     IDE_FOLDER
         DiligentSamples/Samples
@@ -25,6 +35,8 @@ add_sample_app(RTXPT
         ${SOURCE}
     INCLUDES
         ${INCLUDE}
+    SHADERS
+        ${SHADERS}
     DXC_REQUIRED
         YES
 )

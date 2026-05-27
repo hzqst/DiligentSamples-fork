@@ -148,6 +148,12 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 
     m_AssetsRoot = ResolveRTXPTAssetsRoot();
     m_Scene.LoadDefaultScene(m_pDevice, m_pImmediateContext, m_AssetsRoot);
+    if (const GLTF::Model* pModel = m_Scene.GetModel())
+    {
+        m_Materials.Upload(m_pDevice, *pModel);
+        if (m_Scene.GetSceneIndex() < pModel->Scenes.size())
+            m_Lights.Upload(m_pDevice, pModel->Scenes[m_Scene.GetSceneIndex()], m_Scene.GetTransforms());
+    }
 }
 
 void RTXPTSample::UpdateFrameConstants(double CurrTime)
@@ -221,6 +227,14 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Model path: %s", m_Scene.GetModelPath().empty() ? "none" : m_Scene.GetModelPath().c_str());
     if (!m_Scene.GetLastError().empty())
         ImGui::TextWrapped("Asset load error: %s", m_Scene.GetLastError().c_str());
+    ImGui::Text("Mesh nodes: %u", m_Scene.GetMeshNodeCount());
+    ImGui::Text("Primitives: %u", m_Scene.GetPrimitiveCount());
+    ImGui::Text("Materials: %u", m_Materials.GetStats().MaterialCount);
+    ImGui::Text("Lights: %u", m_Lights.GetStats().LightCount);
+    if (!m_Materials.GetStats().LastError.empty())
+        ImGui::TextWrapped("Material buffer error: %s", m_Materials.GetStats().LastError.c_str());
+    if (!m_Lights.GetStats().LastError.empty())
+        ImGui::TextWrapped("Light buffer error: %s", m_Lights.GetStats().LastError.c_str());
     ImGui::Separator();
     ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
     ImGui::Text("Frame index: %u", m_FrameIndex);

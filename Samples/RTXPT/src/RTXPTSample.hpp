@@ -30,6 +30,8 @@
 
 #include "Buffer.h"
 #include "RefCntAutoPtr.hpp"
+#include "RTXPTLights.hpp"
+#include "RTXPTMaterials.hpp"
 #include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
 
@@ -74,6 +76,8 @@ private:
     RTXPTFeatureCaps       m_FeatureCaps;
     std::string            m_AssetsRoot;
     RTXPTScene             m_Scene;
+    RTXPTMaterials         m_Materials;
+    RTXPTLights            m_Lights;
     RefCntAutoPtr<IBuffer> m_FrameConstantsCB;
     RTXPTFrameConstants    m_LastFrameConstants;
     Uint32                 m_FrameIndex = 0;

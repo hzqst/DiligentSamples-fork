@@ -82,22 +82,45 @@ bool IsRTXPTAssetsRoot(const std::string& Path)
 
 std::string ResolveRTXPTAssetsRoot()
 {
-    const char* Candidates[] =
+    const char* DirectCandidates[] =
     {
         "assets",
         "Samples/RTXPT/assets",
-        "../Samples/RTXPT/assets",
-        "../../Samples/RTXPT/assets",
         "DiligentSamples/Samples/RTXPT/assets",
-        "../DiligentSamples/Samples/RTXPT/assets",
-        "../../DiligentSamples/Samples/RTXPT/assets",
     };
 
-    for (const char* Candidate : Candidates)
+    for (const char* Candidate : DirectCandidates)
     {
         const std::string Path = FileSystem::SimplifyPath(Candidate);
         if (IsRTXPTAssetsRoot(Path))
             return Path;
+    }
+
+    const char* AncestorPrefixes[] =
+    {
+        "../",
+        "../../",
+        "../../../",
+        "../../../../",
+        "../../../../../",
+        "../../../../../../",
+        "../../../../../../../",
+        "../../../../../../../../",
+    };
+    const char* SourceTreeSuffixes[] =
+    {
+        "Samples/RTXPT/assets",
+        "DiligentSamples/Samples/RTXPT/assets",
+    };
+
+    for (const char* Prefix : AncestorPrefixes)
+    {
+        for (const char* Suffix : SourceTreeSuffixes)
+        {
+            const std::string Path = FileSystem::SimplifyPath((std::string{Prefix} + Suffix).c_str());
+            if (IsRTXPTAssetsRoot(Path))
+                return Path;
+        }
     }
 
     return FileSystem::SimplifyPath("DiligentSamples/Samples/RTXPT/assets");

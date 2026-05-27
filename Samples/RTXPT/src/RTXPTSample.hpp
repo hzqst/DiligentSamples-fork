@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
 
@@ -57,6 +59,7 @@ protected:
 
 private:
     RTXPTFeatureCaps m_FeatureCaps;
+    std::string      m_AssetsRoot;
     RTXPTScene       m_Scene;
 };
 

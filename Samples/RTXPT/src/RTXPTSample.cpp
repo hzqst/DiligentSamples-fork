@@ -26,6 +26,7 @@
 
 #include "RTXPTSample.hpp"
 #include "GraphicsAccessories.hpp"
+#include "FileSystem.hpp"
 #include "imgui.h"
 
 namespace Diligent
@@ -59,6 +60,49 @@ RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
     return Caps;
 }
 
+std::string JoinPath(const std::string& Root, const char* RelativePath)
+{
+    if (Root.empty())
+        return RelativePath;
+
+    std::string Path = Root;
+    if (!FileSystem::IsSlash(Path.back()))
+        Path.push_back(FileSystem::SlashSymbol);
+    Path += RelativePath;
+    FileSystem::CorrectSlashes(Path);
+    return FileSystem::SimplifyPath(Path.c_str());
+}
+
+bool IsRTXPTAssetsRoot(const std::string& Path)
+{
+    const std::string ScenePath = JoinPath(Path, "bistro-programmer-art.scene.json");
+    const std::string ModelPath = JoinPath(Path, "Models/Bistro/bistro.gltf");
+    return FileSystem::FileExists(ScenePath.c_str()) && FileSystem::FileExists(ModelPath.c_str());
+}
+
+std::string ResolveRTXPTAssetsRoot()
+{
+    const char* Candidates[] =
+    {
+        "assets",
+        "Samples/RTXPT/assets",
+        "../Samples/RTXPT/assets",
+        "../../Samples/RTXPT/assets",
+        "DiligentSamples/Samples/RTXPT/assets",
+        "../DiligentSamples/Samples/RTXPT/assets",
+        "../../DiligentSamples/Samples/RTXPT/assets",
+    };
+
+    for (const char* Candidate : Candidates)
+    {
+        const std::string Path = FileSystem::SimplifyPath(Candidate);
+        if (IsRTXPTAssetsRoot(Path))
+            return Path;
+    }
+
+    return FileSystem::SimplifyPath("DiligentSamples/Samples/RTXPT/assets");
+}
+
 } // namespace
 
 SampleBase* CreateSample()
@@ -71,11 +115,8 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
     SampleBase::Initialize(InitInfo);
     m_FeatureCaps = MakeFeatureCaps(m_pDevice);
 
-    const bool SceneLoaded = m_Scene.LoadDefaultScene(m_pDevice, m_pImmediateContext, ".");
-    if (!SceneLoaded)
-    {
-        // TODO(RTXPT-Port Phase 2): report missing asset paths through the sample UI and keep the fallback clear path active.
-    }
+    m_AssetsRoot = ResolveRTXPTAssetsRoot();
+    m_Scene.LoadDefaultScene(m_pDevice, m_pImmediateContext, m_AssetsRoot);
 }
 
 void RTXPTSample::Render()

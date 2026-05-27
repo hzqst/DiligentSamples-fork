@@ -79,12 +79,12 @@ private:
         Uint32                        GeometryCount = 0;
     };
 
-    std::vector<BLASRecord>            m_BLASRecords;
-    RefCntAutoPtr<ITopLevelAS>         m_TLAS;
-    RefCntAutoPtr<IBuffer>             m_BLASScratch;
-    RefCntAutoPtr<IBuffer>             m_TLASScratch;
-    RefCntAutoPtr<IBuffer>             m_InstanceBuffer;
-    RTXPTAccelerationStructureStats    m_Stats;
+    std::vector<BLASRecord>         m_BLASRecords;
+    RefCntAutoPtr<ITopLevelAS>      m_TLAS;
+    RefCntAutoPtr<IBuffer>          m_BLASScratch;
+    RefCntAutoPtr<IBuffer>          m_TLASScratch;
+    RefCntAutoPtr<IBuffer>          m_InstanceBuffer;
+    RTXPTAccelerationStructureStats m_Stats;
 };
 
 } // namespace Diligent

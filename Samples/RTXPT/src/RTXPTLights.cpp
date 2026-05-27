@@ -39,9 +39,9 @@ float LightTypeToShaderValue(GLTF::Light::TYPE Type)
     switch (Type)
     {
         case GLTF::Light::TYPE::DIRECTIONAL: return 0.0f;
-        case GLTF::Light::TYPE::POINT:       return 1.0f;
-        case GLTF::Light::TYPE::SPOT:        return 2.0f;
-        default:                             return -1.0f;
+        case GLTF::Light::TYPE::POINT: return 1.0f;
+        case GLTF::Light::TYPE::SPOT: return 2.0f;
+        default: return -1.0f;
     }
 }
 

@@ -114,19 +114,19 @@ void RTXPTScene::CacheSceneData()
     m_Model->ComputeTransforms(m_SceneIndex, m_Transforms);
 
     const GLTF::Scene& Scene = m_Model->Scenes[m_SceneIndex];
-    m_MeshNodeCount         = CountMeshNodes(Scene);
-    m_PrimitiveCount        = CountPrimitives(Scene);
-    m_MaterialCount         = static_cast<Uint32>(m_Model->Materials.size());
-    m_LightCount            = CountLightNodes(Scene);
+    m_MeshNodeCount          = CountMeshNodes(Scene);
+    m_PrimitiveCount         = CountPrimitives(Scene);
+    m_MaterialCount          = static_cast<Uint32>(m_Model->Materials.size());
+    m_LightCount             = CountLightNodes(Scene);
 }
 
 bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
 {
     ResetLoadedData();
 
-    m_AssetsRoot = FileSystem::SimplifyPath(AssetsRoot.c_str());
+    m_AssetsRoot                = FileSystem::SimplifyPath(AssetsRoot.c_str());
     const std::string ScenePath = JoinPath(m_AssetsRoot, "bistro-programmer-art.scene.json");
-    m_ModelPath                = JoinPath(m_AssetsRoot, "Models/Bistro/bistro.gltf");
+    m_ModelPath                 = JoinPath(m_AssetsRoot, "Models/Bistro/bistro.gltf");
 
     if (!FileSystem::FileExists(ScenePath.c_str()))
     {

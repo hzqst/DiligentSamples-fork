@@ -85,11 +85,11 @@ bool IsRTXPTAssetsRoot(const std::string& Path)
 std::string ResolveRTXPTAssetsRoot()
 {
     const char* DirectCandidates[] =
-    {
-        "assets",
-        "Samples/RTXPT/assets",
-        "DiligentSamples/Samples/RTXPT/assets",
-    };
+        {
+            "assets",
+            "Samples/RTXPT/assets",
+            "DiligentSamples/Samples/RTXPT/assets",
+        };
 
     for (const char* Candidate : DirectCandidates)
     {
@@ -99,21 +99,21 @@ std::string ResolveRTXPTAssetsRoot()
     }
 
     const char* AncestorPrefixes[] =
-    {
-        "../",
-        "../../",
-        "../../../",
-        "../../../../",
-        "../../../../../",
-        "../../../../../../",
-        "../../../../../../../",
-        "../../../../../../../../",
-    };
+        {
+            "../",
+            "../../",
+            "../../../",
+            "../../../../",
+            "../../../../../",
+            "../../../../../../",
+            "../../../../../../../",
+            "../../../../../../../../",
+        };
     const char* SourceTreeSuffixes[] =
-    {
-        "Samples/RTXPT/assets",
-        "DiligentSamples/Samples/RTXPT/assets",
-    };
+        {
+            "Samples/RTXPT/assets",
+            "DiligentSamples/Samples/RTXPT/assets",
+        };
 
     for (const char* Prefix : AncestorPrefixes)
     {

@@ -61,10 +61,10 @@ struct RTXPTFrameConstants
 class RTXPTSample final : public SampleBase
 {
 public:
-    virtual void Initialize(const SampleInitInfo& InitInfo) override final;
-    virtual void Render() override final;
-    virtual void Update(double CurrTime, double ElapsedTime, bool DoUpdateUI) override final;
-    virtual void WindowResize(Uint32 Width, Uint32 Height) override final;
+    virtual void        Initialize(const SampleInitInfo& InitInfo) override final;
+    virtual void        Render() override final;
+    virtual void        Update(double CurrTime, double ElapsedTime, bool DoUpdateUI) override final;
+    virtual void        WindowResize(Uint32 Width, Uint32 Height) override final;
     virtual const Char* GetSampleName() const override final { return "RTXPT"; }
 
 protected:
@@ -74,15 +74,15 @@ private:
     void CreateFrameResources();
     void UpdateFrameConstants(double CurrTime);
 
-    RTXPTFeatureCaps       m_FeatureCaps;
-    std::string            m_AssetsRoot;
-    RTXPTScene             m_Scene;
-    RTXPTMaterials         m_Materials;
-    RTXPTLights            m_Lights;
+    RTXPTFeatureCaps            m_FeatureCaps;
+    std::string                 m_AssetsRoot;
+    RTXPTScene                  m_Scene;
+    RTXPTMaterials              m_Materials;
+    RTXPTLights                 m_Lights;
     RTXPTAccelerationStructures m_AccelerationStructures;
-    RefCntAutoPtr<IBuffer> m_FrameConstantsCB;
-    RTXPTFrameConstants    m_LastFrameConstants;
-    Uint32                 m_FrameIndex = 0;
+    RefCntAutoPtr<IBuffer>      m_FrameConstantsCB;
+    RTXPTFrameConstants         m_LastFrameConstants;
+    Uint32                      m_FrameIndex = 0;
 };
 
 } // namespace Diligent

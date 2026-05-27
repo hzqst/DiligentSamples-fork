@@ -158,6 +158,7 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
                                                   m_pImmediateContext,
                                                   *pModel,
                                                   m_Scene.GetSceneIndex(),
+                                                  m_Scene.GetIndexType(),
                                                   m_Scene.GetTransforms(),
                                                   m_FeatureCaps.RayTracing);
     }

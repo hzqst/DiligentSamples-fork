@@ -49,6 +49,7 @@ public:
     const GLTF::Model*           GetModel() const { return m_Model.get(); }
     const GLTF::ModelTransforms& GetTransforms() const { return m_Transforms; }
     Uint32                       GetSceneIndex() const { return m_SceneIndex; }
+    VALUE_TYPE                   GetIndexType() const { return m_IndexType; }
     Uint32                       GetMeshNodeCount() const { return m_MeshNodeCount; }
     Uint32                       GetPrimitiveCount() const { return m_PrimitiveCount; }
     Uint32                       GetMaterialCount() const { return m_MaterialCount; }
@@ -64,6 +65,7 @@ private:
     std::string                  m_AssetsRoot;
     std::string                  m_ModelPath;
     std::string                  m_LastError;
+    VALUE_TYPE                   m_IndexType      = VT_UINT32;
     Uint32                       m_SceneIndex     = 0;
     Uint32                       m_MeshNodeCount  = 0;
     Uint32                       m_PrimitiveCount = 0;

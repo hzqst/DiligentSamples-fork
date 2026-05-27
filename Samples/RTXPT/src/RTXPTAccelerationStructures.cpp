@@ -30,6 +30,8 @@
 #include <cstring>
 #include <utility>
 
+#include "GraphicsAccessories.hpp"
+
 namespace Diligent
 {
 
@@ -64,13 +66,16 @@ PositionLayout FindPositionLayout(const GLTF::Model& Model)
     return {};
 }
 
-VALUE_TYPE GetIndexType(const GLTF::Model& Model)
+Uint32 GetVertexStride(const GLTF::Model& Model, Uint8 BufferId)
 {
-    if (Model.IndexData.IndexSize == sizeof(Uint16))
-        return VT_UINT16;
-    if (Model.IndexData.IndexSize == sizeof(Uint32))
-        return VT_UINT32;
-    return VT_UNDEFINED;
+    Uint32 Stride = 0;
+    for (Uint32 Attr = 0; Attr < Model.GetNumVertexAttributes(); ++Attr)
+    {
+        const GLTF::VertexAttributeDesc& Desc = Model.GetVertexAttribute(Attr);
+        if (Desc.BufferId == BufferId)
+            Stride = std::max(Stride, Desc.RelativeOffset + GetValueSize(Desc.ValueType) * Desc.NumComponents);
+    }
+    return Stride;
 }
 
 bool HasBindFlag(const IBuffer* pBuffer, BIND_FLAGS Flag)
@@ -102,6 +107,7 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
                                                    IDeviceContext*              pContext,
                                                    const GLTF::Model&           Model,
                                                    Uint32                       SceneIndex,
+                                                   VALUE_TYPE                   IndexType,
                                                    const GLTF::ModelTransforms& Transforms,
                                                    bool                         RayTracingSupported)
 {
@@ -142,16 +148,22 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
     }
 
     const GLTF::Scene& Scene        = Model.Scenes[SceneIndex];
-    const VALUE_TYPE   IndexType    = GetIndexType(Model);
-    const Uint32       VertexStride = Model.VertexData.Strides[Position.BufferId];
+    const Uint32       VertexStride = GetVertexStride(Model, Position.BufferId);
     const Uint32       BaseVertex   = Model.GetBaseVertex();
     const Uint32       FirstIndex   = pIndexBuffer != nullptr ? Model.GetFirstIndexLocation() : 0;
 
-    if (pIndexBuffer != nullptr && IndexType == VT_UNDEFINED)
+    if (VertexStride == 0)
+    {
+        m_Stats.LastError = "RTXPT POSITION vertex buffer has an invalid stride";
+        return false;
+    }
+
+    if (pIndexBuffer != nullptr && IndexType != VT_UINT16 && IndexType != VT_UINT32)
     {
         m_Stats.LastError = "RTXPT index buffer has an unsupported index size";
         return false;
     }
+    const Uint32 IndexSize = GetValueSize(IndexType);
 
     std::vector<TLASBuildInstanceData> Instances;
     std::vector<std::string>           InstanceNames;
@@ -204,7 +216,7 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
             if (Primitive.HasIndices())
             {
                 BuildData.pIndexBuffer = pIndexBuffer;
-                BuildData.IndexOffset  = (FirstIndex + Primitive.FirstIndex) * Model.IndexData.IndexSize;
+                BuildData.IndexOffset  = (FirstIndex + Primitive.FirstIndex) * IndexSize;
                 BuildData.IndexType    = IndexType;
             }
 

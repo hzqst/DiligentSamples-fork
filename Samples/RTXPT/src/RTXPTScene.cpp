@@ -95,6 +95,7 @@ void RTXPTScene::ResetLoadedData()
     m_Transforms = {};
     m_LoadedSceneName.clear();
     m_LastError.clear();
+    m_IndexType      = VT_UINT32;
     m_SceneIndex     = 0;
     m_MeshNodeCount  = 0;
     m_PrimitiveCount = 0;
@@ -143,6 +144,7 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
     GLTF::ModelCreateInfo ModelCI;
     ModelCI.FileName             = m_ModelPath.c_str();
     ModelCI.ComputeBoundingBoxes = true;
+    ModelCI.IndexType            = m_IndexType;
     ModelCI.IndBufferBindFlags   = BIND_INDEX_BUFFER | BIND_RAY_TRACING;
     for (BIND_FLAGS& BindFlags : ModelCI.VertBufferBindFlags)
         BindFlags = BIND_VERTEX_BUFFER | BIND_RAY_TRACING;

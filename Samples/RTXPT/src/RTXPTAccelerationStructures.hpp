@@ -62,6 +62,7 @@ public:
                           IDeviceContext*              pContext,
                           const GLTF::Model&           Model,
                           Uint32                       SceneIndex,
+                          VALUE_TYPE                   IndexType,
                           const GLTF::ModelTransforms& Transforms,
                           bool                         RayTracingSupported);
 

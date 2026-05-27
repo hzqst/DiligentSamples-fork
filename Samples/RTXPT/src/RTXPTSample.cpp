@@ -26,7 +26,9 @@
 
 #include "RTXPTSample.hpp"
 #include "GraphicsAccessories.hpp"
+#include "GraphicsUtilities.h"
 #include "FileSystem.hpp"
+#include "MapHelper.hpp"
 #include "imgui.h"
 
 namespace Diligent
@@ -133,13 +135,44 @@ SampleBase* CreateSample()
     return new RTXPTSample();
 }
 
+void RTXPTSample::CreateFrameResources()
+{
+    CreateUniformBuffer(m_pDevice, sizeof(RTXPTFrameConstants), "RTXPT frame constants", &m_FrameConstantsCB);
+}
+
 void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 {
     SampleBase::Initialize(InitInfo);
     m_FeatureCaps = MakeFeatureCaps(m_pDevice);
+    CreateFrameResources();
 
     m_AssetsRoot = ResolveRTXPTAssetsRoot();
     m_Scene.LoadDefaultScene(m_pDevice, m_pImmediateContext, m_AssetsRoot);
+}
+
+void RTXPTSample::UpdateFrameConstants(double CurrTime)
+{
+    const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+    const float          Width  = static_cast<float>(SCDesc.Width);
+    const float          Height = static_cast<float>(SCDesc.Height);
+
+    const float3   CameraPosition = float3{0.0f, 1.5f, -6.0f};
+    const float4x4 CameraView     = float4x4::Translation(-CameraPosition.x, -CameraPosition.y, -CameraPosition.z);
+    const float4x4 CameraProj     = GetAdjustedProjectionMatrix(PI_F / 4.0f, 0.1f, 10000.0f);
+    const float4x4 ViewProj       = CameraView * CameraProj;
+
+    m_LastFrameConstants.ViewProj              = ViewProj;
+    m_LastFrameConstants.ViewProjInv           = ViewProj.Inverse();
+    m_LastFrameConstants.CameraPosition_Time   = float4{CameraPosition.x, CameraPosition.y, CameraPosition.z, static_cast<float>(CurrTime)};
+    m_LastFrameConstants.ViewportSize_FrameIdx = float4{Width, Height, Width > 0.0f ? 1.0f / Width : 0.0f, static_cast<float>(m_FrameIndex)};
+
+    if (m_FrameConstantsCB)
+    {
+        MapHelper<RTXPTFrameConstants> Constants{m_pImmediateContext, m_FrameConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
+        *Constants = m_LastFrameConstants;
+    }
+
+    ++m_FrameIndex;
 }
 
 void RTXPTSample::Render()
@@ -163,6 +196,7 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
 {
     SampleBase::Update(CurrTime, ElapsedTime, DoUpdateUI);
     m_Scene.Update(CurrTime, ElapsedTime);
+    UpdateFrameConstants(CurrTime);
 }
 
 void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
@@ -187,6 +221,10 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Model path: %s", m_Scene.GetModelPath().empty() ? "none" : m_Scene.GetModelPath().c_str());
     if (!m_Scene.GetLastError().empty())
         ImGui::TextWrapped("Asset load error: %s", m_Scene.GetLastError().c_str());
+    ImGui::Separator();
+    ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
+    ImGui::Text("Frame index: %u", m_FrameIndex);
+    ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.ViewportSize_FrameIdx.x, m_LastFrameConstants.ViewportSize_FrameIdx.y);
     ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
     ImGui::End();
 }

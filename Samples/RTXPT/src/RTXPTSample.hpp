@@ -28,6 +28,8 @@
 
 #include <string>
 
+#include "Buffer.h"
+#include "RefCntAutoPtr.hpp"
 #include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
 
@@ -45,6 +47,14 @@ struct RTXPTFeatureCaps
     bool SPIRVCompiler               = false;
 };
 
+struct RTXPTFrameConstants
+{
+    float4x4 ViewProj              = float4x4::Identity();
+    float4x4 ViewProjInv           = float4x4::Identity();
+    float4   CameraPosition_Time   = float4{0, 0, 0, 0};
+    float4   ViewportSize_FrameIdx = float4{0, 0, 0, 0};
+};
+
 class RTXPTSample final : public SampleBase
 {
 public:
@@ -58,9 +68,15 @@ protected:
     virtual void UpdateUI() override final;
 
 private:
-    RTXPTFeatureCaps m_FeatureCaps;
-    std::string      m_AssetsRoot;
-    RTXPTScene       m_Scene;
+    void CreateFrameResources();
+    void UpdateFrameConstants(double CurrTime);
+
+    RTXPTFeatureCaps       m_FeatureCaps;
+    std::string            m_AssetsRoot;
+    RTXPTScene             m_Scene;
+    RefCntAutoPtr<IBuffer> m_FrameConstantsCB;
+    RTXPTFrameConstants    m_LastFrameConstants;
+    Uint32                 m_FrameIndex = 0;
 };
 
 } // namespace Diligent

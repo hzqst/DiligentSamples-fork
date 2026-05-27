@@ -42,10 +42,16 @@ public:
     bool HasValidContent() const;
 
     const std::string& GetLoadedSceneName() const { return m_LoadedSceneName; }
+    const std::string& GetAssetsRoot() const { return m_AssetsRoot; }
+    const std::string& GetModelPath() const { return m_ModelPath; }
+    const std::string& GetLastError() const { return m_LastError; }
 
 private:
     std::unique_ptr<GLTF::Model> m_Model;
     std::string                  m_LoadedSceneName;
+    std::string                  m_AssetsRoot;
+    std::string                  m_ModelPath;
+    std::string                  m_LastError;
 };
 
 } // namespace Diligent

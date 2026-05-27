@@ -25,18 +25,55 @@
  */
 
 #include "RTXPTScene.hpp"
+#include "FileSystem.hpp"
 
 #include <stdexcept>
 
 namespace Diligent
 {
 
+namespace
+{
+
+std::string JoinPath(const std::string& Root, const char* RelativePath)
+{
+    if (Root.empty())
+        return RelativePath;
+
+    std::string Path = Root;
+    if (!FileSystem::IsSlash(Path.back()))
+        Path.push_back(FileSystem::SlashSymbol);
+    Path += RelativePath;
+    FileSystem::CorrectSlashes(Path);
+    return FileSystem::SimplifyPath(Path.c_str());
+}
+
+} // namespace
+
 bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
 {
-    const std::string ModelPath = AssetsRoot + "/Models/Bistro/bistro.gltf";
+    m_Model.reset();
+    m_LoadedSceneName.clear();
+    m_LastError.clear();
+
+    m_AssetsRoot = FileSystem::SimplifyPath(AssetsRoot.c_str());
+    const std::string ScenePath = JoinPath(m_AssetsRoot, "bistro-programmer-art.scene.json");
+    m_ModelPath                = JoinPath(m_AssetsRoot, "Models/Bistro/bistro.gltf");
+
+    if (!FileSystem::FileExists(ScenePath.c_str()))
+    {
+        m_LastError = "Missing scene file: " + ScenePath;
+        return false;
+    }
+
+    if (!FileSystem::FileExists(m_ModelPath.c_str()))
+    {
+        m_LastError = "Missing glTF file: " + m_ModelPath;
+        return false;
+    }
 
     GLTF::ModelCreateInfo ModelCI;
-    ModelCI.FileName             = ModelPath.c_str();
+    ModelCI.FileName             = m_ModelPath.c_str();
     ModelCI.ComputeBoundingBoxes = true;
 
     try
@@ -44,10 +81,11 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
         m_Model           = std::make_unique<GLTF::Model>(pDevice, pContext, ModelCI);
         m_LoadedSceneName = "bistro-programmer-art.scene.json";
     }
-    catch (const std::exception&)
+    catch (const std::exception& e)
     {
         m_Model.reset();
         m_LoadedSceneName.clear();
+        m_LastError = e.what();
     }
 
     // TODO(RTXPT-Port Phase 2): add full material parsing for RTXPT extension fields.

@@ -93,7 +93,7 @@ private:
     RTXPTBlitPass               m_BlitPass;
     RefCntAutoPtr<IBuffer>      m_FrameConstantsCB;
     RTXPTFrameConstants         m_LastFrameConstants;
-    Uint32                      m_FrameIndex              = 0;
+    Uint32                      m_FrameIndex             = 0;
     bool                        m_EnableDebugComputePass = true;
 };
 

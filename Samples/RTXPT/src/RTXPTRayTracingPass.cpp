@@ -118,8 +118,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
     PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
     PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth = 1;
     PSOCreateInfo.RayTracingPipeline.ShaderRecordSize  = 0;
-    PSOCreateInfo.MaxAttributeSize = static_cast<Uint32>(sizeof(float) * 2);
-    PSOCreateInfo.MaxPayloadSize   = static_cast<Uint32>(sizeof(float) * 4);
+    PSOCreateInfo.MaxAttributeSize                     = static_cast<Uint32>(sizeof(float) * 2);
+    PSOCreateInfo.MaxPayloadSize                       = static_cast<Uint32>(sizeof(float) * 4);
 
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;

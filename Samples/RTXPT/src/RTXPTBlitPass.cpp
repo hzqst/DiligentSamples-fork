@@ -73,16 +73,16 @@ bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFa
     }
 
     GraphicsPipelineStateCreateInfo PSOCreateInfo;
-    PSOCreateInfo.PSODesc.Name                          = "RTXPT blit PSO";
-    PSOCreateInfo.PSODesc.PipelineType                  = PIPELINE_TYPE_GRAPHICS;
-    PSOCreateInfo.GraphicsPipeline.NumRenderTargets     = 1;
-    PSOCreateInfo.GraphicsPipeline.RTVFormats[0]        = pSwapChain->GetDesc().ColorBufferFormat;
-    PSOCreateInfo.GraphicsPipeline.PrimitiveTopology    = PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    PSOCreateInfo.PSODesc.Name                                  = "RTXPT blit PSO";
+    PSOCreateInfo.PSODesc.PipelineType                          = PIPELINE_TYPE_GRAPHICS;
+    PSOCreateInfo.GraphicsPipeline.NumRenderTargets             = 1;
+    PSOCreateInfo.GraphicsPipeline.RTVFormats[0]                = pSwapChain->GetDesc().ColorBufferFormat;
+    PSOCreateInfo.GraphicsPipeline.PrimitiveTopology            = PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
     PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode      = CULL_MODE_NONE;
     PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
     PSOCreateInfo.PSODesc.ResourceLayout.DefaultVariableType    = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
-    PSOCreateInfo.pVS = pVS;
-    PSOCreateInfo.pPS = pPS;
+    PSOCreateInfo.pVS                                           = pVS;
+    PSOCreateInfo.pPS                                           = pPS;
 
     pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &m_PSO);
     if (!m_PSO)

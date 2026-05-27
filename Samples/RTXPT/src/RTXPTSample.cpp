@@ -328,7 +328,7 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
     ImGui::Text("Frame index: %u", m_FrameIndex);
     ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.ViewportSize_FrameIdx.x, m_LastFrameConstants.ViewportSize_FrameIdx.y);
-    const RTXPTRayTracingPassStats& RTPassStats = m_RayTracingPass.GetStats();
+    const RTXPTRayTracingPassStats& RTPassStats  = m_RayTracingPass.GetStats();
     const RTXPTComputePassStats&    ComputeStats = m_DebugComputePass.GetStats();
     ImGui::Separator();
     ImGui::Text("OutputColor: %s", m_RenderTargets.IsValid() ? "created" : "missing");

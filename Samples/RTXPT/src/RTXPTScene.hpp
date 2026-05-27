@@ -26,38 +26,26 @@
 
 #pragma once
 
-#include "SampleBase.hpp"
-#include "RTXPTScene.hpp"
+#include <memory>
+#include <string>
+
+#include "GLTFLoader.hpp"
 
 namespace Diligent
 {
 
-struct RTXPTFeatureCaps
-{
-    bool RayTracing                  = false;
-    bool StandaloneRayTracingShaders = false;
-    bool RayQuery                    = false;
-    bool BindlessResources           = false;
-    bool ComputeShaders              = false;
-    bool DXILCompiler                = false;
-    bool SPIRVCompiler               = false;
-};
-
-class RTXPTSample final : public SampleBase
+class RTXPTScene
 {
 public:
-    virtual void Initialize(const SampleInitInfo& InitInfo) override final;
-    virtual void Render() override final;
-    virtual void Update(double CurrTime, double ElapsedTime, bool DoUpdateUI) override final;
-    virtual void WindowResize(Uint32 Width, Uint32 Height) override final;
-    virtual const Char* GetSampleName() const override final { return "RTXPT"; }
+    bool LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot);
+    void Update(double CurrTime, double ElapsedTime);
+    bool HasValidContent() const;
 
-protected:
-    virtual void UpdateUI() override final;
+    const std::string& GetLoadedSceneName() const { return m_LoadedSceneName; }
 
 private:
-    RTXPTFeatureCaps m_FeatureCaps;
-    RTXPTScene       m_Scene;
+    std::unique_ptr<GLTF::Model> m_Model;
+    std::string                  m_LoadedSceneName;
 };
 
 } // namespace Diligent

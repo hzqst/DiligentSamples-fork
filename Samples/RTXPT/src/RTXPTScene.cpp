@@ -24,40 +24,45 @@
  *  of the possibility of such damages.
  */
 
-#pragma once
-
-#include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
+
+#include <stdexcept>
 
 namespace Diligent
 {
 
-struct RTXPTFeatureCaps
+bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
 {
-    bool RayTracing                  = false;
-    bool StandaloneRayTracingShaders = false;
-    bool RayQuery                    = false;
-    bool BindlessResources           = false;
-    bool ComputeShaders              = false;
-    bool DXILCompiler                = false;
-    bool SPIRVCompiler               = false;
-};
+    const std::string ModelPath = AssetsRoot + "/Models/Bistro/bistro.gltf";
 
-class RTXPTSample final : public SampleBase
+    GLTF::ModelCreateInfo ModelCI;
+    ModelCI.FileName             = ModelPath.c_str();
+    ModelCI.ComputeBoundingBoxes = true;
+
+    try
+    {
+        m_Model           = std::make_unique<GLTF::Model>(pDevice, pContext, ModelCI);
+        m_LoadedSceneName = "bistro-programmer-art.scene.json";
+    }
+    catch (const std::exception&)
+    {
+        m_Model.reset();
+        m_LoadedSceneName.clear();
+    }
+
+    // TODO(RTXPT-Port Phase 2): parse bistro-programmer-art.scene.json and merge RTXPT camera, material and light metadata.
+    return m_Model != nullptr;
+}
+
+void RTXPTScene::Update(double CurrTime, double ElapsedTime)
 {
-public:
-    virtual void Initialize(const SampleInitInfo& InitInfo) override final;
-    virtual void Render() override final;
-    virtual void Update(double CurrTime, double ElapsedTime, bool DoUpdateUI) override final;
-    virtual void WindowResize(Uint32 Width, Uint32 Height) override final;
-    virtual const Char* GetSampleName() const override final { return "RTXPT"; }
+    (void)CurrTime;
+    (void)ElapsedTime;
+}
 
-protected:
-    virtual void UpdateUI() override final;
-
-private:
-    RTXPTFeatureCaps m_FeatureCaps;
-    RTXPTScene       m_Scene;
-};
+bool RTXPTScene::HasValidContent() const
+{
+    return m_Model != nullptr;
+}
 
 } // namespace Diligent

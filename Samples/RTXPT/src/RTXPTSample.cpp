@@ -70,6 +70,12 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 {
     SampleBase::Initialize(InitInfo);
     m_FeatureCaps = MakeFeatureCaps(m_pDevice);
+
+    const bool SceneLoaded = m_Scene.LoadDefaultScene(m_pDevice, m_pImmediateContext, ".");
+    if (!SceneLoaded)
+    {
+        // TODO(RTXPT-Port Phase 2): report missing asset paths through the sample UI and keep the fallback clear path active.
+    }
 }
 
 void RTXPTSample::Render()
@@ -83,10 +89,13 @@ void RTXPTSample::Render()
 void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
 {
     SampleBase::Update(CurrTime, ElapsedTime, DoUpdateUI);
+    m_Scene.Update(CurrTime, ElapsedTime);
 }
 
 void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
 {
+    (void)Width;
+    (void)Height;
 }
 
 void RTXPTSample::UpdateUI()
@@ -98,7 +107,10 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("RayQuery: %s", m_FeatureCaps.RayQuery ? "yes" : "no");
     ImGui::Text("Bindless: %s", m_FeatureCaps.BindlessResources ? "yes" : "no");
     ImGui::Text("Compute: %s", m_FeatureCaps.ComputeShaders ? "yes" : "no");
+    ImGui::Text("Scene: %s", m_Scene.HasValidContent() ? "loaded" : "missing");
+    ImGui::Text("Scene file: %s", m_Scene.GetLoadedSceneName().c_str());
     ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
+    ImGui::Text("TODO(RTXPT-Port Phase 2): add full RTXPT scene/material/light metadata parsing.");
     ImGui::End();
 }
 

@@ -1,3 +1,5 @@
 # RTXPT Assets
 
-Runtime assets copied from `D:/RTXPT-fork/Assets` live here. The sample must run without depending on `D:/RTXPT-fork`.
+Large runtime assets are intentionally not committed to this repository.
+
+For local testing, copy the required RTXPT assets into this directory so the sample can find paths such as `Models/Bistro/bistro.gltf`.

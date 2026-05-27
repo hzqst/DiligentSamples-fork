@@ -1,5 +1,7 @@
 # RTXPT Assets
 
-Large runtime assets are intentionally not committed to this repository.
+Assets for the NVIDIA RTX Path Tracing sample live here for local testing.
 
-For local testing, copy the required RTXPT assets into this directory so the sample can find paths such as `Models/Bistro/bistro.gltf`.
+Large runtime assets in this directory are intentionally ignored by Git. Keep only this README and `.gitignore` tracked in the repository.
+
+Scenes and models are intended for RTXPT and might not be fully compatible with other projects. See `ArtLicenses.txt` or specific asset folders for included art licenses.

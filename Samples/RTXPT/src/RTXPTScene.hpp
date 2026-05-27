@@ -46,12 +46,29 @@ public:
     const std::string& GetModelPath() const { return m_ModelPath; }
     const std::string& GetLastError() const { return m_LastError; }
 
+    const GLTF::Model*           GetModel() const { return m_Model.get(); }
+    const GLTF::ModelTransforms& GetTransforms() const { return m_Transforms; }
+    Uint32                       GetSceneIndex() const { return m_SceneIndex; }
+    Uint32                       GetMeshNodeCount() const { return m_MeshNodeCount; }
+    Uint32                       GetPrimitiveCount() const { return m_PrimitiveCount; }
+    Uint32                       GetMaterialCount() const { return m_MaterialCount; }
+    Uint32                       GetLightCount() const { return m_LightCount; }
+
 private:
+    void ResetLoadedData();
+    void CacheSceneData();
+
     std::unique_ptr<GLTF::Model> m_Model;
+    GLTF::ModelTransforms        m_Transforms;
     std::string                  m_LoadedSceneName;
     std::string                  m_AssetsRoot;
     std::string                  m_ModelPath;
     std::string                  m_LastError;
+    Uint32                       m_SceneIndex     = 0;
+    Uint32                       m_MeshNodeCount  = 0;
+    Uint32                       m_PrimitiveCount = 0;
+    Uint32                       m_MaterialCount  = 0;
+    Uint32                       m_LightCount     = 0;
 };
 
 } // namespace Diligent

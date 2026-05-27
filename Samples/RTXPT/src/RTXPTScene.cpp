@@ -48,13 +48,81 @@ std::string JoinPath(const std::string& Root, const char* RelativePath)
     return FileSystem::SimplifyPath(Path.c_str());
 }
 
+Uint32 CountMeshNodes(const GLTF::Scene& Scene)
+{
+    Uint32 Count = 0;
+    for (const GLTF::Node* pNode : Scene.LinearNodes)
+    {
+        if (pNode != nullptr && pNode->pMesh != nullptr)
+            ++Count;
+    }
+    return Count;
+}
+
+Uint32 CountPrimitives(const GLTF::Scene& Scene)
+{
+    Uint32 Count = 0;
+    for (const GLTF::Node* pNode : Scene.LinearNodes)
+    {
+        if (pNode == nullptr || pNode->pMesh == nullptr)
+            continue;
+
+        for (const GLTF::Primitive& Primitive : pNode->pMesh->Primitives)
+        {
+            if (Primitive.VertexCount != 0 || Primitive.IndexCount != 0)
+                ++Count;
+        }
+    }
+    return Count;
+}
+
+Uint32 CountLightNodes(const GLTF::Scene& Scene)
+{
+    Uint32 Count = 0;
+    for (const GLTF::Node* pNode : Scene.LinearNodes)
+    {
+        if (pNode != nullptr && pNode->pLight != nullptr)
+            ++Count;
+    }
+    return Count;
+}
+
 } // namespace
+
+void RTXPTScene::ResetLoadedData()
+{
+    m_Model.reset();
+    m_Transforms = {};
+    m_LoadedSceneName.clear();
+    m_LastError.clear();
+    m_SceneIndex     = 0;
+    m_MeshNodeCount  = 0;
+    m_PrimitiveCount = 0;
+    m_MaterialCount  = 0;
+    m_LightCount     = 0;
+}
+
+void RTXPTScene::CacheSceneData()
+{
+    if (!m_Model || m_Model->Scenes.empty())
+        return;
+
+    m_SceneIndex = static_cast<Uint32>(m_Model->DefaultSceneId >= 0 ? m_Model->DefaultSceneId : 0);
+    if (m_SceneIndex >= m_Model->Scenes.size())
+        m_SceneIndex = 0;
+
+    m_Model->ComputeTransforms(m_SceneIndex, m_Transforms);
+
+    const GLTF::Scene& Scene = m_Model->Scenes[m_SceneIndex];
+    m_MeshNodeCount         = CountMeshNodes(Scene);
+    m_PrimitiveCount        = CountPrimitives(Scene);
+    m_MaterialCount         = static_cast<Uint32>(m_Model->Materials.size());
+    m_LightCount            = CountLightNodes(Scene);
+}
 
 bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
 {
-    m_Model.reset();
-    m_LoadedSceneName.clear();
-    m_LastError.clear();
+    ResetLoadedData();
 
     m_AssetsRoot = FileSystem::SimplifyPath(AssetsRoot.c_str());
     const std::string ScenePath = JoinPath(m_AssetsRoot, "bistro-programmer-art.scene.json");
@@ -75,11 +143,15 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
     GLTF::ModelCreateInfo ModelCI;
     ModelCI.FileName             = m_ModelPath.c_str();
     ModelCI.ComputeBoundingBoxes = true;
+    ModelCI.IndBufferBindFlags   = BIND_INDEX_BUFFER | BIND_RAY_TRACING;
+    for (BIND_FLAGS& BindFlags : ModelCI.VertBufferBindFlags)
+        BindFlags = BIND_VERTEX_BUFFER | BIND_RAY_TRACING;
 
     try
     {
         m_Model           = std::make_unique<GLTF::Model>(pDevice, pContext, ModelCI);
         m_LoadedSceneName = "bistro-programmer-art.scene.json";
+        CacheSceneData();
     }
     catch (const std::exception& e)
     {

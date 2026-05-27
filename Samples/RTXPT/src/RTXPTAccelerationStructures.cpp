@@ -228,9 +228,10 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
         if (TriangleDescs.empty())
             continue;
 
-        BLASRecord Record;
-        Record.Name          = pNode->Name.empty() ? "RTXPT BLAS" : "RTXPT BLAS " + pNode->Name;
-        Record.GeometryCount = static_cast<Uint32>(TriangleDescs.size());
+        BLASRecord        Record;
+        const std::string NodeName = pNode->Name.empty() ? "node" : pNode->Name;
+        Record.Name                = "RTXPT BLAS " + NodeName + " node_" + std::to_string(pNode->Index);
+        Record.GeometryCount       = static_cast<Uint32>(TriangleDescs.size());
 
         BottomLevelASDesc BLASDesc;
         BLASDesc.Name          = Record.Name.c_str();

@@ -30,6 +30,7 @@
 
 #include "Buffer.h"
 #include "RefCntAutoPtr.hpp"
+#include "RTXPTAccelerationStructures.hpp"
 #include "RTXPTLights.hpp"
 #include "RTXPTMaterials.hpp"
 #include "SampleBase.hpp"
@@ -78,6 +79,7 @@ private:
     RTXPTScene             m_Scene;
     RTXPTMaterials         m_Materials;
     RTXPTLights            m_Lights;
+    RTXPTAccelerationStructures m_AccelerationStructures;
     RefCntAutoPtr<IBuffer> m_FrameConstantsCB;
     RTXPTFrameConstants    m_LastFrameConstants;
     Uint32                 m_FrameIndex = 0;

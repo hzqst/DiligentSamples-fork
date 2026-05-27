@@ -161,7 +161,8 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
     }
 
     // TODO(RTXPT-Port Phase 2): add full material parsing for RTXPT extension fields.
-    // TODO(RTXPT-Port Phase 3): build BLAS/TLAS from scene geometry.
+    // TODO(RTXPT-Port Phase 3): add dynamic/skinned BLAS update, AS compaction, and alpha/OMM geometry flags;
+    // current path builds static opaque geometry.
     // TODO(RTXPT-Port Phase 4): add TraceRays path and RT PSO/SBT.
     return m_Model != nullptr;
 }

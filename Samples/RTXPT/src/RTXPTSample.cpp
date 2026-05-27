@@ -153,6 +153,17 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
         m_Materials.Upload(m_pDevice, *pModel);
         if (m_Scene.GetSceneIndex() < pModel->Scenes.size())
             m_Lights.Upload(m_pDevice, pModel->Scenes[m_Scene.GetSceneIndex()], m_Scene.GetTransforms());
+
+        m_AccelerationStructures.BuildStaticScene(m_pDevice,
+                                                  m_pImmediateContext,
+                                                  *pModel,
+                                                  m_Scene.GetSceneIndex(),
+                                                  m_Scene.GetTransforms(),
+                                                  m_FeatureCaps.RayTracing);
+    }
+    else
+    {
+        m_AccelerationStructures.Reset();
     }
 }
 
@@ -235,6 +246,16 @@ void RTXPTSample::UpdateUI()
         ImGui::TextWrapped("Material buffer error: %s", m_Materials.GetStats().LastError.c_str());
     if (!m_Lights.GetStats().LastError.empty())
         ImGui::TextWrapped("Light buffer error: %s", m_Lights.GetStats().LastError.c_str());
+    const RTXPTAccelerationStructureStats& ASStats = m_AccelerationStructures.GetStats();
+    ImGui::Separator();
+    ImGui::Text("Acceleration structures: %s", m_AccelerationStructures.IsBuilt() ? "built" : "not built");
+    ImGui::Text("BLAS: %u", ASStats.BLASCount);
+    ImGui::Text("TLAS instances: %u", ASStats.InstanceCount);
+    ImGui::Text("RT geometries: %u", ASStats.GeometryCount);
+    if (!ASStats.DisabledReason.empty())
+        ImGui::TextWrapped("AS disabled: %s", ASStats.DisabledReason.c_str());
+    if (!ASStats.LastError.empty())
+        ImGui::TextWrapped("AS error: %s", ASStats.LastError.c_str());
     ImGui::Separator();
     ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
     ImGui::Text("Frame index: %u", m_FrameIndex);

@@ -157,10 +157,14 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("RayQuery: %s", m_FeatureCaps.RayQuery ? "yes" : "no");
     ImGui::Text("Bindless: %s", m_FeatureCaps.BindlessResources ? "yes" : "no");
     ImGui::Text("Compute: %s", m_FeatureCaps.ComputeShaders ? "yes" : "no");
+    ImGui::Separator();
+    ImGui::Text("Assets root: %s", m_AssetsRoot.c_str());
     ImGui::Text("Scene: %s", m_Scene.HasValidContent() ? "loaded" : "missing");
-    ImGui::Text("Scene file: %s", m_Scene.GetLoadedSceneName().c_str());
+    ImGui::Text("Scene file: %s", m_Scene.GetLoadedSceneName().empty() ? "none" : m_Scene.GetLoadedSceneName().c_str());
+    ImGui::Text("Model path: %s", m_Scene.GetModelPath().empty() ? "none" : m_Scene.GetModelPath().c_str());
+    if (!m_Scene.GetLastError().empty())
+        ImGui::TextWrapped("Asset load error: %s", m_Scene.GetLastError().c_str());
     ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
-    ImGui::Text("TODO(RTXPT-Port Phase 2): add full RTXPT scene/material/light metadata parsing.");
     ImGui::End();
 }
 

@@ -7,6 +7,7 @@ set(SOURCE
     src/RTXPTScene.cpp
     src/RTXPTMaterials.cpp
     src/RTXPTLights.cpp
+    src/RTXPTAccelerationStructures.cpp
 )
 
 set(INCLUDE
@@ -14,6 +15,7 @@ set(INCLUDE
     src/RTXPTScene.hpp
     src/RTXPTMaterials.hpp
     src/RTXPTLights.hpp
+    src/RTXPTAccelerationStructures.hpp
 )
 
 add_sample_app(RTXPT

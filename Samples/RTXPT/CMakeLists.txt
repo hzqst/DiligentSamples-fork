@@ -28,6 +28,9 @@ set(INCLUDE
 
 set(SHADERS
     assets/shaders/RTXPTCommon.fxh
+    assets/shaders/RTXPTShaderShared.hlsli
+    assets/shaders/RTXPTSceneBridge.hlsli
+    assets/shaders/RTXPTMaterialBridge.hlsli
     assets/shaders/RTXPTMinimal.rgen
     assets/shaders/RTXPTMinimal.rmiss
     assets/shaders/RTXPTMinimal.rchit

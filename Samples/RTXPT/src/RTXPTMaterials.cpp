@@ -26,6 +26,7 @@
 
 #include "RTXPTMaterials.hpp"
 
+#include <algorithm>
 #include <vector>
 
 namespace Diligent
@@ -42,13 +43,17 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
     Reset();
 
     m_Stats.MaterialCount = static_cast<Uint32>(Model.Materials.size());
-    if (Model.Materials.empty())
-        return true;
 
     std::vector<GLTF::Material::ShaderAttribs> Materials;
-    Materials.reserve(Model.Materials.size());
+    Materials.reserve(std::max<size_t>(Model.Materials.size(), 1));
     for (const GLTF::Material& Material : Model.Materials)
         Materials.emplace_back(Material.Attribs);
+
+    if (Materials.empty())
+    {
+        // Always upload at least one default material so the shader-side bridge SRV is never null.
+        Materials.emplace_back();
+    }
 
     BufferDesc Desc;
     Desc.Name              = "RTXPT material buffer";

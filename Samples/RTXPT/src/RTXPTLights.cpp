@@ -81,7 +81,13 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const
 
     m_Stats.LightCount = static_cast<Uint32>(Lights.size());
     if (Lights.empty())
-        return true;
+    {
+        // Always upload at least one default (disabled) light so the shader-side bridge SRV is never null.
+        RTXPTLightData Default;
+        Default.ColorIntensity = float4{0, 0, 0, 0};
+        Default.DirectionType  = float4{0, -1, 0, -1.0f}; // Type < 0 means unused.
+        Lights.emplace_back(Default);
+    }
 
     BufferDesc Desc;
     Desc.Name              = "RTXPT light buffer";

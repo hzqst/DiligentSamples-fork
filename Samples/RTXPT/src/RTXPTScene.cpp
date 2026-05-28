@@ -27,9 +27,15 @@
 #include "RTXPTScene.hpp"
 #include "FileSystem.hpp"
 #include "GraphicsAccessories.hpp"
+#include "json.hpp"
 
 #include <algorithm>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
+#include <unordered_map>
+#include <utility>
 
 namespace Diligent
 {
@@ -89,12 +95,201 @@ Uint32 CountLightNodes(const GLTF::Scene& Scene)
     return Count;
 }
 
+bool ReadFloatArray(const nlohmann::json& Object, const char* Key, float* Values, size_t Count)
+{
+    const auto It = Object.find(Key);
+    if (It == Object.end() || !It->is_array() || It->size() < Count)
+        return false;
+
+    for (size_t Idx = 0; Idx < Count; ++Idx)
+    {
+        if (!(*It)[Idx].is_number())
+            return false;
+        Values[Idx] = (*It)[Idx].get<float>();
+    }
+
+    return true;
+}
+
+float ReadOptionalFloat(const nlohmann::json& Object, const char* Key, float DefaultValue)
+{
+    const auto It = Object.find(Key);
+    return It != Object.end() && It->is_number() ? It->get<float>() : DefaultValue;
+}
+
+void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera>& Cameras)
+{
+    if (!Node.is_object())
+        return;
+
+    const auto TypeIt = Node.find("type");
+    if (TypeIt != Node.end() && TypeIt->is_string() && TypeIt->get<std::string>() == "PerspectiveCamera")
+    {
+        float Translation[3] = {};
+        float Rotation[4]    = {0.0f, 0.0f, 0.0f, 1.0f};
+        if (ReadFloatArray(Node, "translation", Translation, sizeof(Translation) / sizeof(Translation[0])) &&
+            ReadFloatArray(Node, "rotation", Rotation, sizeof(Rotation) / sizeof(Rotation[0])))
+        {
+            RTXPTSceneCamera Camera;
+
+            const auto NameIt = Node.find("name");
+            Camera.Name       = NameIt != Node.end() && NameIt->is_string() ? NameIt->get<std::string>() : std::string{};
+            if (Camera.Name.empty())
+                Camera.Name = std::string{"Camera "} + std::to_string(Cameras.size());
+
+            Camera.Position = float3{Translation[0], Translation[1], Translation[2]};
+            Camera.Rotation = QuaternionF{Rotation[0], Rotation[1], Rotation[2], Rotation[3]};
+
+            const float RotationLength = length(Camera.Rotation.q);
+            Camera.Rotation           = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
+
+            Camera.VerticalFov = ReadOptionalFloat(Node, "verticalFov", Camera.VerticalFov);
+            Camera.NearPlane   = ReadOptionalFloat(Node, "zNear", Camera.NearPlane);
+            Camera.FarPlane    = ReadOptionalFloat(Node, "zFar", Camera.FarPlane);
+
+            if (Camera.VerticalFov > 0.0f && Camera.NearPlane > 0.0f && Camera.FarPlane > Camera.NearPlane)
+                Cameras.emplace_back(std::move(Camera));
+        }
+    }
+
+    const auto ChildrenIt = Node.find("children");
+    if (ChildrenIt == Node.end() || !ChildrenIt->is_array())
+        return;
+
+    for (const auto& Child : *ChildrenIt)
+        AppendSceneCameras(Child, Cameras);
+}
+
+std::string GetCameraNameFromTarget(const std::string& Target)
+{
+    const size_t Separator = Target.find_last_of('/');
+    return Separator != std::string::npos && Separator + 1 < Target.size() ? Target.substr(Separator + 1) : Target;
+}
+
+std::string FormatAnimatedCameraName(const std::string& AnimationName, const std::string& CameraName, float Time)
+{
+    std::ostringstream Stream;
+    Stream << AnimationName << "/" << CameraName << " " << std::fixed << std::setprecision(1) << Time << "s";
+    return Stream.str();
+}
+
+struct AnimatedCameraChannels
+{
+    const nlohmann::json* pTranslation = nullptr;
+    const nlohmann::json* pRotation    = nullptr;
+};
+
+void CollectAnimatedCameraChannels(const nlohmann::json& Channels,
+                                   std::unordered_map<std::string, AnimatedCameraChannels>& ChannelsByTarget)
+{
+    for (const auto& Channel : Channels)
+    {
+        const auto TargetIt    = Channel.find("target");
+        const auto AttributeIt = Channel.find("attribute");
+        if (TargetIt == Channel.end() || AttributeIt == Channel.end() ||
+            !TargetIt->is_string() || !AttributeIt->is_string())
+            continue;
+
+        const std::string Target = TargetIt->get<std::string>();
+        if (Target.rfind("/Cameras/", 0) != 0)
+            continue;
+
+        const std::string Attribute = AttributeIt->get<std::string>();
+        if (Attribute == "translation")
+            ChannelsByTarget[Target].pTranslation = &Channel;
+        else if (Attribute == "rotation")
+            ChannelsByTarget[Target].pRotation = &Channel;
+    }
+}
+
+bool ReadAnimatedCameraKey(const nlohmann::json& TranslationKey,
+                           const nlohmann::json& RotationKey,
+                           const RTXPTSceneCamera& Defaults,
+                           RTXPTSceneCamera& Camera)
+{
+    if (!TranslationKey.is_object() || !RotationKey.is_object())
+        return false;
+
+    float Translation[3] = {};
+    float Rotation[4]    = {0.0f, 0.0f, 0.0f, 1.0f};
+    if (!ReadFloatArray(TranslationKey, "value", Translation, sizeof(Translation) / sizeof(Translation[0])) ||
+        !ReadFloatArray(RotationKey, "value", Rotation, sizeof(Rotation) / sizeof(Rotation[0])))
+        return false;
+
+    Camera          = Defaults;
+    Camera.Position = float3{Translation[0], Translation[1], Translation[2]};
+    Camera.Rotation = QuaternionF{Rotation[0], Rotation[1], Rotation[2], Rotation[3]};
+
+    const float RotationLength = length(Camera.Rotation.q);
+    Camera.Rotation = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
+    return true;
+}
+
+void AppendAnimatedCameraKeys(const std::string& AnimationName,
+                              const std::string& Target,
+                              const AnimatedCameraChannels& Channels,
+                              const RTXPTSceneCamera& Defaults,
+                              std::vector<RTXPTSceneCamera>& Cameras)
+{
+    if (Channels.pTranslation == nullptr || Channels.pRotation == nullptr)
+        return;
+
+    const auto TranslationDataIt = Channels.pTranslation->find("data");
+    const auto RotationDataIt    = Channels.pRotation->find("data");
+    if (TranslationDataIt == Channels.pTranslation->end() || RotationDataIt == Channels.pRotation->end() ||
+        !TranslationDataIt->is_array() || !RotationDataIt->is_array())
+        return;
+
+    const size_t      KeyCount   = std::min(TranslationDataIt->size(), RotationDataIt->size());
+    const std::string CameraName = GetCameraNameFromTarget(Target);
+    for (size_t Key = 0; Key < KeyCount; ++Key)
+    {
+        const nlohmann::json& TranslationKey = (*TranslationDataIt)[Key];
+        const nlohmann::json& RotationKey    = (*RotationDataIt)[Key];
+
+        RTXPTSceneCamera Camera;
+        if (!ReadAnimatedCameraKey(TranslationKey, RotationKey, Defaults, Camera))
+            continue;
+
+        const float Time = ReadOptionalFloat(TranslationKey, "time", static_cast<float>(Key));
+        Camera.Name      = FormatAnimatedCameraName(AnimationName, CameraName, Time);
+        Cameras.emplace_back(std::move(Camera));
+    }
+}
+
+void AppendAnimatedCameras(const nlohmann::json& SceneJson,
+                           const RTXPTSceneCamera& Defaults,
+                           std::vector<RTXPTSceneCamera>& Cameras)
+{
+    const auto AnimationsIt = SceneJson.find("animations");
+    if (AnimationsIt == SceneJson.end() || !AnimationsIt->is_array())
+        return;
+
+    for (const auto& Animation : *AnimationsIt)
+    {
+        if (!Animation.is_object())
+            continue;
+
+        const auto ChannelsIt = Animation.find("channels");
+        if (ChannelsIt == Animation.end() || !ChannelsIt->is_array())
+            continue;
+
+        std::unordered_map<std::string, AnimatedCameraChannels> ChannelsByTarget;
+        CollectAnimatedCameraChannels(*ChannelsIt, ChannelsByTarget);
+
+        const std::string AnimationName = Animation.value("name", "Animation");
+        for (const auto& TargetAndChannels : ChannelsByTarget)
+            AppendAnimatedCameraKeys(AnimationName, TargetAndChannels.first, TargetAndChannels.second, Defaults, Cameras);
+    }
+}
+
 } // namespace
 
 void RTXPTScene::ResetLoadedData()
 {
     m_Model.reset();
     m_Transforms = {};
+    m_Cameras.clear();
     m_LoadedSceneName.clear();
     m_LastError.clear();
     m_IndexType      = VT_UINT32;
@@ -138,6 +333,42 @@ void RTXPTScene::CacheSceneData()
     }
 }
 
+const RTXPTSceneCamera* RTXPTScene::GetCamera(Uint32 CameraIndex) const
+{
+    return CameraIndex < m_Cameras.size() ? &m_Cameras[CameraIndex] : nullptr;
+}
+
+bool RTXPTScene::LoadSceneCameras(const std::string& ScenePath)
+{
+    m_Cameras.clear();
+
+    std::ifstream SceneFile{ScenePath};
+    if (!SceneFile)
+        return false;
+
+    nlohmann::json SceneJson = nlohmann::json::parse(SceneFile, nullptr, false);
+    if (SceneJson.is_discarded() || !SceneJson.is_object())
+        return false;
+
+    const auto GraphIt = SceneJson.find("graph");
+    if (GraphIt == SceneJson.end() || !GraphIt->is_array())
+        return false;
+
+    for (const auto& Node : *GraphIt)
+        AppendSceneCameras(Node, m_Cameras);
+
+    RTXPTSceneCamera CameraDefaults;
+    if (!m_Cameras.empty())
+    {
+        CameraDefaults.VerticalFov = m_Cameras.front().VerticalFov;
+        CameraDefaults.NearPlane   = m_Cameras.front().NearPlane;
+        CameraDefaults.FarPlane    = m_Cameras.front().FarPlane;
+    }
+    AppendAnimatedCameras(SceneJson, CameraDefaults, m_Cameras);
+
+    return !m_Cameras.empty();
+}
+
 bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
 {
     ResetLoadedData();
@@ -157,6 +388,8 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
         m_LastError = "Missing glTF file: " + m_ModelPath;
         return false;
     }
+
+    LoadSceneCameras(ScenePath);
 
     GLTF::ModelCreateInfo ModelCI;
     ModelCI.FileName             = m_ModelPath.c_str();

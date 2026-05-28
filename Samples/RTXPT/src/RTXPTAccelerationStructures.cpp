@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 #include "GraphicsAccessories.hpp"
@@ -162,6 +163,20 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
         return false;
     }
 
+    const Uint64 ModelVertexOffset = Uint64{BaseVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset};
+    if (ModelVertexOffset >= pVertexBuffer->GetDesc().Size)
+    {
+        m_Stats.LastError = "RTXPT POSITION vertex buffer is too small for the model base vertex";
+        return false;
+    }
+    const Uint64 ModelVertexCount64 = (pVertexBuffer->GetDesc().Size - ModelVertexOffset) / VertexStride;
+    if (ModelVertexCount64 == 0 || ModelVertexCount64 > Uint64{std::numeric_limits<Uint32>::max()})
+    {
+        m_Stats.LastError = "RTXPT POSITION vertex buffer has an invalid model vertex count";
+        return false;
+    }
+    const Uint32 ModelVertexCount = static_cast<Uint32>(ModelVertexCount64);
+
     if (pIndexBuffer != nullptr && IndexType != VT_UINT16 && IndexType != VT_UINT32)
     {
         m_Stats.LastError = "RTXPT index buffer has an unsupported index size";
@@ -213,26 +228,34 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
             }
             SubInstances.emplace_back(SubEntry);
 
+            // The GLTF builder bakes VertexStart into indexed primitives and resets FirstVertex to 0.
+            // BLAS indexed geometry therefore needs the whole model vertex range, not Primitive.VertexCount.
+            const bool   IsIndexed          = Primitive.HasIndices();
+            const Uint64 PrimitiveVertexOff = IsIndexed ?
+                ModelVertexOffset :
+                (Uint64{BaseVertex + Primitive.FirstVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset});
+            const Uint32 PrimitiveVertexCnt = IsIndexed ? ModelVertexCount : Primitive.VertexCount;
+
             BLASTriangleDesc TriangleDesc;
             TriangleDesc.GeometryName         = GeometryNames.back().c_str();
-            TriangleDesc.MaxVertexCount       = Primitive.VertexCount;
+            TriangleDesc.MaxVertexCount       = PrimitiveVertexCnt;
             TriangleDesc.VertexValueType      = Position.ValueType;
             TriangleDesc.VertexComponentCount = Position.ComponentCount;
-            TriangleDesc.MaxPrimitiveCount    = Primitive.HasIndices() ? Primitive.IndexCount / 3 : Primitive.VertexCount / 3;
-            TriangleDesc.IndexType            = Primitive.HasIndices() ? IndexType : VT_UNDEFINED;
+            TriangleDesc.MaxPrimitiveCount    = IsIndexed ? Primitive.IndexCount / 3 : Primitive.VertexCount / 3;
+            TriangleDesc.IndexType            = IsIndexed ? IndexType : VT_UNDEFINED;
 
             BLASBuildTriangleData BuildData;
             BuildData.GeometryName         = TriangleDesc.GeometryName;
             BuildData.pVertexBuffer        = pVertexBuffer;
-            BuildData.VertexOffset         = (BaseVertex + Primitive.FirstVertex) * VertexStride + Position.RelativeOffset;
+            BuildData.VertexOffset         = PrimitiveVertexOff;
             BuildData.VertexStride         = VertexStride;
-            BuildData.VertexCount          = Primitive.VertexCount;
+            BuildData.VertexCount          = PrimitiveVertexCnt;
             BuildData.VertexValueType      = Position.ValueType;
             BuildData.VertexComponentCount = Position.ComponentCount;
             BuildData.PrimitiveCount       = TriangleDesc.MaxPrimitiveCount;
             BuildData.Flags                = RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 
-            if (Primitive.HasIndices())
+            if (IsIndexed)
             {
                 BuildData.pIndexBuffer = pIndexBuffer;
                 BuildData.IndexOffset  = (FirstIndex + Primitive.FirstIndex) * IndexSize;

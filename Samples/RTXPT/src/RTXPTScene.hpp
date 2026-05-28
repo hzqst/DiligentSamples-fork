@@ -28,11 +28,22 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "GLTFLoader.hpp"
 
 namespace Diligent
 {
+
+struct RTXPTSceneCamera
+{
+    std::string Name;
+    float3      Position    = float3{0.0f, 0.0f, 0.0f};
+    QuaternionF Rotation    = QuaternionF{};
+    float       VerticalFov = PI_F / 4.0f;
+    float       NearPlane   = 0.1f;
+    float       FarPlane    = 10000.0f;
+};
 
 class RTXPTScene
 {
@@ -54,6 +65,8 @@ public:
     Uint32                       GetPrimitiveCount() const { return m_PrimitiveCount; }
     Uint32                       GetMaterialCount() const { return m_MaterialCount; }
     Uint32                       GetLightCount() const { return m_LightCount; }
+    Uint32                       GetCameraCount() const { return static_cast<Uint32>(m_Cameras.size()); }
+    const RTXPTSceneCamera*      GetCamera(Uint32 CameraIndex) const;
 
     // Buffer 0 packs POSITION + NORMAL + TEXCOORD_0 (the Diligent GLTF default layout).
     // VertexStride0 is the per-vertex stride for buffer 0 and must equal sizeof(RTXPTVertex) on the shader side.
@@ -64,9 +77,11 @@ public:
 private:
     void ResetLoadedData();
     void CacheSceneData();
+    bool LoadSceneCameras(const std::string& ScenePath);
 
     std::unique_ptr<GLTF::Model> m_Model;
     GLTF::ModelTransforms        m_Transforms;
+    std::vector<RTXPTSceneCamera> m_Cameras;
     std::string                  m_LoadedSceneName;
     std::string                  m_AssetsRoot;
     std::string                  m_ModelPath;

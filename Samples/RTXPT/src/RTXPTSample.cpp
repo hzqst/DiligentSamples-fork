@@ -140,10 +140,69 @@ void RTXPTSample::CreateFrameResources()
     CreateUniformBuffer(m_pDevice, sizeof(RTXPTFrameConstants), "RTXPT frame constants", &m_FrameConstantsCB);
 }
 
+void RTXPTSample::InitializeCamera()
+{
+    m_Camera.SetPos(float3{0.0f, 1.5f, -6.0f});
+    m_Camera.SetLookAt(float3{0.0f, 1.5f, 0.0f});
+    m_Camera.SetRotationSpeed(0.005f);
+    m_Camera.SetMoveSpeed(5.0f);
+    m_Camera.SetSpeedUpScales(5.0f, 10.0f);
+
+    const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+    UpdateCameraProjection(SCDesc.Width, SCDesc.Height);
+    m_Camera.Update(m_InputController, 0.0f);
+
+    m_LastCameraView        = m_Camera.GetViewMatrix();
+    m_LastCameraProj        = m_Camera.GetProjMatrix();
+    m_HasLastCameraMatrices = true;
+}
+
+void RTXPTSample::UpdateCameraProjection(Uint32 Width, Uint32 Height)
+{
+    if (Width == 0 || Height == 0)
+        return;
+
+    const float AspectRatio = static_cast<float>(Width) / static_cast<float>(Height);
+    m_Camera.SetProjAttribs(m_CameraNearPlane,
+                            m_CameraFarPlane,
+                            AspectRatio,
+                            m_CameraVerticalFov,
+                            m_pSwapChain->GetDesc().PreTransform,
+                            m_pDevice->GetDeviceInfo().NDC.MinZ == -1);
+}
+
+bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
+{
+    const RTXPTSceneCamera* pCamera = m_Scene.GetCamera(CameraIndex);
+    if (pCamera == nullptr)
+        return false;
+
+    float3 Forward = pCamera->Rotation.RotateVector(float3{0.0f, 0.0f, -1.0f});
+    const float ForwardLength = length(Forward);
+    Forward                   = ForwardLength > 1e-5f ? Forward / ForwardLength : float3{0.0f, 0.0f, -1.0f};
+
+    m_SelectedSceneCamera = static_cast<int>(CameraIndex);
+    m_CameraVerticalFov  = pCamera->VerticalFov;
+    m_CameraNearPlane    = pCamera->NearPlane;
+    m_CameraFarPlane     = pCamera->FarPlane;
+
+    m_Camera.SetPos(pCamera->Position);
+    m_Camera.SetLookAt(pCamera->Position + Forward);
+
+    const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+    UpdateCameraProjection(SCDesc.Width, SCDesc.Height);
+    m_Camera.Update(m_InputController, 0.0f);
+
+    m_HasLastCameraMatrices = false;
+    RequestAccumulationReset("Scene camera changed");
+    return true;
+}
+
 void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 {
     SampleBase::Initialize(InitInfo);
     m_FeatureCaps = MakeFeatureCaps(m_pDevice);
+    InitializeCamera();
     CreateFrameResources();
 
     m_AssetsRoot = ResolveRTXPTAssetsRoot();
@@ -167,6 +226,9 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
         m_AccelerationStructures.Reset();
     }
 
+    if (m_Scene.GetCameraCount() > 0)
+        ApplySceneCamera(0);
+
     CreatePhase4Passes();
     EnsureRenderTargets();
 }
@@ -177,9 +239,9 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     const float          Width  = static_cast<float>(SCDesc.Width);
     const float          Height = static_cast<float>(SCDesc.Height);
 
-    const float3   CameraPosition = float3{0.0f, 1.5f, -6.0f};
-    const float4x4 CameraView     = float4x4::Translation(-CameraPosition.x, -CameraPosition.y, -CameraPosition.z);
-    const float4x4 CameraProj     = GetAdjustedProjectionMatrix(PI_F / 4.0f, 0.1f, 10000.0f);
+    const float3   CameraPosition = m_Camera.GetPos();
+    const float4x4 CameraView     = m_Camera.GetViewMatrix();
+    const float4x4 CameraProj     = m_Camera.GetProjMatrix();
     const float4x4 ViewProj       = CameraView * CameraProj;
 
     m_LastFrameConstants.ViewProj              = ViewProj;
@@ -317,6 +379,18 @@ void RTXPTSample::Render()
 void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
 {
     SampleBase::Update(CurrTime, ElapsedTime, DoUpdateUI);
+
+    m_Camera.Update(m_InputController, static_cast<float>(ElapsedTime));
+    if (m_HasLastCameraMatrices &&
+        (m_Camera.GetViewMatrix() != m_LastCameraView ||
+         m_Camera.GetProjMatrix() != m_LastCameraProj))
+    {
+        RequestAccumulationReset("Camera changed");
+    }
+    m_LastCameraView        = m_Camera.GetViewMatrix();
+    m_LastCameraProj        = m_Camera.GetProjMatrix();
+    m_HasLastCameraMatrices = true;
+
     m_Scene.Update(CurrTime, ElapsedTime);
     UpdateFrameConstants(CurrTime);
 }
@@ -325,6 +399,9 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
 {
     if (Width == 0 || Height == 0)
         return;
+
+    UpdateCameraProjection(Width, Height);
+    m_HasLastCameraMatrices = false;
 
     if (m_RenderTargets.Resize(m_pDevice,
                                Width,
@@ -352,6 +429,35 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Scene: %s", m_Scene.HasValidContent() ? "loaded" : "missing");
     ImGui::Text("Scene file: %s", m_Scene.GetLoadedSceneName().empty() ? "none" : m_Scene.GetLoadedSceneName().c_str());
     ImGui::Text("Model path: %s", m_Scene.GetModelPath().empty() ? "none" : m_Scene.GetModelPath().c_str());
+    ImGui::Text("Scene cameras: %u", m_Scene.GetCameraCount());
+    if (m_Scene.GetCameraCount() > 0)
+    {
+        const char* PreviewName = "none";
+        if (m_SelectedSceneCamera >= 0)
+        {
+            if (const RTXPTSceneCamera* pSelectedCamera = m_Scene.GetCamera(static_cast<Uint32>(m_SelectedSceneCamera)))
+                PreviewName = pSelectedCamera->Name.c_str();
+        }
+
+        if (ImGui::BeginCombo("Scene camera", PreviewName))
+        {
+            for (Uint32 CameraIdx = 0; CameraIdx < m_Scene.GetCameraCount(); ++CameraIdx)
+            {
+                const RTXPTSceneCamera* pCamera = m_Scene.GetCamera(CameraIdx);
+                if (pCamera == nullptr)
+                    continue;
+
+                const bool IsSelected = static_cast<int>(CameraIdx) == m_SelectedSceneCamera;
+                ImGui::PushID(static_cast<int>(CameraIdx));
+                if (ImGui::Selectable(pCamera->Name.c_str(), IsSelected))
+                    ApplySceneCamera(CameraIdx);
+                if (IsSelected)
+                    ImGui::SetItemDefaultFocus();
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
+        }
+    }
     if (!m_Scene.GetLastError().empty())
         ImGui::TextWrapped("Asset load error: %s", m_Scene.GetLastError().c_str());
     ImGui::Text("Mesh nodes: %u", m_Scene.GetMeshNodeCount());

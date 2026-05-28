@@ -56,5 +56,6 @@ add_sample_app(RTXPT
 target_link_libraries(RTXPT
 PRIVATE
     Diligent-AssetLoader
+    Diligent-JSON
 )
 

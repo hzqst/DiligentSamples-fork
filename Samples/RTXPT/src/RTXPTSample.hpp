@@ -29,6 +29,7 @@
 #include <string>
 
 #include "Buffer.h"
+#include "FirstPersonCamera.hpp"
 #include "RefCntAutoPtr.hpp"
 #include "RTXPTAccelerationStructures.hpp"
 #include "RTXPTBlitPass.hpp"
@@ -87,6 +88,9 @@ protected:
 
 private:
     void CreateFrameResources();
+    void InitializeCamera();
+    bool ApplySceneCamera(Uint32 CameraIndex);
+    void UpdateCameraProjection(Uint32 Width, Uint32 Height);
     void UpdateFrameConstants(double CurrTime);
     void CreatePhase4Passes();
     bool EnsureRenderTargets();
@@ -103,14 +107,22 @@ private:
     RTXPTRayTracingPass         m_RayTracingPass;
     RTXPTComputePass            m_DebugComputePass;
     RTXPTBlitPass               m_BlitPass;
+    FirstPersonCamera           m_Camera;
     RefCntAutoPtr<IBuffer>      m_FrameConstantsCB;
     RTXPTFrameConstants         m_LastFrameConstants;
+    float4x4                    m_LastCameraView           = float4x4::Identity();
+    float4x4                    m_LastCameraProj           = float4x4::Identity();
+    float                       m_CameraVerticalFov        = PI_F / 4.0f;
+    float                       m_CameraNearPlane          = 0.1f;
+    float                       m_CameraFarPlane           = 10000.0f;
     Uint32                      m_FrameIndex                = 0;
     Uint32                      m_AccumulationFrame         = 0;
     Uint32                      m_MaxBounces                = 4;
+    int                         m_SelectedSceneCamera       = -1;
     bool                        m_EnableDebugComputePass    = false;
     bool                        m_ResetAccumulationPending  = true;
     bool                        m_AccumulationActive        = false;
+    bool                        m_HasLastCameraMatrices     = false;
 };
 
 } // namespace Diligent

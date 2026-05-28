@@ -187,11 +187,30 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.CameraPosition_Time   = float4{CameraPosition.x, CameraPosition.y, CameraPosition.z, static_cast<float>(CurrTime)};
     m_LastFrameConstants.ViewportSize_FrameIdx = float4{Width, Height, Width > 0.0f ? 1.0f / Width : 0.0f, static_cast<float>(m_FrameIndex)};
 
+    if (m_AccumulationActive)
+    {
+        if (m_ResetAccumulationPending)
+            m_AccumulationFrame = 1;
+        else
+            ++m_AccumulationFrame;
+    }
+    else
+    {
+        m_AccumulationFrame = 0;
+    }
+
+    m_LastFrameConstants.PathTracer.MaxBounces        = m_MaxBounces;
+    m_LastFrameConstants.PathTracer.AccumulationFrame = m_AccumulationFrame;
+    m_LastFrameConstants.PathTracer.ResetAccumulation = m_ResetAccumulationPending ? 1u : 0u;
+    m_LastFrameConstants.PathTracer.MinBounces        = 0;
+
     if (m_FrameConstantsCB)
     {
         MapHelper<RTXPTFrameConstants> Constants{m_pImmediateContext, m_FrameConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
         *Constants = m_LastFrameConstants;
     }
+
+    m_ResetAccumulationPending = false;
 
     ++m_FrameIndex;
 }
@@ -222,11 +241,28 @@ void RTXPTSample::CreatePhase4Passes()
 bool RTXPTSample::EnsureRenderTargets()
 {
     const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
-    return m_RenderTargets.Resize(m_pDevice,
-                                  SCDesc.Width,
-                                  SCDesc.Height,
-                                  TEX_FORMAT_RGBA8_UNORM,
-                                  m_FeatureCaps.ComputeShaders);
+    const bool           WasValid = m_RenderTargets.IsValid();
+    const Uint32         OldWidth = m_RenderTargets.GetWidth();
+    const Uint32         OldHeight = m_RenderTargets.GetHeight();
+    const bool           WasAccumulationActive = m_RenderTargets.IsAccumulationActive();
+
+    const bool Ok = m_RenderTargets.Resize(m_pDevice,
+                                           SCDesc.Width,
+                                           SCDesc.Height,
+                                           TEX_FORMAT_RGBA8_UNORM,
+                                           m_FeatureCaps.ComputeShaders,
+                                           m_FeatureCaps.RayTracing);
+
+    m_AccumulationActive = Ok && m_RenderTargets.IsAccumulationActive();
+    if (Ok &&
+        (!WasValid ||
+         OldWidth != SCDesc.Width ||
+         OldHeight != SCDesc.Height ||
+         WasAccumulationActive != m_AccumulationActive))
+    {
+        RequestAccumulationReset("Render targets (re)created");
+    }
+    return Ok;
 }
 
 void RTXPTSample::ClearFallback(const float4& ClearColor)
@@ -286,11 +322,16 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     if (Width == 0 || Height == 0)
         return;
 
-    m_RenderTargets.Resize(m_pDevice,
-                           Width,
-                           Height,
-                           TEX_FORMAT_RGBA8_UNORM,
-                           m_FeatureCaps.ComputeShaders);
+    if (m_RenderTargets.Resize(m_pDevice,
+                               Width,
+                               Height,
+                               TEX_FORMAT_RGBA8_UNORM,
+                               m_FeatureCaps.ComputeShaders,
+                               m_FeatureCaps.RayTracing))
+    {
+        m_AccumulationActive = m_RenderTargets.IsAccumulationActive();
+        RequestAccumulationReset("Window resized");
+    }
 }
 
 void RTXPTSample::UpdateUI()
@@ -363,6 +404,12 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("TODO(RTXPT-Port Phase 4): expose stable-plane, RTXDI, light feedback, and denoising-guide pass toggles after their shaders are ported.");
     ImGui::Text("TODO(RTXPT-Port Phase 5.2): swap closest-hit flat shading for the reference path tracer once shader layer 4 lands.");
     ImGui::End();
+}
+
+void RTXPTSample::RequestAccumulationReset(const char* /*Reason*/)
+{
+    m_AccumulationFrame        = 0;
+    m_ResetAccumulationPending = true;
 }
 
 } // namespace Diligent

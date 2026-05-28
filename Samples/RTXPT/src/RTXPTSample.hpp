@@ -54,13 +54,24 @@ struct RTXPTFeatureCaps
     bool SPIRVCompiler               = false;
 };
 
+struct RTXPTPathTracerSettings
+{
+    Uint32 MaxBounces        = 4;
+    Uint32 AccumulationFrame = 0;
+    Uint32 ResetAccumulation = 1;
+    Uint32 MinBounces        = 0;
+};
+static_assert(sizeof(RTXPTPathTracerSettings) == 16, "RTXPTPathTracerSettings layout must match RTXPTShaderShared.hlsli");
+
 struct RTXPTFrameConstants
 {
-    float4x4 ViewProj              = float4x4::Identity();
-    float4x4 ViewProjInv           = float4x4::Identity();
-    float4   CameraPosition_Time   = float4{0, 0, 0, 0};
-    float4   ViewportSize_FrameIdx = float4{0, 0, 0, 0};
+    float4x4                ViewProj              = float4x4::Identity();
+    float4x4                ViewProjInv           = float4x4::Identity();
+    float4                  CameraPosition_Time   = float4{0, 0, 0, 0};
+    float4                  ViewportSize_FrameIdx = float4{0, 0, 0, 0};
+    RTXPTPathTracerSettings PathTracer            = {};
 };
+static_assert(sizeof(RTXPTFrameConstants) == 176, "RTXPTFrameConstants layout must match RTXPTShaderShared.hlsli");
 
 class RTXPTSample final : public SampleBase
 {
@@ -80,6 +91,7 @@ private:
     void CreatePhase4Passes();
     bool EnsureRenderTargets();
     void ClearFallback(const float4& ClearColor);
+    void RequestAccumulationReset(const char* Reason);
 
     RTXPTFeatureCaps            m_FeatureCaps;
     std::string                 m_AssetsRoot;
@@ -93,8 +105,12 @@ private:
     RTXPTBlitPass               m_BlitPass;
     RefCntAutoPtr<IBuffer>      m_FrameConstantsCB;
     RTXPTFrameConstants         m_LastFrameConstants;
-    Uint32                      m_FrameIndex             = 0;
-    bool                        m_EnableDebugComputePass = true;
+    Uint32                      m_FrameIndex                = 0;
+    Uint32                      m_AccumulationFrame         = 0;
+    Uint32                      m_MaxBounces                = 4;
+    bool                        m_EnableDebugComputePass    = false;
+    bool                        m_ResetAccumulationPending  = true;
+    bool                        m_AccumulationActive        = false;
 };
 
 } // namespace Diligent

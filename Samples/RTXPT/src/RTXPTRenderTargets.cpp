@@ -33,6 +33,8 @@ void RTXPTRenderTargets::Reset()
 {
     m_OutputColor.Release();
     m_ComputeColor.Release();
+    m_AccumColor.Release();
+    m_AccumulationUnavailable = false;
     m_Width  = 0;
     m_Height = 0;
     m_Format = TEX_FORMAT_UNKNOWN;
@@ -68,7 +70,12 @@ bool RTXPTRenderTargets::CreateTarget(IRenderDevice* pDevice, const char* Name, 
     return true;
 }
 
-bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, Uint32 Width, Uint32 Height, TEXTURE_FORMAT Format, bool CreateComputeOutput)
+bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice,
+                                Uint32         Width,
+                                Uint32         Height,
+                                TEXTURE_FORMAT Format,
+                                bool           CreateComputeOutput,
+                                bool           CreateAccumulation)
 {
     if (Width == 0 || Height == 0)
         return false;
@@ -76,7 +83,9 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, Uint32 Width, Uint32 Hei
     const bool HasRequestedTargets =
         m_OutputColor != nullptr &&
         (!CreateComputeOutput || m_ComputeColor != nullptr) &&
-        (CreateComputeOutput || m_ComputeColor == nullptr);
+        (CreateComputeOutput || m_ComputeColor == nullptr) &&
+        (!CreateAccumulation || m_AccumColor != nullptr || m_AccumulationUnavailable) &&
+        (CreateAccumulation || m_AccumColor == nullptr);
 
     if (HasRequestedTargets && m_Width == Width && m_Height == Height && m_Format == Format)
         return true;
@@ -91,6 +100,34 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, Uint32 Width, Uint32 Hei
 
     if (CreateComputeOutput && !CreateTarget(pDevice, "RTXPT ComputeColor", m_ComputeColor))
         return false;
+
+    if (CreateAccumulation)
+    {
+        const TEXTURE_FORMAT AccumFormat = TEX_FORMAT_RGBA32_FLOAT;
+        const auto&          FmtInfo     = pDevice->GetTextureFormatInfoExt(AccumFormat);
+        const bool           SupportsUAV = (FmtInfo.BindFlags & BIND_UNORDERED_ACCESS) != 0;
+        if (!SupportsUAV)
+        {
+            m_LastError                 = "RGBA32F UAV is not supported; reference path tracer accumulation is disabled";
+            m_AccumulationUnavailable  = true;
+            return true;
+        }
+
+        TextureDesc Desc;
+        Desc.Name      = "RTXPT AccumColor";
+        Desc.Type      = RESOURCE_DIM_TEX_2D;
+        Desc.Width     = m_Width;
+        Desc.Height    = m_Height;
+        Desc.Format    = AccumFormat;
+        Desc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+        pDevice->CreateTexture(Desc, nullptr, &m_AccumColor);
+
+        if (!m_AccumColor)
+        {
+            m_LastError = "Failed to create RTXPT AccumColor";
+            return false;
+        }
+    }
 
     return true;
 }
@@ -113,6 +150,16 @@ ITextureView* RTXPTRenderTargets::GetComputeColorUAV() const
 ITextureView* RTXPTRenderTargets::GetComputeColorSRV() const
 {
     return m_ComputeColor ? m_ComputeColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetAccumColorUAV() const
+{
+    return m_AccumColor ? m_AccumColor->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetAccumColorSRV() const
+{
+    return m_AccumColor ? m_AccumColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
 }
 
 ITextureView* RTXPTRenderTargets::GetDisplaySRV(bool UseComputeOutput) const

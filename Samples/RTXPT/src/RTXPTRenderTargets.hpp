@@ -40,14 +40,22 @@ class RTXPTRenderTargets
 {
 public:
     void Reset();
-    bool Resize(IRenderDevice* pDevice, Uint32 Width, Uint32 Height, TEXTURE_FORMAT Format, bool CreateComputeOutput);
+    bool Resize(IRenderDevice* pDevice,
+                Uint32         Width,
+                Uint32         Height,
+                TEXTURE_FORMAT Format,
+                bool           CreateComputeOutput,
+                bool           CreateAccumulation);
 
     bool IsValid() const { return m_OutputColor != nullptr; }
+    bool IsAccumulationActive() const { return m_AccumColor != nullptr; }
 
     ITextureView* GetOutputColorUAV() const;
     ITextureView* GetOutputColorSRV() const;
     ITextureView* GetComputeColorUAV() const;
     ITextureView* GetComputeColorSRV() const;
+    ITextureView* GetAccumColorUAV() const;
+    ITextureView* GetAccumColorSRV() const;
     ITextureView* GetDisplaySRV(bool UseComputeOutput) const;
 
     Uint32             GetWidth() const { return m_Width; }
@@ -60,6 +68,8 @@ private:
 
     RefCntAutoPtr<ITexture> m_OutputColor;
     RefCntAutoPtr<ITexture> m_ComputeColor;
+    RefCntAutoPtr<ITexture> m_AccumColor;
+    bool                    m_AccumulationUnavailable = false;
     Uint32                  m_Width  = 0;
     Uint32                  m_Height = 0;
     TEXTURE_FORMAT          m_Format = TEX_FORMAT_UNKNOWN;

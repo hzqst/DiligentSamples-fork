@@ -55,6 +55,12 @@ public:
     Uint32                       GetMaterialCount() const { return m_MaterialCount; }
     Uint32                       GetLightCount() const { return m_LightCount; }
 
+    // Buffer 0 packs POSITION + NORMAL + TEXCOORD_0 (the Diligent GLTF default layout).
+    // VertexStride0 is the per-vertex stride for buffer 0 and must equal sizeof(RTXPTVertex) on the shader side.
+    IBuffer* GetVertexBuffer0(IRenderDevice* pDevice = nullptr, IDeviceContext* pContext = nullptr) const;
+    IBuffer* GetIndexBuffer(IRenderDevice* pDevice = nullptr, IDeviceContext* pContext = nullptr) const;
+    Uint32   GetVertexStride0() const { return m_VertexStride0; }
+
 private:
     void ResetLoadedData();
     void CacheSceneData();
@@ -71,6 +77,7 @@ private:
     Uint32                       m_PrimitiveCount = 0;
     Uint32                       m_MaterialCount  = 0;
     Uint32                       m_LightCount     = 0;
+    Uint32                       m_VertexStride0  = 0;
 };
 
 } // namespace Diligent

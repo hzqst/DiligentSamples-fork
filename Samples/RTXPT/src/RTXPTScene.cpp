@@ -26,7 +26,9 @@
 
 #include "RTXPTScene.hpp"
 #include "FileSystem.hpp"
+#include "GraphicsAccessories.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace Diligent
@@ -101,6 +103,7 @@ void RTXPTScene::ResetLoadedData()
     m_PrimitiveCount = 0;
     m_MaterialCount  = 0;
     m_LightCount     = 0;
+    m_VertexStride0  = 0;
 }
 
 void RTXPTScene::CacheSceneData()
@@ -119,6 +122,20 @@ void RTXPTScene::CacheSceneData()
     m_PrimitiveCount         = CountPrimitives(Scene);
     m_MaterialCount          = static_cast<Uint32>(m_Model->Materials.size());
     m_LightCount             = CountLightNodes(Scene);
+
+    m_VertexStride0 = 0;
+    if (m_Model && m_Model->GetVertexBufferCount() > 0)
+    {
+        for (Uint32 i = 0; i < m_Model->GetNumVertexAttributes(); ++i)
+        {
+            const GLTF::VertexAttributeDesc& Desc = m_Model->GetVertexAttribute(i);
+            if (Desc.BufferId == 0)
+            {
+                const Uint32 RelOffset = Desc.RelativeOffset == ~0u ? 0u : Desc.RelativeOffset;
+                m_VertexStride0        = std::max(m_VertexStride0, RelOffset + GetValueSize(Desc.ValueType) * Desc.NumComponents);
+            }
+        }
+    }
 }
 
 bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
@@ -145,9 +162,11 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
     ModelCI.FileName             = m_ModelPath.c_str();
     ModelCI.ComputeBoundingBoxes = true;
     ModelCI.IndexType            = m_IndexType;
-    ModelCI.IndBufferBindFlags   = BIND_INDEX_BUFFER | BIND_RAY_TRACING;
+    ModelCI.IndBufferBindFlags   = BIND_INDEX_BUFFER | BIND_RAY_TRACING | BIND_SHADER_RESOURCE;
     for (BIND_FLAGS& BindFlags : ModelCI.VertBufferBindFlags)
         BindFlags = BIND_VERTEX_BUFFER | BIND_RAY_TRACING;
+    // Buffer 0 is the path-tracer vertex stream (POSITION + NORMAL + TEXCOORD_0); chit reads it as a StructuredBuffer<RTXPTVertex>.
+    ModelCI.VertBufferBindFlags[0] = BIND_VERTEX_BUFFER | BIND_RAY_TRACING | BIND_SHADER_RESOURCE;
 
     try
     {
@@ -177,6 +196,16 @@ void RTXPTScene::Update(double CurrTime, double ElapsedTime)
 bool RTXPTScene::HasValidContent() const
 {
     return m_Model != nullptr;
+}
+
+IBuffer* RTXPTScene::GetVertexBuffer0(IRenderDevice* pDevice, IDeviceContext* pContext) const
+{
+    return m_Model ? m_Model->GetVertexBuffer(0, pDevice, pContext) : nullptr;
+}
+
+IBuffer* RTXPTScene::GetIndexBuffer(IRenderDevice* pDevice, IDeviceContext* pContext) const
+{
+    return m_Model ? m_Model->GetIndexBuffer(pDevice, pContext) : nullptr;
 }
 
 } // namespace Diligent

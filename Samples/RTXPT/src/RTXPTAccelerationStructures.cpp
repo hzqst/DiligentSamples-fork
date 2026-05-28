@@ -202,7 +202,15 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
             GeometryNames.emplace_back((pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name) + "_" + std::to_string(PrimitiveIndex));
 
             RTXPTSubInstanceData SubEntry;
-            SubEntry.MaterialID = Primitive.MaterialId;
+            SubEntry.MaterialID  = Primitive.MaterialId;
+            SubEntry.FirstVertex = BaseVertex + Primitive.FirstVertex;
+            SubEntry.VertexCount = Primitive.VertexCount;
+            if (Primitive.HasIndices())
+            {
+                SubEntry.Flags |= kRTXPTSubInstanceFlag_Indexed;
+                SubEntry.FirstIndex = FirstIndex + Primitive.FirstIndex;
+                SubEntry.IndexCount = Primitive.IndexCount;
+            }
             SubInstances.emplace_back(SubEntry);
 
             BLASTriangleDesc TriangleDesc;

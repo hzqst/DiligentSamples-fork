@@ -42,12 +42,19 @@ namespace Diligent
 
 struct RTXPTSubInstanceData
 {
-    Uint32 MaterialID = 0;
-    Uint32 Flags      = 0;
-    Uint32 Padding0   = 0;
-    Uint32 Padding1   = 0;
+    Uint32 MaterialID  = 0;
+    Uint32 Flags       = 0;
+    Uint32 FirstIndex  = 0;
+    Uint32 IndexCount  = 0;
+    Uint32 FirstVertex = 0;
+    Uint32 VertexCount = 0;
+    Uint32 Padding0    = 0;
+    Uint32 Padding1    = 0;
 };
-static_assert(sizeof(RTXPTSubInstanceData) == 16, "RTXPTSubInstanceData layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTSubInstanceData) == 32, "RTXPTSubInstanceData layout must match RTXPTShaderShared.hlsli");
+
+// Flag bits for RTXPTSubInstanceData::Flags.
+constexpr Uint32 kRTXPTSubInstanceFlag_Indexed = 0x1u;
 
 struct RTXPTAccelerationStructureStats
 {

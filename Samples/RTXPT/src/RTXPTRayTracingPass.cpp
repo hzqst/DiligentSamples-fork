@@ -121,8 +121,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
     PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
     PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth = 1;
     PSOCreateInfo.RayTracingPipeline.ShaderRecordSize  = 0;
-    PSOCreateInfo.MaxAttributeSize = static_cast<Uint32>(sizeof(float) * 2);
-    PSOCreateInfo.MaxPayloadSize   = static_cast<Uint32>(sizeof(float) * 4);
+    PSOCreateInfo.MaxAttributeSize                     = static_cast<Uint32>(sizeof(float) * 2);
+    PSOCreateInfo.MaxPayloadSize                       = static_cast<Uint32>(sizeof(float) * 4);
 
     // Bind each bridge resource only to the stage that actually references it. DXC strips unused
     // declarations during compilation, so declaring them in stages that never call the bridge
@@ -156,8 +156,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
         return false;
     }
 
-    auto SetStatic = [&](SHADER_TYPE Stage, const char* Name, IDeviceObject* pObject)
-    {
+    auto SetStatic = [&](SHADER_TYPE Stage, const char* Name, IDeviceObject* pObject) {
         if (pObject == nullptr)
             return false;
 

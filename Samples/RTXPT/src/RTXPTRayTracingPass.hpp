@@ -44,12 +44,12 @@ namespace Diligent
 
 struct RTXPTRayTracingPassStats
 {
-    bool        Ready                = false;
-    bool        LastTraceExecuted    = false;
-    bool        MaterialBridgeBound  = false;
-    bool        SubInstanceBound     = false;
-    bool        LightBridgeBound     = false;
-    Uint32      TraceCount           = 0;
+    bool        Ready               = false;
+    bool        LastTraceExecuted   = false;
+    bool        MaterialBridgeBound = false;
+    bool        SubInstanceBound    = false;
+    bool        LightBridgeBound    = false;
+    Uint32      TraceCount          = 0;
     std::string DisabledReason;
     std::string LastError;
 };

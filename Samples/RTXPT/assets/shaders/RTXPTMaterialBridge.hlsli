@@ -37,7 +37,7 @@ namespace Bridge
     }
 } // namespace Bridge
 
-// TODO(RTXPT-Port Phase 5.2): Replace the flat base color helper with a per-hit BSDF sampler that reads roughness/metallic/normal scale/IOR and feeds the reference path tracer.
+// TODO(RTXPT-Port Phase 5.3): Replace the flat base color helper with a per-hit BSDF sampler that reads roughness/metallic/normal scale/IOR and feeds the reference path tracer.
 // TODO(RTXPT-Port Phase 5.3): Bind material textures (base color, normal, MR, emissive, occlusion) and expose helpers that respect TextureShaderAttribs UV selectors and wrap modes.
 
 #endif // RTXPT_MATERIAL_BRIDGE_HLSLI

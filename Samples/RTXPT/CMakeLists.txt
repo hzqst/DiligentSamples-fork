@@ -31,9 +31,10 @@ set(SHADERS
     assets/shaders/RTXPTShaderShared.hlsli
     assets/shaders/RTXPTSceneBridge.hlsli
     assets/shaders/RTXPTMaterialBridge.hlsli
-    assets/shaders/RTXPTMinimal.rgen
-    assets/shaders/RTXPTMinimal.rmiss
-    assets/shaders/RTXPTMinimal.rchit
+    assets/shaders/RTXPTRandom.hlsli
+    assets/shaders/RTXPTReference.rgen
+    assets/shaders/RTXPTReference.rmiss
+    assets/shaders/RTXPTReference.rchit
     assets/shaders/RTXPTDebugCompute.csh
     assets/shaders/RTXPTBlit.vsh
     assets/shaders/RTXPTBlit.psh

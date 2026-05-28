@@ -226,6 +226,9 @@ void RTXPTSample::CreatePhase4Passes()
                                 m_Materials.GetMaterialBuffer(),
                                 m_AccelerationStructures.GetSubInstanceBuffer(),
                                 m_Lights.GetLightBuffer(),
+                                m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
+                                m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
+                                m_Scene.GetIndexType(),
                                 m_AccelerationStructures.GetTLAS(),
                                 m_FeatureCaps.RayTracing,
                                 m_FeatureCaps.StandaloneRayTracingShaders);
@@ -285,6 +288,7 @@ void RTXPTSample::Render()
     const bool TraceExecuted =
         m_RayTracingPass.Trace(m_pImmediateContext,
                                m_RenderTargets.GetOutputColorUAV(),
+                               m_RenderTargets.GetAccumColorUAV(),
                                m_RenderTargets.GetWidth(),
                                m_RenderTargets.GetHeight());
 
@@ -381,8 +385,20 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
     ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
     ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
+    ImGui::Text("Vertex buffer: %s", RTPassStats.VertexBufferBound ? "bound" : "fallback");
+    ImGui::Text("Index buffer: %s", RTPassStats.IndexBufferBound ? "bound" : "fallback");
+    ImGui::Text("Accumulation target: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA8 fallback)");
+    ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
     ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
     ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
+    int MaxBouncesUI = static_cast<int>(m_MaxBounces);
+    if (ImGui::SliderInt("Max bounces", &MaxBouncesUI, 1, 16))
+    {
+        m_MaxBounces = static_cast<Uint32>(MaxBouncesUI);
+        RequestAccumulationReset("Max bounces changed");
+    }
+    if (ImGui::Button("Reset accumulation"))
+        RequestAccumulationReset("User reset");
     if (!RTPassStats.DisabledReason.empty())
         ImGui::TextWrapped("TraceRays disabled: %s", RTPassStats.DisabledReason.c_str());
     if (!RTPassStats.LastError.empty())
@@ -402,7 +418,8 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
     ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
     ImGui::Text("TODO(RTXPT-Port Phase 4): expose stable-plane, RTXDI, light feedback, and denoising-guide pass toggles after their shaders are ported.");
-    ImGui::Text("TODO(RTXPT-Port Phase 5.2): swap closest-hit flat shading for the reference path tracer once shader layer 4 lands.");
+    ImGui::Text("TODO(RTXPT-Port Phase 5.3): swap flat Lambertian for the full BSDF (GGX + transmission + alpha-test).");
+    ImGui::Text("TODO(RTXPT-Port Phase 5.5): add explicit light sampling and MIS once the lighting baker is restored.");
     ImGui::End();
 }
 

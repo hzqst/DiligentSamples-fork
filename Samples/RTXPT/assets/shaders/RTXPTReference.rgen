@@ -1,0 +1,113 @@
+#include "RTXPTSceneBridge.hlsli"
+#include "RTXPTRandom.hlsli"
+
+RaytracingAccelerationStructure                g_TLAS;
+VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   g_OutputColor;
+VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> g_AccumColor;
+
+static float3 ToneMapACES(float3 X)
+{
+    // Krzysztof Narkowicz fitted ACES curve. Matches Phase 5.1 visual mood when the accumulation buffer
+    // is converted back to rgba8 for the blit pass.
+    const float A = 2.51;
+    const float B = 0.03;
+    const float C = 2.43;
+    const float D = 0.59;
+    const float E = 0.14;
+    return saturate((X * (A * X + B)) / (X * (C * X + D) + E));
+}
+
+[shader("raygeneration")]
+void main()
+{
+    const uint2 Pixel      = DispatchRaysIndex().xy;
+    const uint2 Dimensions = DispatchRaysDimensions().xy;
+
+    const uint  FrameSeed = asuint(g_FrameConstants.ViewportSize_FrameIdx.w);
+    RTXPTRandom Rng       = RTXPTRandom_Init(Pixel, FrameSeed);
+
+    // Jitter inside the pixel - gives free anti-aliasing across accumulated samples.
+    const float2 Jitter = NextFloat2(Rng);
+    const float2 UV     = (float2(Pixel) + Jitter) / float2(Dimensions);
+    const float2 NDC    = UV * 2.0 - 1.0;
+
+    const float4 WorldPos4 = mul(float4(NDC, 1.0, 1.0), g_FrameConstants.ViewProjInv);
+    const float3 Origin    = g_FrameConstants.CameraPosition_Time.xyz;
+    float3       RayOrigin = Origin;
+    float3       RayDir    = normalize(WorldPos4.xyz / WorldPos4.w - Origin);
+
+    float3 Throughput   = float3(1.0, 1.0, 1.0);
+    float3 PathRadiance = float3(0.0, 0.0, 0.0);
+
+    const uint MaxBounces = max(g_FrameConstants.PathTracer.MaxBounces, 1u);
+
+    [loop]
+    for (uint Bounce = 0u; Bounce < MaxBounces; ++Bounce)
+    {
+        RayDesc Ray;
+        Ray.Origin    = RayOrigin;
+        Ray.Direction = RayDir;
+        Ray.TMin      = 1e-3;
+        Ray.TMax      = 10000.0;
+
+        RTXPTPathTracerPayload Payload;
+        Payload.WorldPos    = float3(0.0, 0.0, 0.0);
+        Payload.HitDistance = -1.0;
+        Payload.WorldNormal = float3(0.0, 1.0, 0.0);
+        Payload.HitFlag     = 0u;
+        Payload.BaseColor   = float3(0.0, 0.0, 0.0);
+        Payload.Emission    = float3(0.0, 0.0, 0.0);
+        Payload.Padding0    = 0.0;
+        Payload.Padding1    = 0.0;
+
+        TraceRay(g_TLAS,
+                 RAY_FLAG_FORCE_OPAQUE,
+                 0xFF,
+                 0,
+                 1,
+                 0,
+                 Ray,
+                 Payload);
+
+        // Accumulate any emission the payload picked up (sky on miss, future emissives on hit).
+        PathRadiance += Throughput * Payload.Emission;
+
+        if (Payload.HitFlag == 0u)
+            break;
+
+        // Lambertian bounce: cosine-weighted hemisphere sample. The throughput update for a
+        // cosine-weighted sample of a Lambertian BRDF is just baseColor (the cos and pdf cancel),
+        // which matches the standard reference path tracer derivation.
+        float        Pdf     = 0.0;
+        const float2 Rand    = NextFloat2(Rng);
+        const float3 NextDir = SampleCosineHemisphere(Rand, Payload.WorldNormal, Pdf);
+        if (Pdf <= 0.0)
+            break;
+
+        Throughput *= Payload.BaseColor;
+
+        // Offset the next ray slightly along the normal to avoid self-intersection.
+        const float Bias = max(1e-4, 1e-3 * Payload.HitDistance);
+        RayOrigin        = Payload.WorldPos + Payload.WorldNormal * Bias;
+        RayDir           = NextDir;
+    }
+
+    // Blend into the accumulation buffer. ResetAccumulation == 1 means this is the first sample after a reset.
+    float3     Accumulated = PathRadiance;
+    const uint Reset       = g_FrameConstants.PathTracer.ResetAccumulation;
+    const uint Frame       = max(g_FrameConstants.PathTracer.AccumulationFrame, 1u);
+    if (Reset == 0u)
+    {
+        const float4 Previous = g_AccumColor[Pixel];
+        const float  InvN     = 1.0 / float(Frame);
+        Accumulated           = Previous.rgb + (PathRadiance - Previous.rgb) * InvN;
+    }
+    g_AccumColor[Pixel] = float4(Accumulated, 1.0);
+
+    // OutputColor is the rgba8 image consumed by the existing blit/compute chain.
+    g_OutputColor[Pixel] = float4(ToneMapACES(Accumulated), 1.0);
+}
+
+// TODO(RTXPT-Port Phase 5.3): Replace single-lobe Lambertian sampling with a proper BSDF (GGX + diffuse + transmission).
+// TODO(RTXPT-Port Phase 5.5): Add explicit light sampling and MIS once the lighting baker is restored.
+// TODO(RTXPT-Port Phase 6): Move tone mapping from raygen into the dedicated post-process chain.

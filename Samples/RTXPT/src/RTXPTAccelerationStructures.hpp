@@ -40,6 +40,15 @@
 namespace Diligent
 {
 
+struct RTXPTSubInstanceData
+{
+    Uint32 MaterialID = 0;
+    Uint32 Flags      = 0;
+    Uint32 Padding0   = 0;
+    Uint32 Padding1   = 0;
+};
+static_assert(sizeof(RTXPTSubInstanceData) == 16, "RTXPTSubInstanceData layout must match RTXPTShaderShared.hlsli");
+
 struct RTXPTAccelerationStructureStats
 {
     bool        RayTracingSupported = false;
@@ -47,6 +56,7 @@ struct RTXPTAccelerationStructureStats
     Uint32      GeometryCount       = 0;
     Uint32      InstanceCount       = 0;
     Uint32      BLASCount           = 0;
+    Uint32      SubInstanceCount    = 0;
     Uint64      BLASScratchSize     = 0;
     Uint64      TLASScratchSize     = 0;
     std::string DisabledReason;
@@ -69,6 +79,7 @@ public:
     bool IsBuilt() const { return m_Stats.Built && m_TLAS; }
 
     ITopLevelAS* GetTLAS() const { return m_TLAS; }
+    IBuffer*     GetSubInstanceBuffer() const { return m_SubInstanceBuffer; }
 
     const RTXPTAccelerationStructureStats& GetStats() const { return m_Stats; }
 
@@ -85,6 +96,7 @@ private:
     RefCntAutoPtr<IBuffer>          m_BLASScratch;
     RefCntAutoPtr<IBuffer>          m_TLASScratch;
     RefCntAutoPtr<IBuffer>          m_InstanceBuffer;
+    RefCntAutoPtr<IBuffer>          m_SubInstanceBuffer;
     RTXPTAccelerationStructureStats m_Stats;
 };
 

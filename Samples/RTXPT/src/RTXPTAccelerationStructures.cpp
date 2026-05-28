@@ -100,6 +100,7 @@ void RTXPTAccelerationStructures::Reset()
     m_BLASScratch.Release();
     m_TLASScratch.Release();
     m_InstanceBuffer.Release();
+    m_SubInstanceBuffer.Release();
     m_Stats = {};
 }
 
@@ -167,8 +168,10 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
 
     std::vector<TLASBuildInstanceData> Instances;
     std::vector<std::string>           InstanceNames;
+    std::vector<RTXPTSubInstanceData>  SubInstances;
     Instances.reserve(Scene.LinearNodes.size());
     InstanceNames.reserve(Scene.LinearNodes.size());
+    SubInstances.reserve(Scene.LinearNodes.size());
 
     for (const GLTF::Node* pNode : Scene.LinearNodes)
     {
@@ -193,6 +196,10 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
                 continue;
 
             GeometryNames.emplace_back((pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name) + "_" + std::to_string(PrimitiveIndex));
+
+            RTXPTSubInstanceData SubEntry;
+            SubEntry.MaterialID = Primitive.MaterialId;
+            SubInstances.emplace_back(SubEntry);
 
             BLASTriangleDesc TriangleDesc;
             TriangleDesc.GeometryName         = GeometryNames.back().c_str();
@@ -332,9 +339,32 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
     TLASAttribs.ScratchBufferTransitionMode  = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
     pContext->BuildTLAS(TLASAttribs);
 
-    m_Stats.BLASCount     = static_cast<Uint32>(m_BLASRecords.size());
-    m_Stats.InstanceCount = static_cast<Uint32>(Instances.size());
-    m_Stats.Built         = true;
+    if (SubInstances.empty())
+    {
+        // Always upload at least one dummy entry so the bridge buffer can be bound unconditionally.
+        SubInstances.push_back(RTXPTSubInstanceData{});
+    }
+
+    BufferDesc SubInstanceDesc;
+    SubInstanceDesc.Name              = "RTXPT sub-instance buffer";
+    SubInstanceDesc.Usage             = USAGE_IMMUTABLE;
+    SubInstanceDesc.BindFlags         = BIND_SHADER_RESOURCE;
+    SubInstanceDesc.Mode              = BUFFER_MODE_STRUCTURED;
+    SubInstanceDesc.ElementByteStride = sizeof(RTXPTSubInstanceData);
+    SubInstanceDesc.Size              = sizeof(RTXPTSubInstanceData) * SubInstances.size();
+
+    BufferData SubInstanceData{SubInstances.data(), SubInstanceDesc.Size};
+    pDevice->CreateBuffer(SubInstanceDesc, &SubInstanceData, &m_SubInstanceBuffer);
+    if (!m_SubInstanceBuffer)
+    {
+        m_Stats.LastError = "Failed to create RTXPT sub-instance buffer";
+        return false;
+    }
+
+    m_Stats.BLASCount        = static_cast<Uint32>(m_BLASRecords.size());
+    m_Stats.InstanceCount    = static_cast<Uint32>(Instances.size());
+    m_Stats.SubInstanceCount = static_cast<Uint32>(SubInstances.size());
+    m_Stats.Built            = true;
     return true;
 }
 

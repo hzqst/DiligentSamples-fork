@@ -204,6 +204,9 @@ void RTXPTSample::CreatePhase4Passes()
                                 m_pImmediateContext,
                                 m_pEngineFactory,
                                 m_FrameConstantsCB,
+                                m_Materials.GetMaterialBuffer(),
+                                m_AccelerationStructures.GetSubInstanceBuffer(),
+                                m_Lights.GetLightBuffer(),
                                 m_AccelerationStructures.GetTLAS(),
                                 m_FeatureCaps.RayTracing,
                                 m_FeatureCaps.StandaloneRayTracingShaders);
@@ -320,6 +323,7 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("BLAS: %u", ASStats.BLASCount);
     ImGui::Text("TLAS instances: %u", ASStats.InstanceCount);
     ImGui::Text("RT geometries: %u", ASStats.GeometryCount);
+    ImGui::Text("Sub-instances: %u", ASStats.SubInstanceCount);
     if (!ASStats.DisabledReason.empty())
         ImGui::TextWrapped("AS disabled: %s", ASStats.DisabledReason.c_str());
     if (!ASStats.LastError.empty())
@@ -333,6 +337,9 @@ void RTXPTSample::UpdateUI()
     ImGui::Separator();
     ImGui::Text("OutputColor: %s", m_RenderTargets.IsValid() ? "created" : "missing");
     ImGui::Text("TraceRays pass: %s", m_RayTracingPass.IsReady() ? "ready" : "not ready");
+    ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
+    ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
+    ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
     ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
     ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
     if (!RTPassStats.DisabledReason.empty())
@@ -354,6 +361,7 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
     ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
     ImGui::Text("TODO(RTXPT-Port Phase 4): expose stable-plane, RTXDI, light feedback, and denoising-guide pass toggles after their shaders are ported.");
+    ImGui::Text("TODO(RTXPT-Port Phase 5.2): swap closest-hit flat shading for the reference path tracer once shader layer 4 lands.");
     ImGui::End();
 }
 

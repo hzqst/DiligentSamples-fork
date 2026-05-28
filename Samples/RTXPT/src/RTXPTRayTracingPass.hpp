@@ -29,6 +29,7 @@
 #include <string>
 
 #include "Buffer.h"
+#include "BufferView.h"
 #include "DeviceContext.h"
 #include "EngineFactory.h"
 #include "PipelineState.h"
@@ -44,12 +45,15 @@ namespace Diligent
 
 struct RTXPTRayTracingPassStats
 {
-    bool        Ready               = false;
-    bool        LastTraceExecuted   = false;
-    bool        MaterialBridgeBound = false;
-    bool        SubInstanceBound    = false;
-    bool        LightBridgeBound    = false;
-    Uint32      TraceCount          = 0;
+    bool        Ready                = false;
+    bool        LastTraceExecuted    = false;
+    bool        MaterialBridgeBound  = false;
+    bool        SubInstanceBound     = false;
+    bool        LightBridgeBound     = false;
+    bool        VertexBufferBound    = false;
+    bool        IndexBufferBound     = false;
+    bool        AccumulationBound    = false;
+    Uint32      TraceCount           = 0;
     std::string DisabledReason;
     std::string LastError;
 };
@@ -66,11 +70,18 @@ public:
                     IBuffer*        pMaterialBuffer,
                     IBuffer*        pSubInstanceBuffer,
                     IBuffer*        pLightBuffer,
+                    IBuffer*        pVertexBuffer,
+                    IBuffer*        pIndexBuffer,
+                    VALUE_TYPE      IndexValueType,
                     ITopLevelAS*    pTLAS,
                     bool            RayTracingSupported,
                     bool            StandaloneRTShadersSupported);
 
-    bool Trace(IDeviceContext* pContext, ITextureView* pOutputUAV, Uint32 Width, Uint32 Height);
+    bool Trace(IDeviceContext* pContext,
+               ITextureView*   pOutputUAV,
+               ITextureView*   pAccumulationUAV,
+               Uint32          Width,
+               Uint32          Height);
 
     bool                            IsReady() const { return m_Stats.Ready; }
     const RTXPTRayTracingPassStats& GetStats() const { return m_Stats; }
@@ -80,6 +91,7 @@ private:
     RefCntAutoPtr<IShaderResourceBinding> m_SRB;
     RefCntAutoPtr<IShaderBindingTable>    m_SBT;
     RefCntAutoPtr<ITopLevelAS>            m_TLAS;
+    RefCntAutoPtr<IBufferView>            m_IndexBufferView;
     RTXPTRayTracingPassStats              m_Stats;
 };
 

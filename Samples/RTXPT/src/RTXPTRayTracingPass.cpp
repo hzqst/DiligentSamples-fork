@@ -26,8 +26,6 @@
 
 #include "RTXPTRayTracingPass.hpp"
 
-#include <algorithm>
-
 #include "GraphicsTypesX.hpp"
 
 namespace Diligent
@@ -39,6 +37,7 @@ void RTXPTRayTracingPass::Reset()
     m_SRB.Release();
     m_SBT.Release();
     m_TLAS.Release();
+    m_IndexBufferView.Release();
     m_Stats = {};
 }
 
@@ -49,6 +48,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
                                      IBuffer*        pMaterialBuffer,
                                      IBuffer*        pSubInstanceBuffer,
                                      IBuffer*        pLightBuffer,
+                                     IBuffer*        pVertexBuffer,
+                                     IBuffer*        pIndexBuffer,
+                                     VALUE_TYPE      IndexValueType,
                                      ITopLevelAS*    pTLAS,
                                      bool            RayTracingSupported,
                                      bool            StandaloneRTShadersSupported)
@@ -73,6 +75,12 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
         return false;
     }
 
+    if (pVertexBuffer == nullptr || pIndexBuffer == nullptr)
+    {
+        m_Stats.DisabledReason = "Vertex or index buffer is unavailable for the reference path tracer";
+        return false;
+    }
+
     m_TLAS = pTLAS;
 
     RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
@@ -88,53 +96,53 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
 
     RefCntAutoPtr<IShader> pRayGen;
     ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_GEN;
-    ShaderCI.Desc.Name       = "RTXPT minimal raygen";
-    ShaderCI.FilePath        = "RTXPTMinimal.rgen";
+    ShaderCI.Desc.Name       = "RTXPT reference raygen";
+    ShaderCI.FilePath        = "RTXPTReference.rgen";
     ShaderCI.EntryPoint      = "main";
     pDevice->CreateShader(ShaderCI, &pRayGen);
 
     RefCntAutoPtr<IShader> pMiss;
     ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
-    ShaderCI.Desc.Name       = "RTXPT minimal miss";
-    ShaderCI.FilePath        = "RTXPTMinimal.rmiss";
+    ShaderCI.Desc.Name       = "RTXPT reference miss";
+    ShaderCI.FilePath        = "RTXPTReference.rmiss";
     ShaderCI.EntryPoint      = "main";
     pDevice->CreateShader(ShaderCI, &pMiss);
 
     RefCntAutoPtr<IShader> pClosestHit;
     ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_CLOSEST_HIT;
-    ShaderCI.Desc.Name       = "RTXPT minimal closest hit";
-    ShaderCI.FilePath        = "RTXPTMinimal.rchit";
+    ShaderCI.Desc.Name       = "RTXPT reference closest hit";
+    ShaderCI.FilePath        = "RTXPTReference.rchit";
     ShaderCI.EntryPoint      = "main";
     pDevice->CreateShader(ShaderCI, &pClosestHit);
 
     if (!pRayGen || !pMiss || !pClosestHit)
     {
-        m_Stats.LastError = "Failed to create RTXPT minimal ray tracing shaders";
+        m_Stats.LastError = "Failed to create RTXPT reference ray tracing shaders";
         return false;
     }
 
     RayTracingPipelineStateCreateInfoX PSOCreateInfo;
-    PSOCreateInfo.PSODesc.Name         = "RTXPT minimal RT PSO";
+    PSOCreateInfo.PSODesc.Name         = "RTXPT reference RT PSO";
     PSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_RAY_TRACING;
     PSOCreateInfo.AddGeneralShader("Main", pRayGen);
     PSOCreateInfo.AddGeneralShader("PrimaryMiss", pMiss);
     PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
-    PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth = 1;
+    PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth = 1; // Raygen drives bounces in a loop; chit/miss do not recurse.
     PSOCreateInfo.RayTracingPipeline.ShaderRecordSize  = 0;
     PSOCreateInfo.MaxAttributeSize                     = static_cast<Uint32>(sizeof(float) * 2);
-    PSOCreateInfo.MaxPayloadSize                       = static_cast<Uint32>(sizeof(float) * 4);
+    // RTXPTPathTracerPayload = 4 * float4 = 64 bytes.
+    PSOCreateInfo.MaxPayloadSize = static_cast<Uint32>(sizeof(float) * 16);
 
-    // Bind each bridge resource only to the stage that actually references it. DXC strips unused
-    // declarations during compilation, so declaring them in stages that never call the bridge
-    // helpers would leave dangling layout entries that GetStaticVariableByName cannot resolve.
-    //
-    // Stage map for Phase 5.1:
-    //   g_FrameConstants  -> raygen    (camera state for primary rays)
-    //   g_TLAS            -> raygen (the only stage that issues TraceRay)
-    //   g_Materials       -> closest hit (Bridge::GetMaterial)
-    //   g_SubInstanceData -> closest hit (Bridge::GetSubInstanceData)
-    //   g_Lights          -> miss      (Bridge::GetLight for the sun tint helper)
-    //   g_OutputColor     -> raygen    (write target)
+    // Stage map for Phase 5.2:
+    //   g_FrameConstants   -> raygen    (camera + path tracer settings)
+    //   g_TLAS             -> raygen
+    //   g_Materials        -> closest hit
+    //   g_SubInstanceData  -> closest hit
+    //   g_VertexBuffer     -> closest hit
+    //   g_IndexBuffer      -> closest hit
+    //   g_Lights           -> miss
+    //   g_OutputColor      -> raygen (rgba8 display image)
+    //   g_AccumColor       -> raygen (rgba32f accumulation image)
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
@@ -142,14 +150,17 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
         .AddVariable(SHADER_TYPE_RAY_GEN, "g_TLAS", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_RAY_CLOSEST_HIT, "g_Materials", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_RAY_CLOSEST_HIT, "g_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_RAY_CLOSEST_HIT, "g_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_RAY_CLOSEST_HIT, "g_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_RAY_MISS, "g_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_RAY_GEN, "g_OutputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
+        .AddVariable(SHADER_TYPE_RAY_GEN, "g_OutputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "g_AccumColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
     pDevice->CreateRayTracingPipelineState(PSOCreateInfo, &m_PSO);
     if (!m_PSO)
     {
-        m_Stats.LastError = "Failed to create RTXPT minimal RT PSO";
+        m_Stats.LastError = "Failed to create RTXPT reference RT PSO";
         return false;
     }
 
@@ -174,22 +185,39 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
         return false;
     }
 
-    IDeviceObject* pMaterialsView   = nullptr;
-    IDeviceObject* pSubInstanceView = nullptr;
-    IDeviceObject* pLightsView      = nullptr;
+    IDeviceObject* pMaterialsView   = pMaterialBuffer != nullptr ? pMaterialBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+    IDeviceObject* pSubInstanceView = pSubInstanceBuffer != nullptr ? pSubInstanceBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+    IDeviceObject* pLightsView      = pLightBuffer != nullptr ? pLightBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+    IDeviceObject* pVertexView      = pVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
 
-    if (pMaterialBuffer != nullptr)
-        pMaterialsView = pMaterialBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-    if (pSubInstanceBuffer != nullptr)
-        pSubInstanceView = pSubInstanceBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-    if (pLightBuffer != nullptr)
-        pLightsView = pLightBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+    // The GLTF loader creates the index buffer in BUFFER_MODE_FORMATTED but does not pre-create a typed view;
+    // create one here so HLSL can declare it as Buffer<uint>.
+    if (IndexValueType != VT_UINT16 && IndexValueType != VT_UINT32)
+    {
+        m_Stats.LastError = "Reference path tracer requires VT_UINT16 or VT_UINT32 indices";
+        return false;
+    }
+    BufferViewDesc IndexViewDesc;
+    IndexViewDesc.Name                  = "RTXPT reference index buffer SRV";
+    IndexViewDesc.ViewType              = BUFFER_VIEW_SHADER_RESOURCE;
+    IndexViewDesc.Format.ValueType      = IndexValueType;
+    IndexViewDesc.Format.NumComponents  = 1;
+    IndexViewDesc.Format.IsNormalized   = false;
+    pIndexBuffer->CreateView(IndexViewDesc, &m_IndexBufferView);
+    if (!m_IndexBufferView)
+    {
+        m_Stats.LastError = "Failed to create RTXPT index buffer view";
+        return false;
+    }
 
     m_Stats.MaterialBridgeBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_Materials", pMaterialsView);
     m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_SubInstanceData", pSubInstanceView);
     m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_MISS, "g_Lights", pLightsView);
+    m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_VertexBuffer", pVertexView);
+    m_Stats.IndexBufferBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_IndexBuffer", m_IndexBufferView);
 
-    if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound)
+    if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound ||
+        !m_Stats.VertexBufferBound || !m_Stats.IndexBufferBound)
     {
         m_Stats.LastError = "Failed to bind required RTXPT bridge buffers";
         return false;
@@ -198,17 +226,17 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
     if (!m_SRB)
     {
-        m_Stats.LastError = "Failed to create RTXPT minimal RT SRB";
+        m_Stats.LastError = "Failed to create RTXPT reference RT SRB";
         return false;
     }
 
     ShaderBindingTableDesc SBTDesc;
-    SBTDesc.Name = "RTXPT minimal SBT";
+    SBTDesc.Name = "RTXPT reference SBT";
     SBTDesc.pPSO = m_PSO;
     pDevice->CreateSBT(SBTDesc, &m_SBT);
     if (!m_SBT)
     {
-        m_Stats.LastError = "Failed to create RTXPT minimal SBT";
+        m_Stats.LastError = "Failed to create RTXPT reference SBT";
         return false;
     }
 
@@ -217,27 +245,33 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
     m_SBT->BindHitGroupForTLAS(m_TLAS, 0, "PrimaryHit");
     pContext->UpdateSBT(m_SBT);
 
-    // TODO(RTXPT-Port Phase 4): Restore stable-plane pre-pass and fill-stable-planes dispatch; current path traces one minimal primary-ray pass.
-    // TODO(RTXPT-Port Phase 5.2): Replace flat-shaded closest hit with the reference path tracer core (BxDF + multi-bounce + accumulation).
     m_Stats.Ready = true;
     return true;
 }
 
-bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext, ITextureView* pOutputUAV, Uint32 Width, Uint32 Height)
+bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext,
+                                ITextureView*   pOutputUAV,
+                                ITextureView*   pAccumulationUAV,
+                                Uint32          Width,
+                                Uint32          Height)
 {
     m_Stats.LastTraceExecuted = false;
+    m_Stats.AccumulationBound = false;
 
-    if (!IsReady() || pOutputUAV == nullptr || Width == 0 || Height == 0)
+    if (!IsReady() || pOutputUAV == nullptr || pAccumulationUAV == nullptr || Width == 0 || Height == 0)
         return false;
 
     IShaderResourceVariable* pOutputColorVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "g_OutputColor");
-    if (pOutputColorVar == nullptr)
+    IShaderResourceVariable* pAccumColorVar  = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "g_AccumColor");
+    if (pOutputColorVar == nullptr || pAccumColorVar == nullptr)
     {
-        m_Stats.LastError = "Failed to find RTXPT output color binding";
+        m_Stats.LastError = "Failed to find RTXPT output bindings";
         return false;
     }
 
     pOutputColorVar->Set(pOutputUAV);
+    pAccumColorVar->Set(pAccumulationUAV);
+    m_Stats.AccumulationBound = true;
 
     pContext->SetPipelineState(m_PSO);
     pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

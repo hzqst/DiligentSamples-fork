@@ -38,6 +38,9 @@ namespace Diligent
 namespace
 {
 
+constexpr Uint32 MaxTLASCustomID         = (1u << 24) - 1u;
+constexpr Uint32 MaxSubInstanceDataCount = MaxTLASCustomID + 1u;
+
 struct PositionLayout
 {
     bool       Valid          = false;
@@ -173,6 +176,7 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
     InstanceNames.reserve(Scene.LinearNodes.size());
     SubInstances.reserve(Scene.LinearNodes.size());
 
+    Uint32 SubInstanceBase = 0;
     for (const GLTF::Node* pNode : Scene.LinearNodes)
     {
         if (pNode == nullptr || pNode->pMesh == nullptr)
@@ -240,6 +244,12 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
         Record.Name                = "RTXPT BLAS " + NodeName + " node_" + std::to_string(pNode->Index);
         Record.GeometryCount       = static_cast<Uint32>(TriangleDescs.size());
 
+        if (Uint64{SubInstanceBase} + Uint64{Record.GeometryCount} > Uint64{MaxSubInstanceDataCount})
+        {
+            m_Stats.LastError = "RTXPT sub-instance table exceeds the 24-bit TLAS CustomId range";
+            return false;
+        }
+
         BottomLevelASDesc BLASDesc;
         BLASDesc.Name          = Record.Name.c_str();
         BLASDesc.Flags         = RAYTRACING_BUILD_AS_NONE;
@@ -282,11 +292,12 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
         Instance.InstanceName = InstanceNames.back().c_str();
         Instance.pBLAS        = Record.BLAS;
         Instance.Transform    = ToInstanceMatrix(Transforms.NodeGlobalMatrices[pNode->Index]);
-        Instance.CustomId     = static_cast<Uint32>(Instances.size());
+        Instance.CustomId     = SubInstanceBase;
         Instance.Flags        = RAYTRACING_INSTANCE_NONE;
         Instance.Mask         = 0xFF;
         Instances.emplace_back(Instance);
 
+        SubInstanceBase += Record.GeometryCount;
         m_Stats.GeometryCount += Record.GeometryCount;
         m_BLASRecords.emplace_back(std::move(Record));
     }

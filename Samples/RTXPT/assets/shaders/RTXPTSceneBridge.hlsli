@@ -10,10 +10,13 @@ StructuredBuffer<RTXPTLightData>       g_Lights;
 
 namespace Bridge
 {
+#ifdef RTXPT_ENABLE_HIT_BRIDGE
     // Linear index for the SubInstanceData entry that describes the currently hit (instance, geometry).
+    // C++ stores the per-instance sub-instance base in InstanceID(), and GeometryIndex() is used to
+    // select the geometry within the BLAS.
     uint GetSubInstanceIndex()
     {
-        return InstanceContributionToHitGroupIndex() + GeometryIndex();
+        return InstanceID() + GeometryIndex();
     }
 
     // Returns the SubInstanceData entry for the current hit.
@@ -32,6 +35,7 @@ namespace Bridge
         g_SubInstanceData.GetDimensions(Count, Stride);
         return Count > 0;
     }
+#endif
 
     // Total active light count. May be zero on scenes without lights.
     uint GetLightCount()

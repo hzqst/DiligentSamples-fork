@@ -1,3 +1,4 @@
+#define RTXPT_ENABLE_HIT_BRIDGE 1
 #include "RTXPTSceneBridge.hlsli"
 #include "RTXPTMaterialBridge.hlsli"
 

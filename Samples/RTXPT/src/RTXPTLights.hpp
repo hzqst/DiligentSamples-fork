@@ -43,6 +43,7 @@ struct RTXPTLightData
     float4 DirectionType  = float4{0, -1, 0, 0};
     float4 SpotAngles     = float4{0, 0, 0, 0};
 };
+static_assert(sizeof(RTXPTLightData) == 64, "RTXPTLightData layout must match RTXPTShaderShared.hlsli");
 
 struct RTXPTLightStats
 {

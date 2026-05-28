@@ -27,10 +27,25 @@
 #include "RTXPTMaterials.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <vector>
 
 namespace Diligent
 {
+
+namespace
+{
+
+using MaterialShaderAttribs = GLTF::Material::ShaderAttribs;
+static_assert(sizeof(MaterialShaderAttribs) == 96, "MaterialShaderAttribs layout must match RTXPTShaderShared.hlsli");
+static_assert(offsetof(MaterialShaderAttribs, BaseColorFactor) == 0, "Unexpected BaseColorFactor offset");
+static_assert(offsetof(MaterialShaderAttribs, EmissiveFactor) == 16, "Unexpected EmissiveFactor offset");
+static_assert(offsetof(MaterialShaderAttribs, SpecularFactor) == 32, "Unexpected SpecularFactor offset");
+static_assert(offsetof(MaterialShaderAttribs, Workflow) == 48, "Unexpected Workflow offset");
+static_assert(offsetof(MaterialShaderAttribs, RoughnessFactor) == 64, "Unexpected RoughnessFactor offset");
+static_assert(offsetof(MaterialShaderAttribs, CustomData) == 80, "Unexpected CustomData offset");
+
+} // namespace
 
 void RTXPTMaterials::Reset()
 {

@@ -83,7 +83,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
     ShaderCI.SourceLanguage                  = SHADER_SOURCE_LANGUAGE_HLSL;
     ShaderCI.ShaderCompiler                  = SHADER_COMPILER_DXC;
     ShaderCI.CompileFlags                    = SHADER_COMPILE_FLAG_PACK_MATRIX_ROW_MAJOR;
-    ShaderCI.HLSLVersion                     = {6, 3};
+    ShaderCI.HLSLVersion                     = {6, 5};
     ShaderCI.pShaderSourceStreamFactory      = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pRayGen;
@@ -129,19 +129,16 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
     // helpers would leave dangling layout entries that GetStaticVariableByName cannot resolve.
     //
     // Stage map for Phase 5.1:
-    //   g_FrameConstants  -> raygen + miss + closest hit (all three sample frame state)
+    //   g_FrameConstants  -> raygen    (camera state for primary rays)
     //   g_TLAS            -> raygen (the only stage that issues TraceRay)
     //   g_Materials       -> closest hit (Bridge::GetMaterial)
     //   g_SubInstanceData -> closest hit (Bridge::GetSubInstanceData)
     //   g_Lights          -> miss      (Bridge::GetLight for the sun tint helper)
     //   g_OutputColor     -> raygen    (write target)
-    constexpr SHADER_TYPE FrameStages =
-        SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS | SHADER_TYPE_RAY_CLOSEST_HIT;
-
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
-        .AddVariable(FrameStages, "g_FrameConstants", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "g_FrameConstants", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_RAY_GEN, "g_TLAS", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_RAY_CLOSEST_HIT, "g_Materials", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_RAY_CLOSEST_HIT, "g_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
@@ -168,10 +165,14 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
         return true;
     };
 
-    SetStatic(SHADER_TYPE_RAY_GEN, "g_FrameConstants", pFrameConstants);
-    SetStatic(SHADER_TYPE_RAY_MISS, "g_FrameConstants", pFrameConstants);
-    SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_FrameConstants", pFrameConstants);
-    SetStatic(SHADER_TYPE_RAY_GEN, "g_TLAS", m_TLAS);
+    const bool FrameConstantsBound = SetStatic(SHADER_TYPE_RAY_GEN, "g_FrameConstants", pFrameConstants);
+    const bool TLASBound           = SetStatic(SHADER_TYPE_RAY_GEN, "g_TLAS", m_TLAS);
+
+    if (!FrameConstantsBound || !TLASBound)
+    {
+        m_Stats.LastError = "Failed to bind required RTXPT frame constants or TLAS";
+        return false;
+    }
 
     IDeviceObject* pMaterialsView   = nullptr;
     IDeviceObject* pSubInstanceView = nullptr;
@@ -188,9 +189,10 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*  pDevice,
     m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_SubInstanceData", pSubInstanceView);
     m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_MISS, "g_Lights", pLightsView);
 
-    if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound)
+    if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound)
     {
-        m_Stats.LastError = "Material or sub-instance bridge buffers were not bound; closest-hit will use barycentric fallback";
+        m_Stats.LastError = "Failed to bind required RTXPT bridge buffers";
+        return false;
     }
 
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
@@ -228,7 +230,14 @@ bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext, ITextureView* pOutputU
     if (!IsReady() || pOutputUAV == nullptr || Width == 0 || Height == 0)
         return false;
 
-    m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "g_OutputColor")->Set(pOutputUAV);
+    IShaderResourceVariable* pOutputColorVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "g_OutputColor");
+    if (pOutputColorVar == nullptr)
+    {
+        m_Stats.LastError = "Failed to find RTXPT output color binding";
+        return false;
+    }
+
+    pOutputColorVar->Set(pOutputUAV);
 
     pContext->SetPipelineState(m_PSO);
     pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

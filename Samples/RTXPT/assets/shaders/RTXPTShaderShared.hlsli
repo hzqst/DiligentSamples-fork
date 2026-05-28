@@ -17,7 +17,9 @@ struct RTXPTPrimaryPayload
 };
 
 // Mirrors RTXPTSubInstanceData in RTXPTAccelerationStructures.hpp.
-// One entry per (BLAS instance, geometry) pair; index = InstanceContributionToHitGroupIndex() + GeometryIndex().
+// One entry per (BLAS instance, geometry) pair. C++ stores the per-instance
+// sub-instance base in TLAS CustomId, exposed to closest-hit shaders as InstanceID().
+// index = InstanceID() + GeometryIndex().
 struct RTXPTSubInstanceData
 {
     uint MaterialID;

@@ -124,6 +124,10 @@ private:
     Uint32                      m_AccumulationFrame         = 0;
     Uint32                      m_MaxBounces                = 4;
     Uint32                      m_MinBounces                = 3;
+    bool                        m_EnableNEE                 = true;
+    bool                        m_EnableEnvNEE              = true;
+    float                       m_EnvIntensity              = 1.0f;
+    float                       m_LightIntensityScale       = 1.0f;
     int                         m_SelectedSceneCamera       = -1;
     bool                        m_EnableDebugComputePass    = false;
     bool                        m_ResetAccumulationPending  = true;

@@ -261,10 +261,14 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
         m_AccumulationFrame = 0;
     }
 
-    m_LastFrameConstants.PathTracer.MaxBounces        = m_MaxBounces;
-    m_LastFrameConstants.PathTracer.AccumulationFrame = m_AccumulationFrame;
-    m_LastFrameConstants.PathTracer.ResetAccumulation = m_ResetAccumulationPending ? 1u : 0u;
-    m_LastFrameConstants.PathTracer.MinBounces        = m_MinBounces;
+    m_LastFrameConstants.PathTracer.MaxBounces          = m_MaxBounces;
+    m_LastFrameConstants.PathTracer.AccumulationFrame   = m_AccumulationFrame;
+    m_LastFrameConstants.PathTracer.ResetAccumulation   = m_ResetAccumulationPending ? 1u : 0u;
+    m_LastFrameConstants.PathTracer.MinBounces          = m_MinBounces;
+    m_LastFrameConstants.PathTracer.EnableNEE           = m_EnableNEE ? 1u : 0u;
+    m_LastFrameConstants.PathTracer.EnableEnvNEE        = m_EnableEnvNEE ? 1u : 0u;
+    m_LastFrameConstants.PathTracer.EnvIntensity        = m_EnvIntensity;
+    m_LastFrameConstants.PathTracer.LightIntensityScale = m_LightIntensityScale;
 
     if (m_FrameConstantsCB)
     {
@@ -541,6 +545,14 @@ void RTXPTSample::UpdateUI()
         m_MinBounces = static_cast<Uint32>(MinBouncesUI);
         RequestAccumulationReset("Min bounces changed");
     }
+    if (ImGui::Checkbox("Next-event estimation (NEE)", &m_EnableNEE))
+        RequestAccumulationReset("NEE toggled");
+    if (ImGui::Checkbox("Environment NEE + MIS", &m_EnableEnvNEE))
+        RequestAccumulationReset("Environment NEE toggled");
+    if (ImGui::SliderFloat("Light intensity scale", &m_LightIntensityScale, 0.0f, 10.0f))
+        RequestAccumulationReset("Light intensity changed");
+    if (ImGui::SliderFloat("Environment intensity", &m_EnvIntensity, 0.0f, 5.0f))
+        RequestAccumulationReset("Environment intensity changed");
     if (ImGui::Button("Reset accumulation"))
         RequestAccumulationReset("User reset");
     if (!RTPassStats.DisabledReason.empty())
@@ -563,7 +575,7 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
     ImGui::Text("TODO(RTXPT-Port Phase 4): expose stable-plane, RTXDI, light feedback, and denoising-guide pass toggles after their shaders are ported.");
     ImGui::Text("TODO(RTXPT-Port Phase 5.3): add transmission / nested dielectrics and ALPHA_MODE_BLEND (current BSDF is opaque metallic-roughness GGX + alpha-mask).");
-    ImGui::Text("TODO(RTXPT-Port Phase 5.5): add explicit light sampling and MIS once the lighting baker is restored.");
+    ImGui::Text("TODO(RTXPT-Port Phase 5.4): NEE samples analytic + procedural-sky lights with MIS; add emissive area lights, light RIS, and HDR env-map IBL.");
     ImGui::End();
 }
 

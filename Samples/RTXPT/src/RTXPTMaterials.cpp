@@ -119,6 +119,23 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
             Data.EmissiveTextureSlice = Material.GetTextureAttrib(GLTF::DefaultEmissiveTextureAttribId).TextureSlice;
         }
 
+        const int MetallicRoughnessTextureId = Material.GetTextureId(GLTF::DefaultMetallicRoughnessTextureAttribId);
+        if (MetallicRoughnessTextureId >= 0 && static_cast<Uint32>(MetallicRoughnessTextureId) < ValidTextureCount)
+        {
+            Data.Flags |= kRTXPTMaterialFlag_HasMetallicRoughnessTexture;
+            Data.MetallicRoughnessTextureIndex = static_cast<Uint32>(MetallicRoughnessTextureId);
+            Data.MetallicRoughnessTextureSlice = Material.GetTextureAttrib(GLTF::DefaultMetallicRoughnessTextureAttribId).TextureSlice;
+        }
+
+        const int NormalTextureId = Material.GetTextureId(GLTF::DefaultNormalTextureAttribId);
+        if (NormalTextureId >= 0 && static_cast<Uint32>(NormalTextureId) < ValidTextureCount)
+        {
+            Data.Flags |= kRTXPTMaterialFlag_HasNormalTexture;
+            Data.NormalTextureIndex = static_cast<Uint32>(NormalTextureId);
+            Data.NormalTextureSlice = Material.GetTextureAttrib(GLTF::DefaultNormalTextureAttribId).TextureSlice;
+        }
+        Data.NormalScale = Attribs.NormalScale;
+
         // Alpha test requires the base-color texture (its .a channel). Only set the flag when both agree.
         if (RTXPTMaterialIsAlphaTested(Material) && (Data.Flags & kRTXPTMaterialFlag_HasBaseColorTexture) != 0u)
             Data.Flags |= kRTXPTMaterialFlag_AlphaTested;

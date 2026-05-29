@@ -61,8 +61,13 @@ struct RTXPTPathTracerSettings
     Uint32 AccumulationFrame = 0;
     Uint32 ResetAccumulation = 1;
     Uint32 MinBounces        = 0;
+
+    Uint32 EnableNEE           = 1;    // Non-zero enables next-event estimation (direct light sampling).
+    Uint32 EnableEnvNEE        = 1;    // Non-zero adds environment (sky) NEE with MIS alongside analytic lights.
+    float  EnvIntensity        = 1.0f; // Scales the procedural-sky environment radiance.
+    float  LightIntensityScale = 1.0f; // Scales analytic (punctual) light radiance.
 };
-static_assert(sizeof(RTXPTPathTracerSettings) == 16, "RTXPTPathTracerSettings layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTPathTracerSettings) == 32, "RTXPTPathTracerSettings layout must match RTXPTShaderShared.hlsli");
 
 struct RTXPTFrameConstants
 {
@@ -72,7 +77,7 @@ struct RTXPTFrameConstants
     float4                  ViewportSize_FrameIdx = float4{0, 0, 0, 0};
     RTXPTPathTracerSettings PathTracer            = {};
 };
-static_assert(sizeof(RTXPTFrameConstants) == 176, "RTXPTFrameConstants layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTFrameConstants) == 192, "RTXPTFrameConstants layout must match RTXPTShaderShared.hlsli");
 
 class RTXPTSample final : public SampleBase
 {

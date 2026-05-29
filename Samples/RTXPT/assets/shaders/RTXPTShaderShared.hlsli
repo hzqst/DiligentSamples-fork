@@ -4,13 +4,18 @@
 // Mirrors Diligent::kRTXPTSubInstanceFlag_Indexed in RTXPTAccelerationStructures.hpp.
 static const uint kRTXPTSubInstanceFlagIndexed = 0x1u;
 
-// Mirrors Diligent::RTXPTPathTracerSettings (the new sub-struct embedded in RTXPTFrameConstants).
+// Mirrors Diligent::RTXPTPathTracerSettings (the sub-struct embedded in RTXPTFrameConstants; total size 32 bytes).
 struct RTXPTPathTracerSettings
 {
     uint MaxBounces;        // Maximum number of secondary bounces; 0 means primary-ray only.
     uint AccumulationFrame; // 0-based index of the sample being added this frame.
     uint ResetAccumulation; // Non-zero means raygen should overwrite the accumulation buffer instead of blending.
-    uint MinBounces;        // Reserved for Phase 5.3 Russian roulette; ignored by Phase 5.2.
+    uint MinBounces;        // Russian-roulette start bounce.
+
+    uint  EnableNEE;           // Non-zero enables next-event estimation (direct light sampling) at each hit.
+    uint  EnableEnvNEE;        // Non-zero adds environment (sky) NEE with MIS in addition to analytic lights.
+    float EnvIntensity;        // Scales the procedural-sky environment radiance.
+    float LightIntensityScale; // Scales analytic (punctual) light radiance.
 };
 
 // Mirrors Diligent::RTXPTFrameConstants in RTXPTSample.hpp (must keep order and layout in sync).

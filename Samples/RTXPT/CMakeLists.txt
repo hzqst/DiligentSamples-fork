@@ -32,6 +32,7 @@ set(SHADERS
     assets/shaders/RTXPTSceneBridge.hlsli
     assets/shaders/RTXPTMaterialBridge.hlsli
     assets/shaders/RTXPTRandom.hlsli
+    assets/shaders/RTXPTBSDF.hlsli
     assets/shaders/RTXPTReference.rgen
     assets/shaders/RTXPTReference.rmiss
     assets/shaders/RTXPTReference.rchit

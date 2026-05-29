@@ -264,7 +264,7 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.PathTracer.MaxBounces        = m_MaxBounces;
     m_LastFrameConstants.PathTracer.AccumulationFrame = m_AccumulationFrame;
     m_LastFrameConstants.PathTracer.ResetAccumulation = m_ResetAccumulationPending ? 1u : 0u;
-    m_LastFrameConstants.PathTracer.MinBounces        = 0;
+    m_LastFrameConstants.PathTracer.MinBounces        = m_MinBounces;
 
     if (m_FrameConstantsCB)
     {
@@ -535,6 +535,12 @@ void RTXPTSample::UpdateUI()
         m_MaxBounces = static_cast<Uint32>(MaxBouncesUI);
         RequestAccumulationReset("Max bounces changed");
     }
+    int MinBouncesUI = static_cast<int>(m_MinBounces);
+    if (ImGui::SliderInt("Min bounces (RR start)", &MinBouncesUI, 0, 16))
+    {
+        m_MinBounces = static_cast<Uint32>(MinBouncesUI);
+        RequestAccumulationReset("Min bounces changed");
+    }
     if (ImGui::Button("Reset accumulation"))
         RequestAccumulationReset("User reset");
     if (!RTPassStats.DisabledReason.empty())
@@ -556,7 +562,7 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
     ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
     ImGui::Text("TODO(RTXPT-Port Phase 4): expose stable-plane, RTXDI, light feedback, and denoising-guide pass toggles after their shaders are ported.");
-    ImGui::Text("TODO(RTXPT-Port Phase 5.3): shade with the metallic-roughness GGX BSDF + normal maps (current path is textured Lambertian + alpha test).");
+    ImGui::Text("TODO(RTXPT-Port Phase 5.3): add transmission / nested dielectrics and ALPHA_MODE_BLEND (current BSDF is opaque metallic-roughness GGX + alpha-mask).");
     ImGui::Text("TODO(RTXPT-Port Phase 5.5): add explicit light sampling and MIS once the lighting baker is restored.");
     ImGui::End();
 }

@@ -118,6 +118,7 @@ private:
     Uint32                      m_FrameIndex                = 0;
     Uint32                      m_AccumulationFrame         = 0;
     Uint32                      m_MaxBounces                = 4;
+    Uint32                      m_MinBounces                = 3;
     int                         m_SelectedSceneCamera       = -1;
     bool                        m_EnableDebugComputePass    = false;
     bool                        m_ResetAccumulationPending  = true;

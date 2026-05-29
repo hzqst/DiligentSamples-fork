@@ -94,6 +94,13 @@ namespace Bridge
         const float3 ObjPos = V0.Position * Bary.x + V1.Position * Bary.y + V2.Position * Bary.z;
         return mul(ObjectToWorld3x4(), float4(ObjPos, 1.0));
     }
+
+    // Barycentric-interpolated TEXCOORD_0 for the current closest-hit / any-hit triangle.
+    float2 InterpolateTexCoord(RTXPTVertex V0, RTXPTVertex V1, RTXPTVertex V2, float2 Barycentrics)
+    {
+        const float3 Bary = float3(1.0 - Barycentrics.x - Barycentrics.y, Barycentrics.x, Barycentrics.y);
+        return V0.TexCoord0 * Bary.x + V1.TexCoord0 * Bary.y + V2.TexCoord0 * Bary.z;
+    }
 #endif
 
     // Total active light count. May be zero on scenes without lights.
@@ -110,8 +117,5 @@ namespace Bridge
         return g_Lights[Index];
     }
 } // namespace Bridge
-
-// TODO(RTXPT-Port Phase 5.3): Add alpha-mask/transparent flags to RTXPTSubInstanceData and propagate them into any-hit specialization.
-// TODO(RTXPT-Port Phase 5.3): Bind material textures and respect TextureShaderAttribs UV selectors / wrap modes.
 
 #endif // RTXPT_SCENE_BRIDGE_HLSLI

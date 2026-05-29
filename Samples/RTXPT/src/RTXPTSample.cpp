@@ -281,19 +281,47 @@ void RTXPTSample::CreatePhase4Passes()
 {
     m_BlitPass.Initialize(m_pDevice, m_pEngineFactory, m_pSwapChain);
 
-    m_RayTracingPass.Initialize(m_pDevice,
-                                m_pImmediateContext,
-                                m_pEngineFactory,
-                                m_FrameConstantsCB,
-                                m_Materials.GetMaterialBuffer(),
-                                m_AccelerationStructures.GetSubInstanceBuffer(),
-                                m_Lights.GetLightBuffer(),
-                                m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
-                                m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
-                                m_Scene.GetIndexType(),
-                                m_AccelerationStructures.GetTLAS(),
-                                m_FeatureCaps.RayTracing,
-                                m_FeatureCaps.StandaloneRayTracingShaders);
+    // Material-texture sampling needs descriptor indexing. Gate it on bindless support; if the textured
+    // pipeline fails to build, fall back to the Phase 5.2 factor-only path so the sample still renders.
+    const bool EnableMaterialTextures = m_FeatureCaps.BindlessResources && m_Materials.GetTextureCount() > 0;
+
+    const bool RTReady =
+        m_RayTracingPass.Initialize(m_pDevice,
+                                    m_pImmediateContext,
+                                    m_pEngineFactory,
+                                    m_FrameConstantsCB,
+                                    m_Materials.GetMaterialBuffer(),
+                                    m_AccelerationStructures.GetSubInstanceBuffer(),
+                                    m_Lights.GetLightBuffer(),
+                                    m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
+                                    m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
+                                    m_Scene.GetIndexType(),
+                                    m_AccelerationStructures.GetTLAS(),
+                                    m_Materials.GetTextureBindings(),
+                                    m_Materials.GetTextureCount(),
+                                    EnableMaterialTextures,
+                                    m_FeatureCaps.RayTracing,
+                                    m_FeatureCaps.StandaloneRayTracingShaders);
+
+    if (!RTReady && EnableMaterialTextures)
+    {
+        m_RayTracingPass.Initialize(m_pDevice,
+                                    m_pImmediateContext,
+                                    m_pEngineFactory,
+                                    m_FrameConstantsCB,
+                                    m_Materials.GetMaterialBuffer(),
+                                    m_AccelerationStructures.GetSubInstanceBuffer(),
+                                    m_Lights.GetLightBuffer(),
+                                    m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
+                                    m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
+                                    m_Scene.GetIndexType(),
+                                    m_AccelerationStructures.GetTLAS(),
+                                    nullptr,
+                                    0,
+                                    false,
+                                    m_FeatureCaps.RayTracing,
+                                    m_FeatureCaps.StandaloneRayTracingShaders);
+    }
 
     m_DebugComputePass.Initialize(m_pDevice,
                                   m_pEngineFactory,
@@ -475,6 +503,7 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("TLAS instances: %u", ASStats.InstanceCount);
     ImGui::Text("RT geometries: %u", ASStats.GeometryCount);
     ImGui::Text("Sub-instances: %u", ASStats.SubInstanceCount);
+    ImGui::Text("Alpha-tested geometries: %u", ASStats.AlphaTestedGeometryCount);
     if (!ASStats.DisabledReason.empty())
         ImGui::TextWrapped("AS disabled: %s", ASStats.DisabledReason.c_str());
     if (!ASStats.LastError.empty())
@@ -493,6 +522,9 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
     ImGui::Text("Vertex buffer: %s", RTPassStats.VertexBufferBound ? "bound" : "fallback");
     ImGui::Text("Index buffer: %s", RTPassStats.IndexBufferBound ? "bound" : "fallback");
+    ImGui::Text("Material textures loaded: %u", m_Materials.GetStats().TextureCount);
+    ImGui::Text("Material textures bound: %s (%u)", RTPassStats.MaterialTexturesBound ? "yes" : "no", RTPassStats.MaterialTextureCount);
+    ImGui::Text("Alpha-test any-hit: %s", RTPassStats.AnyHitEnabled ? "enabled" : "disabled");
     ImGui::Text("Accumulation target: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA8 fallback)");
     ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
     ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
@@ -524,7 +556,7 @@ void RTXPTSample::UpdateUI()
     ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
     ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
     ImGui::Text("TODO(RTXPT-Port Phase 4): expose stable-plane, RTXDI, light feedback, and denoising-guide pass toggles after their shaders are ported.");
-    ImGui::Text("TODO(RTXPT-Port Phase 5.3): swap flat Lambertian for the full BSDF (GGX + transmission + alpha-test).");
+    ImGui::Text("TODO(RTXPT-Port Phase 5.3): shade with the metallic-roughness GGX BSDF + normal maps (current path is textured Lambertian + alpha test).");
     ImGui::Text("TODO(RTXPT-Port Phase 5.5): add explicit light sampling and MIS once the lighting baker is restored.");
     ImGui::End();
 }

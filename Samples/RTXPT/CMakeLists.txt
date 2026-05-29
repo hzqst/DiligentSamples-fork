@@ -35,6 +35,7 @@ set(SHADERS
     assets/shaders/RTXPTReference.rgen
     assets/shaders/RTXPTReference.rmiss
     assets/shaders/RTXPTReference.rchit
+    assets/shaders/RTXPTReference.rahit
     assets/shaders/RTXPTDebugCompute.csh
     assets/shaders/RTXPTBlit.vsh
     assets/shaders/RTXPTBlit.psh

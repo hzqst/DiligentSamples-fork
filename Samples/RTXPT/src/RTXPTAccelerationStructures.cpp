@@ -32,6 +32,7 @@
 #include <utility>
 
 #include "GraphicsAccessories.hpp"
+#include "RTXPTMaterials.hpp"
 
 namespace Diligent
 {
@@ -253,7 +254,14 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
             BuildData.VertexValueType      = Position.ValueType;
             BuildData.VertexComponentCount = Position.ComponentCount;
             BuildData.PrimitiveCount       = TriangleDesc.MaxPrimitiveCount;
-            BuildData.Flags                = RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+            // Alpha-masked geometry must be non-opaque so the runtime invokes the alpha-test any-hit shader.
+            // Everything else stays opaque to skip any-hit entirely.
+            const bool GeometryAlphaTested =
+                Primitive.MaterialId < Model.Materials.size() &&
+                RTXPTMaterialIsAlphaTested(Model.Materials[Primitive.MaterialId]);
+            BuildData.Flags = GeometryAlphaTested ? RAYTRACING_GEOMETRY_FLAG_NONE : RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+            if (GeometryAlphaTested)
+                ++m_Stats.AlphaTestedGeometryCount;
 
             if (IsIndexed)
             {

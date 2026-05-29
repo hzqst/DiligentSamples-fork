@@ -27,29 +27,21 @@
 #include "RTXPTMaterials.hpp"
 
 #include <algorithm>
-#include <cstddef>
 #include <vector>
 
 namespace Diligent
 {
 
-namespace
+bool RTXPTMaterialIsAlphaTested(const GLTF::Material& Material)
 {
-
-using MaterialShaderAttribs = GLTF::Material::ShaderAttribs;
-static_assert(sizeof(MaterialShaderAttribs) == 96, "MaterialShaderAttribs layout must match RTXPTShaderShared.hlsli");
-static_assert(offsetof(MaterialShaderAttribs, BaseColorFactor) == 0, "Unexpected BaseColorFactor offset");
-static_assert(offsetof(MaterialShaderAttribs, EmissiveFactor) == 16, "Unexpected EmissiveFactor offset");
-static_assert(offsetof(MaterialShaderAttribs, SpecularFactor) == 32, "Unexpected SpecularFactor offset");
-static_assert(offsetof(MaterialShaderAttribs, Workflow) == 48, "Unexpected Workflow offset");
-static_assert(offsetof(MaterialShaderAttribs, RoughnessFactor) == 64, "Unexpected RoughnessFactor offset");
-static_assert(offsetof(MaterialShaderAttribs, CustomData) == 80, "Unexpected CustomData offset");
-
-} // namespace
+    return Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_MASK &&
+        Material.GetTextureId(GLTF::DefaultBaseColorTextureAttribId) >= 0;
+}
 
 void RTXPTMaterials::Reset()
 {
     m_MaterialBuffer.Release();
+    m_TextureBindings.clear();
     m_Stats = {};
 }
 
@@ -59,15 +51,66 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
 
     m_Stats.MaterialCount = static_cast<Uint32>(Model.Materials.size());
 
-    std::vector<GLTF::Material::ShaderAttribs> Materials;
-    Materials.reserve(std::max<size_t>(Model.Materials.size(), 1));
-    for (const GLTF::Material& Material : Model.Materials)
-        Materials.emplace_back(Material.Attribs);
+    // Collect one shader-resource view per loaded GLTF texture. The loader always provides a (stub) texture,
+    // so a null view should not happen; if it does, drop the whole table and fall back to factor-only shading.
+    const Uint32 ModelTextureCount = static_cast<Uint32>(Model.GetTextureCount());
+    m_TextureBindings.reserve(ModelTextureCount);
+    for (Uint32 i = 0; i < ModelTextureCount; ++i)
+    {
+        ITexture*     pTexture = Model.GetTexture(i);
+        ITextureView* pSRV     = pTexture != nullptr ? pTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+        if (pSRV == nullptr)
+        {
+            m_TextureBindings.clear();
+            m_Stats.LastError = "RTXPT material texture has no shader-resource view; texture sampling disabled";
+            break;
+        }
+        m_TextureBindings.push_back(pSRV);
+    }
+    m_Stats.TextureCount = static_cast<Uint32>(m_TextureBindings.size());
 
-    if (Materials.empty())
+    const Uint32 ValidTextureCount = m_Stats.TextureCount;
+
+    std::vector<RTXPTMaterialData> MaterialData;
+    MaterialData.reserve(std::max<size_t>(Model.Materials.size(), 1));
+    for (const GLTF::Material& Material : Model.Materials)
+    {
+        const GLTF::Material::ShaderAttribs& Attribs = Material.Attribs;
+
+        RTXPTMaterialData Data;
+        Data.BaseColorFactor = Attribs.BaseColorFactor;
+        Data.EmissiveFactor  = Attribs.EmissiveFactor;
+        Data.AlphaCutoff     = Attribs.AlphaCutoff;
+        Data.MetallicFactor  = Attribs.MetallicFactor;
+        Data.RoughnessFactor = Attribs.RoughnessFactor;
+
+        const int BaseColorTextureId = Material.GetTextureId(GLTF::DefaultBaseColorTextureAttribId);
+        if (BaseColorTextureId >= 0 && static_cast<Uint32>(BaseColorTextureId) < ValidTextureCount)
+        {
+            Data.Flags |= kRTXPTMaterialFlag_HasBaseColorTexture;
+            Data.BaseColorTextureIndex = static_cast<Uint32>(BaseColorTextureId);
+            Data.BaseColorTextureSlice = Material.GetTextureAttrib(GLTF::DefaultBaseColorTextureAttribId).TextureSlice;
+        }
+
+        const int EmissiveTextureId = Material.GetTextureId(GLTF::DefaultEmissiveTextureAttribId);
+        if (EmissiveTextureId >= 0 && static_cast<Uint32>(EmissiveTextureId) < ValidTextureCount)
+        {
+            Data.Flags |= kRTXPTMaterialFlag_HasEmissiveTexture;
+            Data.EmissiveTextureIndex = static_cast<Uint32>(EmissiveTextureId);
+            Data.EmissiveTextureSlice = Material.GetTextureAttrib(GLTF::DefaultEmissiveTextureAttribId).TextureSlice;
+        }
+
+        // Alpha test requires the base-color texture (its .a channel). Only set the flag when both agree.
+        if (RTXPTMaterialIsAlphaTested(Material) && (Data.Flags & kRTXPTMaterialFlag_HasBaseColorTexture) != 0u)
+            Data.Flags |= kRTXPTMaterialFlag_AlphaTested;
+
+        MaterialData.emplace_back(Data);
+    }
+
+    if (MaterialData.empty())
     {
         // Always upload at least one default material so the shader-side bridge SRV is never null.
-        Materials.emplace_back();
+        MaterialData.emplace_back();
     }
 
     BufferDesc Desc;
@@ -75,10 +118,10 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
     Desc.Usage             = USAGE_IMMUTABLE;
     Desc.BindFlags         = BIND_SHADER_RESOURCE;
     Desc.Mode              = BUFFER_MODE_STRUCTURED;
-    Desc.ElementByteStride = sizeof(GLTF::Material::ShaderAttribs);
-    Desc.Size              = sizeof(GLTF::Material::ShaderAttribs) * Materials.size();
+    Desc.ElementByteStride = sizeof(RTXPTMaterialData);
+    Desc.Size              = sizeof(RTXPTMaterialData) * MaterialData.size();
 
-    BufferData Data{Materials.data(), Desc.Size};
+    BufferData Data{MaterialData.data(), Desc.Size};
     pDevice->CreateBuffer(Desc, &Data, &m_MaterialBuffer);
 
     if (!m_MaterialBuffer)

@@ -29,13 +29,16 @@ struct RTXPTPrimaryPayload
     float4 ColorDepth;
 };
 
-// Reference path tracer payload (Phase 5.2).
+// Reference path tracer payload (Phase 5.2 / 5.3). Size is 64 bytes (16 floats); do not grow without
+// updating RTXPTRayTracingPass::Initialize MaxPayloadSize.
 //   HitFlag    : 1 on closest hit, 0 on miss.
 //   HitDistance: RayTCurrent() on hit; <= 0 on miss.
 //   WorldPos   : world-space hit position.
-//   WorldNormal: world-space shading normal (interpolated and renormalized).
+//   WorldNormal: world-space shading normal (interpolated, normal-mapped, renormalized).
 //   BaseColor  : material base color RGB (sampled via the material bridge).
+//   Metallic   : glTF metallic value at the hit (factor * texture .b).
 //   Emission   : RGB emission written by miss/emissive paths and accumulated by raygen.
+//   Roughness  : glTF perceptual roughness at the hit (factor * texture .g).
 struct RTXPTPathTracerPayload
 {
     float3 WorldPos;
@@ -45,10 +48,10 @@ struct RTXPTPathTracerPayload
     uint   HitFlag;
 
     float3 BaseColor;
-    float  Padding0;
+    float  Metallic;
 
     float3 Emission;
-    float  Padding1;
+    float  Roughness;
 };
 
 // Mirrors Diligent::RTXPTSubInstanceData in RTXPTAccelerationStructures.hpp.
@@ -67,7 +70,7 @@ struct RTXPTSubInstanceData
     uint Padding1;
 };
 
-// Mirrors Diligent::RTXPTMaterialData in RTXPTMaterials.hpp (must keep order/size in sync; total size 64 bytes).
+// Mirrors Diligent::RTXPTMaterialData in RTXPTMaterials.hpp (must keep order/size in sync; total size 96 bytes).
 struct RTXPTMaterialData
 {
     float4 BaseColorFactor; // offset 0
@@ -80,16 +83,28 @@ struct RTXPTMaterialData
     uint  EmissiveTextureIndex;  // offset 40
     float MetallicFactor;        // offset 44
 
-    float RoughnessFactor;       // offset 48
-    float BaseColorTextureSlice; // offset 52
-    float EmissiveTextureSlice;  // offset 56
-    float Padding0;              // offset 60
+    float RoughnessFactor;               // offset 48
+    float BaseColorTextureSlice;         // offset 52
+    float EmissiveTextureSlice;          // offset 56
+    uint  MetallicRoughnessTextureIndex; // offset 60
+
+    float MetallicRoughnessTextureSlice; // offset 64
+    uint  NormalTextureIndex;            // offset 68
+    float NormalTextureSlice;            // offset 72
+    float NormalScale;                   // offset 76
+
+    float Padding0; // offset 80
+    float Padding1; // offset 84
+    float Padding2; // offset 88
+    float Padding3; // offset 92
 };
 
 // Mirrors the kRTXPTMaterialFlag_* constants in RTXPTMaterials.hpp.
-static const uint kRTXPTMaterialFlagHasBaseColorTexture = 0x1u;
-static const uint kRTXPTMaterialFlagAlphaTested         = 0x2u;
-static const uint kRTXPTMaterialFlagHasEmissiveTexture  = 0x4u;
+static const uint kRTXPTMaterialFlagHasBaseColorTexture         = 0x1u;
+static const uint kRTXPTMaterialFlagAlphaTested                 = 0x2u;
+static const uint kRTXPTMaterialFlagHasEmissiveTexture          = 0x4u;
+static const uint kRTXPTMaterialFlagHasMetallicRoughnessTexture = 0x8u;
+static const uint kRTXPTMaterialFlagHasNormalTexture            = 0x10u;
 
 // Mirrors Diligent::RTXPTLightData in RTXPTLights.hpp.
 struct RTXPTLightData

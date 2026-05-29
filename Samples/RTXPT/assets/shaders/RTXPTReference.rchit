@@ -75,4 +75,4 @@ void main(inout RTXPTPathTracerPayload Payload,
     Payload.Roughness   = Roughness;
 }
 
-// TODO(RTXPT-Port Phase 5.5): Add NEE shadow rays toward analytic and environment lights.
+// TODO(RTXPT-Port Phase 5.4): Emissive surfaces are gathered by BSDF sampling only; add emissive-triangle area-light NEE + MIS once an emissive light list exists.

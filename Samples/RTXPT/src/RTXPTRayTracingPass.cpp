@@ -176,7 +176,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         .AddVariable(HitStages, "g_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(HitStages, "g_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(HitStages, "g_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_RAY_MISS, "g_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "g_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_RAY_GEN, "g_OutputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_RAY_GEN, "g_AccumColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
 
@@ -246,7 +246,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
     m_Stats.MaterialBridgeBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_Materials", pMaterialsView);
     m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_SubInstanceData", pSubInstanceView);
-    m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_MISS, "g_Lights", pLightsView);
+    m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_GEN, "g_Lights", pLightsView);
     m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_VertexBuffer", pVertexView);
     m_Stats.IndexBufferBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_IndexBuffer", m_IndexBufferView);
 

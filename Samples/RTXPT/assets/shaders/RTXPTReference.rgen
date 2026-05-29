@@ -1,10 +1,15 @@
 #include "RTXPTSceneBridge.hlsli"
+#include "RTXPTEnvironment.hlsli"
+#include "RTXPTLightSampling.hlsli"
 #include "RTXPTRandom.hlsli"
 #include "RTXPTBSDF.hlsli"
 
 RaytracingAccelerationStructure                g_TLAS;
 VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   g_OutputColor;
 VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> g_AccumColor;
+
+static const float RTXPT_VISIBILITY_RAY_TMIN = 1e-4;
+static const float RTXPT_VISIBILITY_RAY_TMAX = 1e30;
 
 static float3 ToneMapACES(float3 X)
 {
@@ -16,6 +21,105 @@ static float3 ToneMapACES(float3 X)
     const float D = 0.59;
     const float E = 0.14;
     return saturate((X * (A * X + B)) / (X * (C * X + D) + E));
+}
+
+RTXPTPathTracerPayload RTXPTMakeDefaultPayload(uint HitFlag)
+{
+    RTXPTPathTracerPayload Payload;
+    Payload.WorldPos    = float3(0.0, 0.0, 0.0);
+    Payload.HitDistance = -1.0;
+    Payload.WorldNormal = float3(0.0, 1.0, 0.0);
+    Payload.HitFlag     = HitFlag;
+    Payload.BaseColor   = float3(0.0, 0.0, 0.0);
+    Payload.Emission    = float3(0.0, 0.0, 0.0);
+    Payload.Metallic    = 0.0;
+    Payload.Roughness   = 1.0;
+    return Payload;
+}
+
+bool RTXPTTraceVisibility(float3 Origin, float3 Direction, float TMax)
+{
+    if (TMax <= RTXPT_VISIBILITY_RAY_TMIN)
+        return false;
+
+    RayDesc Ray;
+    Ray.Origin    = Origin;
+    Ray.Direction = Direction;
+    Ray.TMin      = RTXPT_VISIBILITY_RAY_TMIN;
+    Ray.TMax      = TMax;
+
+    // Initial HitFlag = blocked. A true miss runs the miss shader, which clears HitFlag to visible.
+    RTXPTPathTracerPayload Payload = RTXPTMakeDefaultPayload(1u);
+    TraceRay(g_TLAS,
+             RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+             0xFF,
+             0,
+             1,
+             0,
+             Ray,
+             Payload);
+    return Payload.HitFlag == 0u;
+}
+
+float3 RTXPTSampleAnalyticNEE(RTXPTSurface Surface, float3 HitPos, float3 VisibilityOrigin,
+                              float3 Wo, inout RTXPTRandom Rng)
+{
+    const uint LightCount = Bridge::GetLightCount();
+    if (LightCount == 0u || g_FrameConstants.PathTracer.LightIntensityScale <= 0.0)
+        return float3(0.0, 0.0, 0.0);
+
+    const uint LightIndex = min(uint(NextFloat(Rng) * float(LightCount)), LightCount - 1u);
+
+    RTXPTLightSample Light = RTXPTEvalAnalyticLight(Bridge::GetLight(LightIndex), HitPos);
+    if (!Light.Valid)
+        return float3(0.0, 0.0, 0.0);
+
+    const float SpecProb = RTXPTSpecularProbability(Surface, Wo);
+    float3      FTimesNoL;
+    float       BsdfPdf;
+    RTXPTEvalBSDF(Surface, Wo, Light.Wi, SpecProb, FTimesNoL, BsdfPdf);
+    if (BsdfPdf <= 0.0)
+        return float3(0.0, 0.0, 0.0);
+
+    if (!RTXPTTraceVisibility(VisibilityOrigin, Light.Wi, Light.Distance))
+        return float3(0.0, 0.0, 0.0);
+
+    return FTimesNoL * Light.Radiance * g_FrameConstants.PathTracer.LightIntensityScale * float(LightCount);
+}
+
+float3 RTXPTSampleEnvNEE(RTXPTSurface Surface, float3 VisibilityOrigin,
+                         float3 Wo, inout RTXPTRandom Rng)
+{
+    if (g_FrameConstants.PathTracer.EnvIntensity <= 0.0)
+        return float3(0.0, 0.0, 0.0);
+
+    float EnvPdf;
+    const float3 Wi = SampleCosineHemisphere(NextFloat2(Rng), Surface.N, EnvPdf);
+    if (EnvPdf <= 0.0)
+        return float3(0.0, 0.0, 0.0);
+
+    const float SpecProb = RTXPTSpecularProbability(Surface, Wo);
+    float3      FTimesNoL;
+    float       BsdfPdf;
+    RTXPTEvalBSDF(Surface, Wo, Wi, SpecProb, FTimesNoL, BsdfPdf);
+    if (BsdfPdf <= 0.0)
+        return float3(0.0, 0.0, 0.0);
+
+    if (!RTXPTTraceVisibility(VisibilityOrigin, Wi, RTXPT_VISIBILITY_RAY_TMAX))
+        return float3(0.0, 0.0, 0.0);
+
+    const float3 EnvRadiance = RTXPTEvalSky(Wi) * g_FrameConstants.PathTracer.EnvIntensity;
+    const float  MISWeight   = RTXPTPowerHeuristic(EnvPdf, BsdfPdf);
+    return FTimesNoL * EnvRadiance * (MISWeight / EnvPdf);
+}
+
+float RTXPTBSDFSampledEnvMISWeight(bool DidEnvNEE, float PrevBsdfPdf, float3 PrevNormal, float3 RayDir)
+{
+    if (!DidEnvNEE || PrevBsdfPdf <= 0.0)
+        return 1.0;
+
+    const float EnvPdf = max(dot(PrevNormal, RayDir), 0.0) * RTXPT_INV_PI;
+    return RTXPTPowerHeuristic(PrevBsdfPdf, EnvPdf);
 }
 
 [shader("raygeneration")]
@@ -40,7 +144,12 @@ void main()
     float3 Throughput   = float3(1.0, 1.0, 1.0);
     float3 PathRadiance = float3(0.0, 0.0, 0.0);
 
-    const uint MaxBounces = max(g_FrameConstants.PathTracer.MaxBounces, 1u);
+    float  PrevBsdfPdf     = 0.0;
+    float3 PrevNormal      = float3(0.0, 1.0, 0.0);
+    bool   PrevDidEnvNEE   = false;
+    const uint MaxBounces  = max(g_FrameConstants.PathTracer.MaxBounces, 1u);
+    const bool EnableNEE   = g_FrameConstants.PathTracer.EnableNEE != 0u;
+    const bool EnableEnvNEE = EnableNEE && g_FrameConstants.PathTracer.EnableEnvNEE != 0u;
 
     [loop]
     for (uint Bounce = 0u; Bounce < MaxBounces; ++Bounce)
@@ -51,15 +160,7 @@ void main()
         Ray.TMin      = 1e-3;
         Ray.TMax      = 10000.0;
 
-        RTXPTPathTracerPayload Payload;
-        Payload.WorldPos    = float3(0.0, 0.0, 0.0);
-        Payload.HitDistance = -1.0;
-        Payload.WorldNormal = float3(0.0, 1.0, 0.0);
-        Payload.HitFlag     = 0u;
-        Payload.BaseColor   = float3(0.0, 0.0, 0.0);
-        Payload.Emission    = float3(0.0, 0.0, 0.0);
-        Payload.Metallic    = 0.0;
-        Payload.Roughness   = 1.0;
+        RTXPTPathTracerPayload Payload = RTXPTMakeDefaultPayload(0u);
 
         // RAY_FLAG_NONE lets the alpha-test any-hit shader run for non-opaque (alpha-masked) geometry.
         // Opaque geometry still skips any-hit via its BLAS RAYTRACING_GEOMETRY_FLAG_OPAQUE flag.
@@ -72,16 +173,31 @@ void main()
                  Ray,
                  Payload);
 
-        // Accumulate any emission the payload picked up (sky on miss, future emissives on hit).
+        if (Payload.HitFlag == 0u)
+        {
+            const float MISWeight   = RTXPTBSDFSampledEnvMISWeight(PrevDidEnvNEE, PrevBsdfPdf, PrevNormal, RayDir);
+            const float3 EnvRadiance = Payload.Emission * g_FrameConstants.PathTracer.EnvIntensity;
+            PathRadiance += Throughput * EnvRadiance * MISWeight;
+            break;
+        }
+
+        // Accumulate emissive surfaces hit by BSDF sampling. Area-light NEE is deferred to a later lighting pass.
         PathRadiance += Throughput * Payload.Emission;
 
-        if (Payload.HitFlag == 0u)
-            break;
-
-        // Build the glTF metallic-roughness surface the closest-hit filled in, then importance-sample
-        // the GGX BSDF for the next direction. Weight = f * NoL / pdf is the throughput multiplier.
+        // Build the glTF metallic-roughness surface the closest-hit filled in, then add explicit direct lighting
+        // before importance-sampling the GGX BSDF for the next direction.
         const float3 Wo       = -RayDir;
         RTXPTSurface  Surface = RTXPTMakeSurface(Payload.WorldNormal, Payload.BaseColor, Payload.Metallic, Payload.Roughness);
+
+        const float  Bias             = max(1e-4, 1e-3 * Payload.HitDistance);
+        const float3 VisibilityOrigin = Payload.WorldPos + Surface.N * Bias;
+
+        if (EnableNEE)
+        {
+            PathRadiance += Throughput * RTXPTSampleAnalyticNEE(Surface, Payload.WorldPos, VisibilityOrigin, Wo, Rng);
+            if (EnableEnvNEE)
+                PathRadiance += Throughput * RTXPTSampleEnvNEE(Surface, VisibilityOrigin, Wo, Rng);
+        }
 
         float3 NextDir;
         float3 Weight;
@@ -100,10 +216,12 @@ void main()
             Throughput /= Survive;
         }
 
-        // Offset the next ray slightly along the shading normal to avoid self-intersection.
-        const float Bias = max(1e-4, 1e-3 * Payload.HitDistance);
-        RayOrigin        = Payload.WorldPos + Surface.N * Bias;
-        RayDir           = NextDir;
+        PrevBsdfPdf   = Pdf;
+        PrevNormal    = Surface.N;
+        PrevDidEnvNEE = EnableEnvNEE;
+
+        RayOrigin = VisibilityOrigin;
+        RayDir    = NextDir;
     }
 
     // Blend into the accumulation buffer. ResetAccumulation == 1 means this is the first sample after a reset.
@@ -123,5 +241,5 @@ void main()
 }
 
 // TODO(RTXPT-Port Phase 5.3): Add transmission / nested dielectrics to the BSDF (currently opaque diffuse + GGX specular).
-// TODO(RTXPT-Port Phase 5.5): Add explicit light sampling and MIS once the lighting baker is restored.
+// TODO(RTXPT-Port Phase 5.4): Add emissive-triangle area lights, light importance sampling / RIS, and HDR environment-map MIS (NEE currently uses uniform light selection + a procedural-sky cosine env sampler).
 // TODO(RTXPT-Port Phase 6): Move tone mapping from raygen into the dedicated post-process chain.

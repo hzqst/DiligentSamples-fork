@@ -27,6 +27,7 @@
 #include "RTXPTMaterials.hpp"
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 namespace Diligent
@@ -42,6 +43,7 @@ void RTXPTMaterials::Reset()
 {
     m_MaterialBuffer.Release();
     m_TextureBindings.clear();
+    m_TextureViews.clear();
     m_Stats = {};
 }
 
@@ -51,21 +53,38 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
 
     m_Stats.MaterialCount = static_cast<Uint32>(Model.Materials.size());
 
-    // Collect one shader-resource view per loaded GLTF texture. The loader always provides a (stub) texture,
-    // so a null view should not happen; if it does, drop the whole table and fall back to factor-only shading.
+    // Collect one shader-resource view per loaded GLTF texture. Create an explicit 2D-array SRV so the
+    // ray tracing shader sees a Texture2DArray binding even when the underlying texture resource is 2D.
     const Uint32 ModelTextureCount = static_cast<Uint32>(Model.GetTextureCount());
+    m_TextureViews.reserve(ModelTextureCount);
     m_TextureBindings.reserve(ModelTextureCount);
     for (Uint32 i = 0; i < ModelTextureCount; ++i)
     {
-        ITexture*     pTexture = Model.GetTexture(i);
-        ITextureView* pSRV     = pTexture != nullptr ? pTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
-        if (pSRV == nullptr)
+        ITexture* pTexture = Model.GetTexture(i);
+        if (pTexture == nullptr)
         {
             m_TextureBindings.clear();
-            m_Stats.LastError = "RTXPT material texture has no shader-resource view; texture sampling disabled";
+            m_TextureViews.clear();
+            m_Stats.LastError = "RTXPT material texture is missing";
             break;
         }
-        m_TextureBindings.push_back(pSRV);
+
+        TextureViewDesc ViewDesc;
+        ViewDesc.ViewType   = TEXTURE_VIEW_SHADER_RESOURCE;
+        ViewDesc.TextureDim = RESOURCE_DIM_TEX_2D_ARRAY;
+
+        RefCntAutoPtr<ITextureView> pSRV;
+        pTexture->CreateView(ViewDesc, &pSRV);
+        if (!pSRV)
+        {
+            m_TextureBindings.clear();
+            m_TextureViews.clear();
+            m_Stats.LastError = "RTXPT material texture view creation failed";
+            break;
+        }
+
+        m_TextureViews.emplace_back(std::move(pSRV));
+        m_TextureBindings.push_back(m_TextureViews.back().RawPtr<IDeviceObject>());
     }
     m_Stats.TextureCount = static_cast<Uint32>(m_TextureBindings.size());
 

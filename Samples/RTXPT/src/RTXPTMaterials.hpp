@@ -88,15 +88,16 @@ public:
     IBuffer*                  GetMaterialBuffer() const { return m_MaterialBuffer; }
 
     // Bindless material-texture table. Indices match GLTF::Model texture indices and are referenced by
-    // RTXPTMaterialData::BaseColorTextureIndex / EmissiveTextureIndex. The views are owned by the GLTF model,
-    // which must outlive the ray tracing SRB.
+    // RTXPTMaterialData::BaseColorTextureIndex / EmissiveTextureIndex. The SRV views are owned here and keep
+    // the underlying texture resources alive.
     Uint32                GetTextureCount() const { return static_cast<Uint32>(m_TextureBindings.size()); }
     IDeviceObject* const* GetTextureBindings() const { return m_TextureBindings.empty() ? nullptr : m_TextureBindings.data(); }
 
 private:
-    RefCntAutoPtr<IBuffer>      m_MaterialBuffer;
-    std::vector<IDeviceObject*> m_TextureBindings;
-    RTXPTMaterialStats          m_Stats;
+    RefCntAutoPtr<IBuffer>                   m_MaterialBuffer;
+    std::vector<RefCntAutoPtr<ITextureView>> m_TextureViews;
+    std::vector<IDeviceObject*>              m_TextureBindings;
+    RTXPTMaterialStats                       m_Stats;
 };
 
 } // namespace Diligent

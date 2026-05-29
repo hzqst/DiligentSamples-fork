@@ -31,14 +31,16 @@ void main(inout RTXPTPathTracerPayload Payload,
 
         const float2 TexCoord = Bridge::InterpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
 
+        const float3 RayDir = WorldRayDirection();
+        const float3 GeometricNormal = Bridge::ComputeGeometricNormal(V0, V1, V2);
         WorldPos    = Bridge::ComputeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
         WorldNormal = Bridge::InterpolateNormal(V0, V1, V2, Attributes.barycentrics);
         // Renormalize against the geometric normal if the interpolated normal is nearly zero
         // (degenerate vertex data) - keeps the shader robust on bad assets.
         if (dot(WorldNormal, WorldNormal) < 1e-6)
-            WorldNormal = Bridge::ComputeGeometricNormal(V0, V1, V2);
+            WorldNormal = GeometricNormal;
         // Flip the shading normal to face the camera (single-sided shading; transmission is deferred).
-        if (dot(WorldNormal, WorldRayDirection()) > 0.0)
+        if (dot(WorldNormal, RayDir) > 0.0)
             WorldNormal = -WorldNormal;
 
         // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
@@ -48,7 +50,14 @@ void main(inout RTXPTPathTracerPayload Payload,
             const float4 WorldTangent = Bridge::ComputeWorldTangent(V0, V1, V2, WorldNormal);
             const float3 T            = WorldTangent.xyz;
             const float3 B            = cross(WorldNormal, T) * WorldTangent.w;
-            WorldNormal               = normalize(T * TangentNormal.x + B * TangentNormal.y + WorldNormal * TangentNormal.z);
+            const float3 MappedNormal = T * TangentNormal.x + B * TangentNormal.y + WorldNormal * TangentNormal.z;
+            const float  LenSq        = dot(MappedNormal, MappedNormal);
+            if (LenSq > 1e-8)
+            {
+                WorldNormal = MappedNormal * rsqrt(LenSq);
+                if (dot(WorldNormal, RayDir) > 0.0)
+                    WorldNormal = -WorldNormal;
+            }
         }
 
         const float2 MetalRough = Bridge::GetMetallicRoughness(Material, TexCoord);

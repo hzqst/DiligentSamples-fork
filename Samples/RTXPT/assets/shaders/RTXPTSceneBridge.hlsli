@@ -103,7 +103,7 @@ namespace Bridge
     }
 
     // World-space tangent derived from triangle edges + UV deltas (vertex buffer 0 carries no tangent attribute).
-    // Returned tangent is orthonormalized against WorldNormal; .w is the bitangent handedness (always +1 here).
+    // Returned tangent is orthonormalized against WorldNormal; .w is the bitangent handedness for cross(N,T) * w.
     // Degenerate UVs fall back to an arbitrary perpendicular so the TBN frame is always valid.
     float4 ComputeWorldTangent(RTXPTVertex V0, RTXPTVertex V1, RTXPTVertex V2, float3 WorldNormal)
     {
@@ -120,13 +120,21 @@ namespace Bridge
         if (abs(Det) < 1e-12)
             return float4(Fallback, 1.0);
 
-        const float3 ObjTangent   = (E1 * dU2.y - E2 * dU1.y) * (1.0 / Det);
-        float3       WorldTangent = mul((float3x3)ObjectToWorld3x4(), ObjTangent);
+        const float  InvDet       = 1.0 / Det;
+        const float3 ObjTangent   = (E1 * dU2.y - E2 * dU1.y) * InvDet;
+        const float3 ObjBitangent = (E2 * dU1.x - E1 * dU2.x) * InvDet;
+        float3       WorldTangent   = mul((float3x3)ObjectToWorld3x4(), ObjTangent);
+        float3       WorldBitangent = mul((float3x3)ObjectToWorld3x4(), ObjBitangent);
 
         // Gram-Schmidt against the (already world-space) shading normal.
         WorldTangent = WorldTangent - WorldNormal * dot(WorldNormal, WorldTangent);
         const float Len = length(WorldTangent);
-        return Len > 1e-8 ? float4(WorldTangent / Len, 1.0) : float4(Fallback, 1.0);
+        if (Len <= 1e-8)
+            return float4(Fallback, 1.0);
+
+        WorldTangent = WorldTangent / Len;
+        const float Handedness = dot(cross(WorldNormal, WorldTangent), WorldBitangent) < 0.0 ? -1.0 : 1.0;
+        return float4(WorldTangent, Handedness);
     }
 #endif
 

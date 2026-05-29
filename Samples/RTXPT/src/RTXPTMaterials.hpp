@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,12 @@ struct RTXPTMaterialData
     float Padding3 = 0.0f;
 };
 static_assert(sizeof(RTXPTMaterialData) == 96, "RTXPTMaterialData layout must match RTXPTShaderShared.hlsli");
+static_assert(offsetof(RTXPTMaterialData, MetallicRoughnessTextureIndex) == 60,
+              "RTXPTMaterialData MetallicRoughnessTextureIndex offset must match RTXPTShaderShared.hlsli");
+static_assert(offsetof(RTXPTMaterialData, NormalTextureIndex) == 68,
+              "RTXPTMaterialData NormalTextureIndex offset must match RTXPTShaderShared.hlsli");
+static_assert(offsetof(RTXPTMaterialData, NormalScale) == 76,
+              "RTXPTMaterialData NormalScale offset must match RTXPTShaderShared.hlsli");
 
 // Flag bits for RTXPTMaterialData::Flags. Keep in sync with kRTXPTMaterialFlag* in RTXPTShaderShared.hlsli.
 constexpr Uint32 kRTXPTMaterialFlag_HasBaseColorTexture         = 0x1u;

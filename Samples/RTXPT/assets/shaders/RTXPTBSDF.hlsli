@@ -61,6 +61,22 @@ float RTXPTLuminance(float3 C)
     return dot(C, float3(0.2126, 0.7152, 0.0722));
 }
 
+float RTXPTPowerHeuristic(float PdfA, float PdfB)
+{
+    const float A2 = PdfA * PdfA;
+    const float B2 = PdfB * PdfB;
+    return A2 / max(A2 + B2, 1e-7);
+}
+
+float RTXPTSpecularProbability(RTXPTSurface S, float3 Wo)
+{
+    const float  NoV     = saturate(dot(S.N, Wo));
+    const float3 Fapprox = RTXPTFresnelSchlick(S.F0, NoV);
+    const float  SpecLum = RTXPTLuminance(Fapprox);
+    const float  DiffLum = RTXPTLuminance(S.DiffuseAlbedo * (1.0 - Fapprox));
+    return clamp(SpecLum / max(SpecLum + DiffLum, 1e-4), 0.1, 0.9);
+}
+
 // Evaluate f(Wo,Wi) * NoL and the single-sample MIS pdf for the given (unit, away-from-surface) directions.
 // SpecProb is the probability the sampler used to pick the specular lobe.
 void RTXPTEvalBSDF(RTXPTSurface S, float3 Wo, float3 Wi, float SpecProb, out float3 FTimesNoL, out float Pdf)
@@ -105,10 +121,7 @@ bool RTXPTSampleBSDF(RTXPTSurface S, float3 Wo, inout RTXPTRandom Rng,
         return false;
 
     // Pick the lobe from the Fresnel-weighted specular vs diffuse luminance, clamped so neither lobe starves.
-    const float3 Fapprox = RTXPTFresnelSchlick(S.F0, NoV);
-    const float  SpecLum = RTXPTLuminance(Fapprox);
-    const float  DiffLum = RTXPTLuminance(S.DiffuseAlbedo * (1.0 - Fapprox));
-    const float  SpecProb = clamp(SpecLum / max(SpecLum + DiffLum, 1e-4), 0.1, 0.9);
+    const float SpecProb = RTXPTSpecularProbability(S, Wo);
 
     float3 Tangent;
     float3 Bitangent;

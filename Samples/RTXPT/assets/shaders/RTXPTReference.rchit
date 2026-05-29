@@ -16,6 +16,8 @@ void main(inout RTXPTPathTracerPayload Payload,
                                 1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
     float3 WorldNormal = -WorldRayDirection();
     float3 WorldPos    = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
+    float  Metallic    = 0.0;
+    float  Roughness   = 1.0;
 
     if (Bridge::HasSubInstanceTable() && Bridge::HasMaterialTable())
     {
@@ -35,9 +37,23 @@ void main(inout RTXPTPathTracerPayload Payload,
         // (degenerate vertex data) - keeps the shader robust on bad assets.
         if (dot(WorldNormal, WorldNormal) < 1e-6)
             WorldNormal = Bridge::ComputeGeometricNormal(V0, V1, V2);
-        // Flip the shading normal to face the camera (single-sided diffuse lighting; transmission is deferred).
+        // Flip the shading normal to face the camera (single-sided shading; transmission is deferred).
         if (dot(WorldNormal, WorldRayDirection()) > 0.0)
             WorldNormal = -WorldNormal;
+
+        // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
+        const float3 TangentNormal = Bridge::GetTangentNormal(Material, TexCoord);
+        if (abs(TangentNormal.x) + abs(TangentNormal.y) > 1e-5)
+        {
+            const float4 WorldTangent = Bridge::ComputeWorldTangent(V0, V1, V2, WorldNormal);
+            const float3 T            = WorldTangent.xyz;
+            const float3 B            = cross(WorldNormal, T) * WorldTangent.w;
+            WorldNormal               = normalize(T * TangentNormal.x + B * TangentNormal.y + WorldNormal * TangentNormal.z);
+        }
+
+        const float2 MetalRough = Bridge::GetMetallicRoughness(Material, TexCoord);
+        Metallic                = MetalRough.x;
+        Roughness               = MetalRough.y;
 
         BaseColor        = Bridge::GetBaseColor(Material, TexCoord).rgb;
         Payload.Emission = Bridge::GetEmission(Material, TexCoord);
@@ -46,7 +62,8 @@ void main(inout RTXPTPathTracerPayload Payload,
     Payload.WorldPos    = WorldPos;
     Payload.WorldNormal = normalize(WorldNormal);
     Payload.BaseColor   = BaseColor;
+    Payload.Metallic    = Metallic;
+    Payload.Roughness   = Roughness;
 }
 
-// TODO(RTXPT-Port Phase 5.3): Add metallic-roughness/normal-map shading; current path is textured Lambertian.
 // TODO(RTXPT-Port Phase 5.5): Add NEE shadow rays toward analytic and environment lights.

@@ -69,15 +69,42 @@ namespace Bridge
             return true;
         return GetBaseColor(Material, UV).a >= Material.AlphaCutoff;
     }
+
+    // glTF metallic-roughness packing: roughness in .g, metallic in .b, each scaled by the material factor.
+    float2 GetMetallicRoughness(RTXPTMaterialData Material, float2 UV)
+    {
+        float Metallic  = Material.MetallicFactor;
+        float Roughness = Material.RoughnessFactor;
+        if ((Material.Flags & kRTXPTMaterialFlagHasMetallicRoughnessTexture) != 0u)
+        {
+            const float4 MR = SampleMaterialTexture(Material.MetallicRoughnessTextureIndex, Material.MetallicRoughnessTextureSlice, UV);
+            Roughness *= MR.g;
+            Metallic  *= MR.b;
+        }
+        return float2(Metallic, Roughness);
+    }
+
+    // Tangent-space normal unpacked to [-1, 1] with NormalScale applied to xy. Returns (0,0,1) when there is no
+    // normal map, which the caller treats as "no perturbation".
+    float3 GetTangentNormal(RTXPTMaterialData Material, float2 UV)
+    {
+        if ((Material.Flags & kRTXPTMaterialFlagHasNormalTexture) == 0u)
+            return float3(0.0, 0.0, 1.0);
+
+        float3 N = SampleMaterialTexture(Material.NormalTextureIndex, Material.NormalTextureSlice, UV).xyz * 2.0 - 1.0;
+        N.xy *= Material.NormalScale;
+        return normalize(N);
+    }
 #else
     // Factor-only fallback (bindless material textures unavailable): no texture sampling, never alpha tested.
     float4 GetBaseColor(RTXPTMaterialData Material, float2 UV) { return Material.BaseColorFactor; }
     float3 GetEmission(RTXPTMaterialData Material, float2 UV) { return Material.EmissiveFactor; }
     bool   AlphaTestPasses(RTXPTMaterialData Material, float2 UV) { return true; }
+    float2 GetMetallicRoughness(RTXPTMaterialData Material, float2 UV) { return float2(Material.MetallicFactor, Material.RoughnessFactor); }
+    float3 GetTangentNormal(RTXPTMaterialData Material, float2 UV) { return float3(0.0, 0.0, 1.0); }
 #endif
 } // namespace Bridge
 
-// TODO(RTXPT-Port Phase 5.3): Shade with the metallic-roughness GGX BSDF and normal maps instead of textured Lambertian.
 // TODO(RTXPT-Port Phase 5.3): Honor TextureShaderAttribs UV selectors / wrap modes / atlas transform (currently assumes TEXCOORD_0 + wrap + slice).
 
 #endif // RTXPT_MATERIAL_BRIDGE_HLSLI

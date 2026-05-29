@@ -31,6 +31,7 @@
 #include "Buffer.h"
 #include "BufferView.h"
 #include "DeviceContext.h"
+#include "DeviceObject.h"
 #include "EngineFactory.h"
 #include "PipelineState.h"
 #include "RefCntAutoPtr.hpp"
@@ -45,15 +46,18 @@ namespace Diligent
 
 struct RTXPTRayTracingPassStats
 {
-    bool        Ready                = false;
-    bool        LastTraceExecuted    = false;
-    bool        MaterialBridgeBound  = false;
-    bool        SubInstanceBound     = false;
-    bool        LightBridgeBound     = false;
-    bool        VertexBufferBound    = false;
-    bool        IndexBufferBound     = false;
-    bool        AccumulationBound    = false;
-    Uint32      TraceCount           = 0;
+    bool        Ready                 = false;
+    bool        LastTraceExecuted      = false;
+    bool        MaterialBridgeBound    = false;
+    bool        SubInstanceBound       = false;
+    bool        LightBridgeBound       = false;
+    bool        VertexBufferBound      = false;
+    bool        IndexBufferBound       = false;
+    bool        AccumulationBound      = false;
+    bool        MaterialTexturesBound  = false;
+    bool        AnyHitEnabled          = false;
+    Uint32      MaterialTextureCount   = 0;
+    Uint32      TraceCount             = 0;
     std::string DisabledReason;
     std::string LastError;
 };
@@ -63,19 +67,22 @@ class RTXPTRayTracingPass
 public:
     void Reset();
 
-    bool Initialize(IRenderDevice*  pDevice,
-                    IDeviceContext* pContext,
-                    IEngineFactory* pEngineFactory,
-                    IBuffer*        pFrameConstants,
-                    IBuffer*        pMaterialBuffer,
-                    IBuffer*        pSubInstanceBuffer,
-                    IBuffer*        pLightBuffer,
-                    IBuffer*        pVertexBuffer,
-                    IBuffer*        pIndexBuffer,
-                    VALUE_TYPE      IndexValueType,
-                    ITopLevelAS*    pTLAS,
-                    bool            RayTracingSupported,
-                    bool            StandaloneRTShadersSupported);
+    bool Initialize(IRenderDevice*        pDevice,
+                    IDeviceContext*       pContext,
+                    IEngineFactory*       pEngineFactory,
+                    IBuffer*              pFrameConstants,
+                    IBuffer*              pMaterialBuffer,
+                    IBuffer*              pSubInstanceBuffer,
+                    IBuffer*              pLightBuffer,
+                    IBuffer*              pVertexBuffer,
+                    IBuffer*              pIndexBuffer,
+                    VALUE_TYPE            IndexValueType,
+                    ITopLevelAS*          pTLAS,
+                    IDeviceObject* const* pMaterialTextures,
+                    Uint32                MaterialTextureCount,
+                    bool                  EnableMaterialTextures,
+                    bool                  RayTracingSupported,
+                    bool                  StandaloneRTShadersSupported);
 
     bool Trace(IDeviceContext* pContext,
                ITextureView*   pOutputUAV,

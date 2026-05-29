@@ -135,6 +135,16 @@ SampleBase* CreateSample()
     return new RTXPTSample();
 }
 
+void RTXPTSample::ModifyEngineInitInfo(const ModifyEngineInitInfoAttribs& Attribs)
+{
+    SampleBase::ModifyEngineInitInfo(Attribs);
+
+#ifdef DILIGENT_DEBUG
+    Attribs.EngineCI.EnableValidation = true;
+    Attribs.EngineCI.SetValidationLevel(VALIDATION_LEVEL_2);
+#endif
+}
+
 void RTXPTSample::CreateFrameResources()
 {
     CreateUniformBuffer(m_pDevice, sizeof(RTXPTFrameConstants), "RTXPT frame constants", &m_FrameConstantsCB);
@@ -269,6 +279,8 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.PathTracer.EnableEnvNEE        = m_EnableEnvNEE ? 1u : 0u;
     m_LastFrameConstants.PathTracer.EnvIntensity        = m_EnvIntensity;
     m_LastFrameConstants.PathTracer.LightIntensityScale = m_LightIntensityScale;
+    m_LastFrameConstants.PathTracer.MaxNEEBounces       = m_MaxNEEBounces;
+    m_LastFrameConstants.PathTracer.AnalyticLightCount  = m_Lights.GetStats().LightCount;
 
     if (m_FrameConstantsCB)
     {
@@ -544,6 +556,12 @@ void RTXPTSample::UpdateUI()
     {
         m_MinBounces = static_cast<Uint32>(MinBouncesUI);
         RequestAccumulationReset("Min bounces changed");
+    }
+    int MaxNEEBouncesUI = static_cast<int>(m_MaxNEEBounces);
+    if (ImGui::SliderInt("NEE bounces", &MaxNEEBouncesUI, 0, 16))
+    {
+        m_MaxNEEBounces = static_cast<Uint32>(MaxNEEBouncesUI);
+        RequestAccumulationReset("NEE bounce budget changed");
     }
     if (ImGui::Checkbox("Next-event estimation (NEE)", &m_EnableNEE))
         RequestAccumulationReset("NEE toggled");

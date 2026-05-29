@@ -138,13 +138,11 @@ namespace Bridge
     }
 #endif
 
-    // Total active light count. May be zero on scenes without lights.
+    // Total valid analytic light count. The C++ side may upload one disabled dummy light for binding safety;
+    // that dummy is intentionally excluded from sampling.
     uint GetLightCount()
     {
-        uint Count  = 0;
-        uint Stride = 0;
-        g_Lights.GetDimensions(Count, Stride);
-        return Count;
+        return g_FrameConstants.PathTracer.AnalyticLightCount;
     }
 
     RTXPTLightData GetLight(uint Index)

@@ -147,9 +147,10 @@ void main()
     float  PrevBsdfPdf     = 0.0;
     float3 PrevNormal      = float3(0.0, 1.0, 0.0);
     bool   PrevDidEnvNEE   = false;
-    const uint MaxBounces  = max(g_FrameConstants.PathTracer.MaxBounces, 1u);
-    const bool EnableNEE   = g_FrameConstants.PathTracer.EnableNEE != 0u;
-    const bool EnableEnvNEE = EnableNEE && g_FrameConstants.PathTracer.EnableEnvNEE != 0u;
+    const uint MaxBounces    = max(g_FrameConstants.PathTracer.MaxBounces, 1u);
+    const uint MaxNEEBounces = min(g_FrameConstants.PathTracer.MaxNEEBounces, MaxBounces);
+    const bool EnableNEE     = g_FrameConstants.PathTracer.EnableNEE != 0u;
+    const bool EnableEnvNEE  = EnableNEE && g_FrameConstants.PathTracer.EnableEnvNEE != 0u;
 
     [loop]
     for (uint Bounce = 0u; Bounce < MaxBounces; ++Bounce)
@@ -192,7 +193,8 @@ void main()
         const float  Bias             = max(1e-4, 1e-3 * Payload.HitDistance);
         const float3 VisibilityOrigin = Payload.WorldPos + Surface.N * Bias;
 
-        if (EnableNEE)
+        const bool UseNEE = EnableNEE && Bounce < MaxNEEBounces;
+        if (UseNEE)
         {
             PathRadiance += Throughput * RTXPTSampleAnalyticNEE(Surface, Payload.WorldPos, VisibilityOrigin, Wo, Rng);
             if (EnableEnvNEE)
@@ -218,7 +220,7 @@ void main()
 
         PrevBsdfPdf   = Pdf;
         PrevNormal    = Surface.N;
-        PrevDidEnvNEE = EnableEnvNEE;
+        PrevDidEnvNEE = UseNEE && EnableEnvNEE;
 
         RayOrigin = VisibilityOrigin;
         RayDir    = NextDir;

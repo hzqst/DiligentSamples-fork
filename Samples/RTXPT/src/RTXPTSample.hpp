@@ -66,8 +66,13 @@ struct RTXPTPathTracerSettings
     Uint32 EnableEnvNEE        = 1;    // Non-zero adds environment (sky) NEE with MIS alongside analytic lights.
     float  EnvIntensity        = 1.0f; // Scales the procedural-sky environment radiance.
     float  LightIntensityScale = 1.0f; // Scales analytic (punctual) light radiance.
+
+    Uint32 MaxNEEBounces     = 1; // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
+    Uint32 AnalyticLightCount = 0; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
+    Uint32 Padding1           = 0;
+    Uint32 Padding2           = 0;
 };
-static_assert(sizeof(RTXPTPathTracerSettings) == 32, "RTXPTPathTracerSettings layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTPathTracerSettings) == 48, "RTXPTPathTracerSettings layout must match RTXPTShaderShared.hlsli");
 
 struct RTXPTFrameConstants
 {
@@ -77,7 +82,7 @@ struct RTXPTFrameConstants
     float4                  ViewportSize_FrameIdx = float4{0, 0, 0, 0};
     RTXPTPathTracerSettings PathTracer            = {};
 };
-static_assert(sizeof(RTXPTFrameConstants) == 192, "RTXPTFrameConstants layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTFrameConstants) == 208, "RTXPTFrameConstants layout must match RTXPTShaderShared.hlsli");
 
 class RTXPTSample final : public SampleBase
 {
@@ -87,6 +92,7 @@ public:
     virtual void        Update(double CurrTime, double ElapsedTime, bool DoUpdateUI) override final;
     virtual void        WindowResize(Uint32 Width, Uint32 Height) override final;
     virtual const Char* GetSampleName() const override final { return "RTXPT"; }
+    virtual void        ModifyEngineInitInfo(const ModifyEngineInitInfoAttribs& Attribs) override final;
 
 protected:
     virtual void UpdateUI() override final;
@@ -124,6 +130,7 @@ private:
     Uint32                      m_AccumulationFrame         = 0;
     Uint32                      m_MaxBounces                = 4;
     Uint32                      m_MinBounces                = 3;
+    Uint32                      m_MaxNEEBounces             = 1;
     bool                        m_EnableNEE                 = true;
     bool                        m_EnableEnvNEE              = true;
     float                       m_EnvIntensity              = 1.0f;

@@ -4,7 +4,7 @@
 // Mirrors Diligent::kRTXPTSubInstanceFlag_Indexed in RTXPTAccelerationStructures.hpp.
 static const uint kRTXPTSubInstanceFlagIndexed = 0x1u;
 
-// Mirrors Diligent::RTXPTPathTracerSettings (the sub-struct embedded in RTXPTFrameConstants; total size 32 bytes).
+// Mirrors Diligent::RTXPTPathTracerSettings (the sub-struct embedded in RTXPTFrameConstants; total size 48 bytes).
 struct RTXPTPathTracerSettings
 {
     uint MaxBounces;        // Maximum number of secondary bounces; 0 means primary-ray only.
@@ -16,6 +16,11 @@ struct RTXPTPathTracerSettings
     uint  EnableEnvNEE;        // Non-zero adds environment (sky) NEE with MIS in addition to analytic lights.
     float EnvIntensity;        // Scales the procedural-sky environment radiance.
     float LightIntensityScale; // Scales analytic (punctual) light radiance.
+
+    uint MaxNEEBounces;     // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
+    uint AnalyticLightCount; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
+    uint Padding1;
+    uint Padding2;
 };
 
 // Mirrors Diligent::RTXPTFrameConstants in RTXPTSample.hpp (must keep order and layout in sync).

@@ -1,5 +1,6 @@
 #include "RTXPTSceneBridge.hlsli"
 #include "RTXPTRandom.hlsli"
+#include "RTXPTBSDF.hlsli"
 
 RaytracingAccelerationStructure                g_TLAS;
 VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   g_OutputColor;
@@ -57,8 +58,8 @@ void main()
         Payload.HitFlag     = 0u;
         Payload.BaseColor   = float3(0.0, 0.0, 0.0);
         Payload.Emission    = float3(0.0, 0.0, 0.0);
-        Payload.Padding0    = 0.0;
-        Payload.Padding1    = 0.0;
+        Payload.Metallic    = 0.0;
+        Payload.Roughness   = 1.0;
 
         // RAY_FLAG_NONE lets the alpha-test any-hit shader run for non-opaque (alpha-masked) geometry.
         // Opaque geometry still skips any-hit via its BLAS RAYTRACING_GEOMETRY_FLAG_OPAQUE flag.
@@ -77,20 +78,31 @@ void main()
         if (Payload.HitFlag == 0u)
             break;
 
-        // Lambertian bounce: cosine-weighted hemisphere sample. The throughput update for a
-        // cosine-weighted sample of a Lambertian BRDF is just baseColor (the cos and pdf cancel),
-        // which matches the standard reference path tracer derivation.
-        float        Pdf     = 0.0;
-        const float2 Rand    = NextFloat2(Rng);
-        const float3 NextDir = SampleCosineHemisphere(Rand, Payload.WorldNormal, Pdf);
-        if (Pdf <= 0.0)
+        // Build the glTF metallic-roughness surface the closest-hit filled in, then importance-sample
+        // the GGX BSDF for the next direction. Weight = f * NoL / pdf is the throughput multiplier.
+        const float3 Wo       = -RayDir;
+        RTXPTSurface  Surface = RTXPTMakeSurface(Payload.WorldNormal, Payload.BaseColor, Payload.Metallic, Payload.Roughness);
+
+        float3 NextDir;
+        float3 Weight;
+        float  Pdf;
+        if (!RTXPTSampleBSDF(Surface, Wo, Rng, NextDir, Weight, Pdf))
             break;
 
-        Throughput *= Payload.BaseColor;
+        Throughput *= Weight;
 
-        // Offset the next ray slightly along the normal to avoid self-intersection.
+        // Russian roulette once we are past MinBounces - unbiased early termination of dim paths.
+        if (Bounce >= g_FrameConstants.PathTracer.MinBounces)
+        {
+            const float Survive = clamp(max(Throughput.x, max(Throughput.y, Throughput.z)), 0.05, 1.0);
+            if (NextFloat(Rng) > Survive)
+                break;
+            Throughput /= Survive;
+        }
+
+        // Offset the next ray slightly along the shading normal to avoid self-intersection.
         const float Bias = max(1e-4, 1e-3 * Payload.HitDistance);
-        RayOrigin        = Payload.WorldPos + Payload.WorldNormal * Bias;
+        RayOrigin        = Payload.WorldPos + Surface.N * Bias;
         RayDir           = NextDir;
     }
 
@@ -110,6 +122,6 @@ void main()
     g_OutputColor[Pixel] = float4(ToneMapACES(Accumulated), 1.0);
 }
 
-// TODO(RTXPT-Port Phase 5.3): Replace single-lobe Lambertian sampling with a proper BSDF (GGX + diffuse + transmission).
+// TODO(RTXPT-Port Phase 5.3): Add transmission / nested dielectrics to the BSDF (currently opaque diffuse + GGX specular).
 // TODO(RTXPT-Port Phase 5.5): Add explicit light sampling and MIS once the lighting baker is restored.
 // TODO(RTXPT-Port Phase 6): Move tone mapping from raygen into the dedicated post-process chain.

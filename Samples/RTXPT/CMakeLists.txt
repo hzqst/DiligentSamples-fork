@@ -31,6 +31,7 @@ set(SHADERS
     assets/shaders/RTXPTShaderShared.hlsli
     assets/shaders/RTXPTSceneBridge.hlsli
     assets/shaders/RTXPTMaterialBridge.hlsli
+    assets/shaders/RTXPTEnvironment.hlsli
     assets/shaders/RTXPTRandom.hlsli
     assets/shaders/RTXPTBSDF.hlsli
     assets/shaders/RTXPTReference.rgen

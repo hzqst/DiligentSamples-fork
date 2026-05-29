@@ -67,30 +67,29 @@ struct RTXPTSubInstanceData
     uint Padding1;
 };
 
-// Mirrors Diligent::GLTF::Material::ShaderAttribs from DiligentTools/AssetLoader/interface/GLTFLoader.hpp.
-// Keep field order/sizes synchronized; total size is 96 bytes (16-byte aligned).
-struct RTXPTMaterialAttribs
+// Mirrors Diligent::RTXPTMaterialData in RTXPTMaterials.hpp (must keep order/size in sync; total size 64 bytes).
+struct RTXPTMaterialData
 {
     float4 BaseColorFactor; // offset 0
 
     float3 EmissiveFactor; // offset 16
-    float  NormalScale;
+    float  AlphaCutoff;    // offset 28
 
-    float3 SpecularFactor; // offset 32
-    float  ClearcoatNormalScale;
+    uint  Flags;                 // offset 32
+    uint  BaseColorTextureIndex; // offset 36
+    uint  EmissiveTextureIndex;  // offset 40
+    float MetallicFactor;        // offset 44
 
-    int   Workflow; // offset 48
-    int   AlphaMode;
-    float AlphaCutoff;
-    float MetallicFactor;
-
-    float RoughnessFactor; // offset 64
-    float OcclusionFactor;
-    float ClearcoatFactor;
-    float ClearcoatRoughnessFactor;
-
-    float4 CustomData; // offset 80
+    float RoughnessFactor;       // offset 48
+    float BaseColorTextureSlice; // offset 52
+    float EmissiveTextureSlice;  // offset 56
+    float Padding0;              // offset 60
 };
+
+// Mirrors the kRTXPTMaterialFlag_* constants in RTXPTMaterials.hpp.
+static const uint kRTXPTMaterialFlagHasBaseColorTexture = 0x1u;
+static const uint kRTXPTMaterialFlagAlphaTested         = 0x2u;
+static const uint kRTXPTMaterialFlagHasEmissiveTexture  = 0x4u;
 
 // Mirrors Diligent::RTXPTLightData in RTXPTLights.hpp.
 struct RTXPTLightData

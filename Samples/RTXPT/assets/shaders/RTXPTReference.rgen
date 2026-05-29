@@ -60,8 +60,10 @@ void main()
         Payload.Padding0    = 0.0;
         Payload.Padding1    = 0.0;
 
+        // RAY_FLAG_NONE lets the alpha-test any-hit shader run for non-opaque (alpha-masked) geometry.
+        // Opaque geometry still skips any-hit via its BLAS RAYTRACING_GEOMETRY_FLAG_OPAQUE flag.
         TraceRay(g_TLAS,
-                 RAY_FLAG_FORCE_OPAQUE,
+                 RAY_FLAG_NONE,
                  0xFF,
                  0,
                  1,

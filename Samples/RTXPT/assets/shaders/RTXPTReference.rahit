@@ -1,0 +1,31 @@
+#define RTXPT_ENABLE_HIT_BRIDGE 1
+#include "RTXPTSceneBridge.hlsli"
+#include "RTXPTMaterialBridge.hlsli"
+
+// Alpha-test any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE
+// (set for ALPHA_MODE_MASK materials in RTXPTAccelerationStructures::BuildStaticScene). Opaque geometry never
+// reaches this shader. Compiled into the hit group only when RTXPT_ENABLE_MATERIAL_TEXTURES is defined.
+[shader("anyhit")]
+void main(inout RTXPTPathTracerPayload Payload,
+          in BuiltInTriangleIntersectionAttributes Attributes)
+{
+    if (!Bridge::HasSubInstanceTable() || !Bridge::HasMaterialTable())
+        return; // No material data - accept the hit.
+
+    const RTXPTSubInstanceData SubInstance = Bridge::GetSubInstanceData();
+    const RTXPTMaterialData    Material    = Bridge::GetMaterial(SubInstance.MaterialID);
+
+    if ((Material.Flags & kRTXPTMaterialFlagAlphaTested) == 0u)
+        return; // Not alpha tested - accept.
+
+    RTXPTVertex V0;
+    RTXPTVertex V1;
+    RTXPTVertex V2;
+    Bridge::GetTriangleVertices(SubInstance, PrimitiveIndex(), V0, V1, V2);
+    const float2 TexCoord = Bridge::InterpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
+
+    if (!Bridge::AlphaTestPasses(Material, TexCoord))
+        IgnoreHit();
+}
+
+// TODO(RTXPT-Port Phase 5.3): Honor ALPHA_MODE_BLEND (stochastic transparency) in addition to ALPHA_MODE_MASK.

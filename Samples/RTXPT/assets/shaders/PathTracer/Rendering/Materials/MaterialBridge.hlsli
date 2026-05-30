@@ -1,7 +1,7 @@
 #ifndef RTXPT_MATERIAL_BRIDGE_HLSLI
 #define RTXPT_MATERIAL_BRIDGE_HLSLI
 
-#include "../../PathTracerShared.h"
+#include "PathTracerShared.h"
 
 StructuredBuffer<RTXPTMaterialData> g_Materials;
 

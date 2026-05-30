@@ -5,7 +5,7 @@
 // Two lobes: Lambertian diffuse + GGX specular. Evaluation and importance sampling live here so
 // raygen only needs base color / metallic / roughness / shading normal from the payload.
 
-#include "../../Utils/SampleGenerators.hlsli"
+#include "Utils/SampleGenerators.hlsli"
 
 static const float RTXPT_PI            = 3.14159265358979323846;
 static const float RTXPT_INV_PI        = 0.31830988618379067154;

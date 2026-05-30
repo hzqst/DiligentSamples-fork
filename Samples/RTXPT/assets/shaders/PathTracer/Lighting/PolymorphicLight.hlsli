@@ -1,7 +1,7 @@
 #ifndef RTXPT_LIGHT_SAMPLING_HLSLI
 #define RTXPT_LIGHT_SAMPLING_HLSLI
 
-#include "../PathTracerShared.h"
+#include "PathTracerShared.h"
 
 struct RTXPTLightSample
 {

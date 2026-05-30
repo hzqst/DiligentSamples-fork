@@ -9,7 +9,7 @@ void main(inout RTXPTPathTracerPayload Payload)
     Payload.WorldNormal = float3(0.0, 1.0, 0.0);
     Payload.HitFlag     = 0u;
     Payload.BaseColor   = float3(0.0, 0.0, 0.0);
-    Payload.Emission    = RTXPTEvalSky(WorldRayDirection());
+    Payload.Emission    = EnvMap::Eval(WorldRayDirection());
     Payload.Metallic    = 0.0;
     Payload.Roughness   = 1.0;
 }

@@ -1,97 +1,97 @@
-#ifndef RTXPT_LIGHT_SAMPLING_HLSLI
-#define RTXPT_LIGHT_SAMPLING_HLSLI
+#ifndef __POLYMORPHIC_LIGHT_HLSLI__
+#define __POLYMORPHIC_LIGHT_HLSLI__
 
 #include "PathTracerShared.h"
 
-struct RTXPTLightSample
+struct LightSample
 {
-    float3 Wi;
-    float  Distance;
-    float3 Radiance;
-    bool   Valid;
+    float3 dir;
+    float  distance;
+    float3 radiance;
+    bool   valid;
 };
 
-RTXPTLightSample RTXPTInvalidLightSample()
+LightSample LightSample_make_empty()
 {
-    RTXPTLightSample Sample;
-    Sample.Wi       = float3(0.0, 1.0, 0.0);
-    Sample.Distance = 0.0;
-    Sample.Radiance = float3(0.0, 0.0, 0.0);
-    Sample.Valid    = false;
-    return Sample;
+    LightSample ls;
+    ls.dir      = float3(0.0, 1.0, 0.0);
+    ls.distance = 0.0;
+    ls.radiance = float3(0.0, 0.0, 0.0);
+    ls.valid    = false;
+    return ls;
 }
 
-bool RTXPTNormalizeDirection(float3 V, out float3 Dir)
+bool tryNormalize(float3 v, out float3 dir)
 {
-    const float LenSq = dot(V, V);
-    if (LenSq <= 1e-12)
+    const float lenSq = dot(v, v);
+    if (lenSq <= 1e-12)
     {
-        Dir = float3(0.0, 0.0, 0.0);
+        dir = float3(0.0, 0.0, 0.0);
         return false;
     }
 
-    Dir = V * rsqrt(LenSq);
+    dir = v * rsqrt(lenSq);
     return true;
 }
 
-RTXPTLightSample RTXPTEvalAnalyticLight(RTXPTLightData Light, float3 SurfacePos)
+LightSample EvalAnalyticLight(RTXPTLightData light, float3 surfacePos)
 {
-    const float  Type      = Light.DirectionType.w;
-    const float3 Radiance  = max(Light.ColorIntensity.rgb, float3(0.0, 0.0, 0.0)) * max(Light.ColorIntensity.a, 0.0);
-    const float  MaxEnergy = max(Radiance.x, max(Radiance.y, Radiance.z));
-    if (Type < -0.5 || MaxEnergy <= 0.0)
-        return RTXPTInvalidLightSample();
+    const float  type      = light.DirectionType.w;
+    const float3 radiance  = max(light.ColorIntensity.rgb, float3(0.0, 0.0, 0.0)) * max(light.ColorIntensity.a, 0.0);
+    const float  maxEnergy = max(radiance.x, max(radiance.y, radiance.z));
+    if (type < -0.5 || maxEnergy <= 0.0)
+        return LightSample_make_empty();
 
-    RTXPTLightSample Sample = RTXPTInvalidLightSample();
+    LightSample ls = LightSample_make_empty();
 
-    if (Type < 0.5)
+    if (type < 0.5)
     {
-        if (!RTXPTNormalizeDirection(-Light.DirectionType.xyz, Sample.Wi))
-            return RTXPTInvalidLightSample();
+        if (!tryNormalize(-light.DirectionType.xyz, ls.dir))
+            return LightSample_make_empty();
 
-        Sample.Distance = 1e30;
-        Sample.Radiance = Radiance;
-        Sample.Valid    = true;
-        return Sample;
+        ls.distance = 1e30;
+        ls.radiance = radiance;
+        ls.valid    = true;
+        return ls;
     }
 
-    if (Type >= 2.5)
-        return RTXPTInvalidLightSample();
+    if (type >= 2.5)
+        return LightSample_make_empty();
 
-    const float3 ToLight  = Light.PositionRange.xyz - SurfacePos;
-    const float  DistSq   = dot(ToLight, ToLight);
-    const float  Distance = sqrt(DistSq);
-    if (Distance <= 1e-4)
-        return RTXPTInvalidLightSample();
+    const float3 toLight  = light.PositionRange.xyz - surfacePos;
+    const float  distSq   = dot(toLight, toLight);
+    const float  distance = sqrt(distSq);
+    if (distance <= 1e-4)
+        return LightSample_make_empty();
 
-    const float Range = Light.PositionRange.w;
-    if (Range > 0.0 && Distance > Range)
-        return RTXPTInvalidLightSample();
+    const float range = light.PositionRange.w;
+    if (range > 0.0 && distance > range)
+        return LightSample_make_empty();
 
-    Sample.Wi       = ToLight / Distance;
-    Sample.Distance = Distance;
+    ls.dir      = toLight / distance;
+    ls.distance = distance;
 
-    float Attenuation = 1.0 / max(DistSq, 1e-6);
+    float attenuation = 1.0 / max(distSq, 1e-6);
 
-    if (Type >= 1.5)
+    if (type >= 1.5)
     {
-        float3 LightDir;
-        if (!RTXPTNormalizeDirection(Light.DirectionType.xyz, LightDir))
-            return RTXPTInvalidLightSample();
+        float3 lightDir;
+        if (!tryNormalize(light.DirectionType.xyz, lightDir))
+            return LightSample_make_empty();
 
-        const float CosTheta = dot(LightDir, -Sample.Wi);
-        const float InnerCos = cos(Light.SpotAngles.x);
-        const float OuterCos = cos(Light.SpotAngles.y);
-        const float Cone     = saturate((CosTheta - OuterCos) / max(InnerCos - OuterCos, 1e-4));
-        if (Cone <= 0.0)
-            return RTXPTInvalidLightSample();
+        const float cosTheta = dot(lightDir, -ls.dir);
+        const float innerCos = cos(light.SpotAngles.x);
+        const float outerCos = cos(light.SpotAngles.y);
+        const float cone     = saturate((cosTheta - outerCos) / max(innerCos - outerCos, 1e-4));
+        if (cone <= 0.0)
+            return LightSample_make_empty();
 
-        Attenuation *= Cone * Cone;
+        attenuation *= cone * cone;
     }
 
-    Sample.Radiance = Radiance * Attenuation;
-    Sample.Valid    = true;
-    return Sample;
+    ls.radiance = radiance * attenuation;
+    ls.valid    = true;
+    return ls;
 }
 
-#endif // RTXPT_LIGHT_SAMPLING_HLSLI
+#endif // __POLYMORPHIC_LIGHT_HLSLI__

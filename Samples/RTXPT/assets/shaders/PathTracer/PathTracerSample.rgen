@@ -70,21 +70,21 @@ float3 RTXPTSampleAnalyticNEE(StandardBSDFData Surface, float3 HitPos, float3 Vi
 
     const uint LightIndex = min(uint(sampleNext1D(Rng) * float(LightCount)), LightCount - 1u);
 
-    RTXPTLightSample Light = RTXPTEvalAnalyticLight(Bridge::GetLight(LightIndex), HitPos);
-    if (!Light.Valid)
+    LightSample Light = EvalAnalyticLight(Bridge::GetLight(LightIndex), HitPos);
+    if (!Light.valid)
         return float3(0.0, 0.0, 0.0);
 
     const float SpecProb = getSpecularProbability(Surface, Wo);
     float3      FTimesNoL;
     float       BsdfPdf;
-    EvalBSDF(Surface, Wo, Light.Wi, SpecProb, FTimesNoL, BsdfPdf);
+    EvalBSDF(Surface, Wo, Light.dir, SpecProb, FTimesNoL, BsdfPdf);
     if (BsdfPdf <= 0.0)
         return float3(0.0, 0.0, 0.0);
 
-    if (!RTXPTTraceVisibility(VisibilityOrigin, Light.Wi, Light.Distance))
+    if (!RTXPTTraceVisibility(VisibilityOrigin, Light.dir, Light.distance))
         return float3(0.0, 0.0, 0.0);
 
-    return FTimesNoL * Light.Radiance * g_FrameConstants.PathTracer.LightIntensityScale * float(LightCount);
+    return FTimesNoL * Light.radiance * g_FrameConstants.PathTracer.LightIntensityScale * float(LightCount);
 }
 
 float3 RTXPTSampleEnvNEE(StandardBSDFData Surface, float3 VisibilityOrigin,
@@ -108,7 +108,7 @@ float3 RTXPTSampleEnvNEE(StandardBSDFData Surface, float3 VisibilityOrigin,
     if (!RTXPTTraceVisibility(VisibilityOrigin, Wi, RTXPT_VISIBILITY_RAY_TMAX))
         return float3(0.0, 0.0, 0.0);
 
-    const float3 EnvRadiance = RTXPTEvalSky(Wi) * g_FrameConstants.PathTracer.EnvIntensity;
+    const float3 EnvRadiance = EnvMap::Eval(Wi) * g_FrameConstants.PathTracer.EnvIntensity;
     const float  MISWeight   = PowerHeuristic(1.0, EnvPdf, 1.0, BsdfPdf);
     return FTimesNoL * EnvRadiance * (MISWeight / EnvPdf);
 }

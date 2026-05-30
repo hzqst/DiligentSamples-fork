@@ -39,13 +39,17 @@ void main()
     float3 throughput   = float3(1.0, 1.0, 1.0);
     float3 pathRadiance = float3(0.0, 0.0, 0.0);
 
+    // G1: per-path firefly-filter K starts at 1.0 and shrinks as the path spreads (set after each scatter).
+    float fireflyFilterK = 1.0;
+
     float  prevBsdfPdf   = 0.0;
     float3 prevNormal    = float3(0.0, 1.0, 0.0);
     bool   prevDidEnvNEE = false;
-    const uint maxBounces    = max(g_Const.ptConsts.bounceCount, 1u);
-    const uint maxNEEBounces = min(g_Const.ptConsts.maxNEEBounceCount, maxBounces);
-    const bool enableNEE     = g_Const.ptConsts.NEEEnabled != 0u;
-    const bool enableEnvNEE  = enableNEE && g_Const.ptConsts.environmentNEEEnabled != 0u;
+    const uint  maxBounces    = max(g_Const.ptConsts.bounceCount, 1u);
+    const uint  maxNEEBounces = min(g_Const.ptConsts.maxNEEBounceCount, maxBounces);
+    const bool  enableNEE     = g_Const.ptConsts.NEEEnabled != 0u;
+    const bool  enableEnvNEE  = enableNEE && g_Const.ptConsts.environmentNEEEnabled != 0u;
+    const float ffThreshold   = g_Const.ptConsts.fireflyFilterThreshold; // 0 disables the firefly filter.
 
     [loop]
     for (uint bounce = 0u; bounce < maxBounces; ++bounce)
@@ -73,12 +77,18 @@ void main()
         {
             const float  misWeight   = PathTracer::ComputeBSDFEnvMISWeight(prevDidEnvNEE, prevBsdfPdf, prevNormal, rayDir);
             const float3 envRadiance = payload.emission * g_Const.ptConsts.environmentIntensity;
-            pathRadiance += throughput * envRadiance * misWeight;
+            float3       environmentEmission = envRadiance * misWeight;
+            if (ffThreshold != 0.0)
+                environmentEmission = FireflyFilter(environmentEmission, ffThreshold, fireflyFilterK);
+            pathRadiance += throughput * environmentEmission;
             break;
         }
 
         // Accumulate emissive surfaces hit by BSDF sampling. Area-light NEE is deferred to a later lighting pass.
-        pathRadiance += throughput * payload.emission;
+        float3 surfaceEmission = payload.emission;
+        if (ffThreshold != 0.0)
+            surfaceEmission = FireflyFilter(surfaceEmission, ffThreshold, fireflyFilterK);
+        pathRadiance += throughput * surfaceEmission;
 
         // Build the glTF metallic-roughness surface the closest-hit filled in, then add explicit direct lighting
         // before importance-sampling the GGX BSDF for the next direction.
@@ -104,6 +114,9 @@ void main()
             break;
 
         throughput *= weight;
+
+        // G1: shrink the firefly K by the spread implied by this scatter (pdf) and the sampled lobe (lobeP).
+        fireflyFilterK = ComputeNewScatterFireflyFilterK(fireflyFilterK, pdf, lobeP);
 
         // Russian roulette once we are past minBounceCount - unbiased early termination of dim paths.
         if (bounce >= g_Const.ptConsts.minBounceCount)

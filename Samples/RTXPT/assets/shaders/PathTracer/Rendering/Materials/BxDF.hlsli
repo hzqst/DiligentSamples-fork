@@ -109,7 +109,7 @@ void RTXPTEvalBSDF(RTXPTSurface S, float3 Wo, float3 Wi, float SpecProb, out flo
 
 // Importance-sample an incident direction Wi. Returns false for invalid samples.
 // Weight = f(Wo,Wi) * NoL / pdf is the throughput multiplier the path tracer applies.
-bool RTXPTSampleBSDF(RTXPTSurface S, float3 Wo, inout RTXPTRandom Rng,
+bool RTXPTSampleBSDF(RTXPTSurface S, float3 Wo, inout SampleGenerator sg,
                      out float3 Wi, out float3 Weight, out float Pdf)
 {
     Wi     = float3(0.0, 0.0, 0.0);
@@ -125,10 +125,10 @@ bool RTXPTSampleBSDF(RTXPTSurface S, float3 Wo, inout RTXPTRandom Rng,
 
     float3 Tangent;
     float3 Bitangent;
-    BuildOrthonormalBasis(S.N, Tangent, Bitangent);
+    BranchlessONB(S.N, Tangent, Bitangent);
 
-    const float2 Rand2 = NextFloat2(Rng);
-    const float  Lobe  = NextFloat(Rng);
+    const float2 Rand2 = sampleNext2D(sg);
+    const float  Lobe  = sampleNext1D(sg);
 
     if (Lobe < SpecProb)
     {
@@ -148,7 +148,7 @@ bool RTXPTSampleBSDF(RTXPTSurface S, float3 Wo, inout RTXPTRandom Rng,
     {
         // Cosine-weighted diffuse hemisphere sample.
         float PdfUnused;
-        Wi = SampleCosineHemisphere(Rand2, S.N, PdfUnused);
+        Wi = sampleCosineHemisphere(Rand2, S.N, PdfUnused);
         if (dot(S.N, Wi) <= 0.0)
             return false;
     }

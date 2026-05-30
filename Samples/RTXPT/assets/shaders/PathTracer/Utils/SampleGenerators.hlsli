@@ -1,5 +1,5 @@
-#ifndef RTXPT_RANDOM_HLSLI
-#define RTXPT_RANDOM_HLSLI
+#ifndef __SAMPLE_GENERATORS_HLSLI__
+#define __SAMPLE_GENERATORS_HLSLI__
 
 // Lightweight integer hash for PRNG seeding. Same constants used by RTXPT's
 // IntroPathTracer (D:/RTXPT-fork/Rtxpt/Shaders/IntroSample/IntroPathTracer.hlsl)
@@ -14,74 +14,74 @@ uint Hash32(uint x)
     return x;
 }
 
-uint Hash32Combine(uint Seed, uint Value)
+uint Hash32Combine(uint seed, uint value)
 {
-    return Seed ^ (Hash32(Value) + 0x9e3779b9u + (Seed << 6) + (Seed >> 2));
+    return seed ^ (Hash32(value) + 0x9e3779b9u + (seed << 6) + (seed >> 2));
 }
 
 // Map 23 random bits to [0, 1).
-float ToFloat0To1(uint x)
+float UintToFloat01(uint x)
 {
     return asfloat(0x3f800000u | (x & 0x7fffffu)) - 1.0;
 }
 
-struct RTXPTRandom
+struct SampleGenerator
 {
     uint State;
 };
 
-RTXPTRandom RTXPTRandom_Init(uint2 PixelPos, uint FrameSeed)
+SampleGenerator SampleGenerator_make(uint2 pixelPos, uint frameSeed)
 {
-    RTXPTRandom Rng;
-    const uint  PixelSeed = (PixelPos.x << 16) | (PixelPos.y & 0xffffu);
-    Rng.State             = Hash32Combine(Hash32(FrameSeed), PixelSeed);
-    return Rng;
+    SampleGenerator sg;
+    const uint      PixelSeed = (pixelPos.x << 16) | (pixelPos.y & 0xffffu);
+    sg.State                  = Hash32Combine(Hash32(frameSeed), PixelSeed);
+    return sg;
 }
 
-float NextFloat(inout RTXPTRandom Rng)
+float sampleNext1D(inout SampleGenerator sg)
 {
-    Rng.State = Hash32(Rng.State);
-    return ToFloat0To1(Rng.State);
+    sg.State = Hash32(sg.State);
+    return UintToFloat01(sg.State);
 }
 
-float2 NextFloat2(inout RTXPTRandom Rng)
+float2 sampleNext2D(inout SampleGenerator sg)
 {
-    const float X = NextFloat(Rng);
-    const float Y = NextFloat(Rng);
+    const float X = sampleNext1D(sg);
+    const float Y = sampleNext1D(sg);
     return float2(X, Y);
 }
 
 // Build an orthonormal basis (Tangent, Bitangent) from a unit normal. Frisvad 2012.
-void BuildOrthonormalBasis(float3 Normal, out float3 Tangent, out float3 Bitangent)
+void BranchlessONB(float3 normal, out float3 tangent, out float3 bitangent)
 {
-    if (Normal.z < -0.9999999)
+    if (normal.z < -0.9999999)
     {
-        Tangent   = float3(0.0, -1.0, 0.0);
-        Bitangent = float3(-1.0, 0.0, 0.0);
+        tangent   = float3(0.0, -1.0, 0.0);
+        bitangent = float3(-1.0, 0.0, 0.0);
         return;
     }
-    const float A = 1.0 / (1.0 + Normal.z);
-    const float B = -Normal.x * Normal.y * A;
-    Tangent       = float3(1.0 - Normal.x * Normal.x * A, B, -Normal.x);
-    Bitangent     = float3(B, 1.0 - Normal.y * Normal.y * A, -Normal.y);
+    const float A = 1.0 / (1.0 + normal.z);
+    const float B = -normal.x * normal.y * A;
+    tangent       = float3(1.0 - normal.x * normal.x * A, B, -normal.x);
+    bitangent     = float3(B, 1.0 - normal.y * normal.y * A, -normal.y);
 }
 
 // Cosine-weighted hemisphere sample around `Normal`. Returns a unit vector and
 // the matching PDF in `Pdf`. PDF for Lambertian sampling is cos(theta) / PI.
-float3 SampleCosineHemisphere(float2 Rand, float3 Normal, out float Pdf)
+float3 sampleCosineHemisphere(float2 rand, float3 normal, out float pdf)
 {
-    const float R     = sqrt(Rand.x);
-    const float Theta = 6.28318530718 * Rand.y;
-    const float X     = R * cos(Theta);
-    const float Y     = R * sin(Theta);
-    const float Z     = sqrt(max(0.0, 1.0 - Rand.x));
+    const float R     = sqrt(rand.x);
+    const float theta = 6.28318530718 * rand.y;
+    const float X     = R * cos(theta);
+    const float Y     = R * sin(theta);
+    const float Z     = sqrt(max(0.0, 1.0 - rand.x));
 
-    float3 Tangent;
-    float3 Bitangent;
-    BuildOrthonormalBasis(Normal, Tangent, Bitangent);
+    float3 tangent;
+    float3 bitangent;
+    BranchlessONB(normal, tangent, bitangent);
 
-    Pdf = Z * 0.318309886184; // Z / PI
-    return normalize(Tangent * X + Bitangent * Y + Normal * Z);
+    pdf = Z * 0.318309886184; // Z / PI
+    return normalize(tangent * X + bitangent * Y + normal * Z);
 }
 
-#endif // RTXPT_RANDOM_HLSLI
+#endif // __SAMPLE_GENERATORS_HLSLI__

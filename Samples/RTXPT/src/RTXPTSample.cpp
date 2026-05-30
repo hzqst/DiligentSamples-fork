@@ -789,7 +789,7 @@ void RTXPTSample::UpdateUI()
             ScenePreview = "no scenes found";
 
         ImGui::BeginDisabled(m_AvailableScenes.empty());
-        if (ImGui::BeginCombo("Scene", ScenePreview))
+        if (ImGui::BeginCombo("Scene##SceneSelection", ScenePreview))
         {
             for (const std::string& SceneName : m_AvailableScenes)
             {

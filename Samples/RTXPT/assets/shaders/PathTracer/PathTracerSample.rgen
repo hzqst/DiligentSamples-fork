@@ -1,9 +1,9 @@
-RaytracingAccelerationStructure                g_TLAS;
+RaytracingAccelerationStructure                t_SceneBVH;
 
 #include "PathTracer.hlsli"
 
-VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   g_OutputColor;
-VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> g_AccumColor;
+VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   u_Output;
+VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
 
 static float3 ToneMapACES(float3 x)
 {
@@ -23,7 +23,7 @@ void main()
     const uint2 pixel      = DispatchRaysIndex().xy;
     const uint2 dimensions = DispatchRaysDimensions().xy;
 
-    const uint  frameSeed = asuint(g_FrameConstants.viewportSizeAndFrameIndex.w);
+    const uint  frameSeed = asuint(g_Const.viewportSizeAndFrameIndex.w);
     SampleGenerator sg    = SampleGenerator_make(pixel, frameSeed);
 
     // Jitter inside the pixel - gives free anti-aliasing across accumulated samples.
@@ -31,8 +31,8 @@ void main()
     const float2 uv     = (float2(pixel) + jitter) / float2(dimensions);
     const float2 ndc    = uv * 2.0 - 1.0;
 
-    const float4 worldPos4 = mul(float4(ndc, 1.0, 1.0), g_FrameConstants.viewProjInv);
-    const float3 origin    = g_FrameConstants.cameraPositionAndTime.xyz;
+    const float4 worldPos4 = mul(float4(ndc, 1.0, 1.0), g_Const.viewProjInv);
+    const float3 origin    = g_Const.cameraPositionAndTime.xyz;
     float3       rayOrigin = origin;
     float3       rayDir    = normalize(worldPos4.xyz / worldPos4.w - origin);
 
@@ -42,10 +42,10 @@ void main()
     float  prevBsdfPdf   = 0.0;
     float3 prevNormal    = float3(0.0, 1.0, 0.0);
     bool   prevDidEnvNEE = false;
-    const uint maxBounces    = max(g_FrameConstants.ptConsts.bounceCount, 1u);
-    const uint maxNEEBounces = min(g_FrameConstants.ptConsts.maxNEEBounceCount, maxBounces);
-    const bool enableNEE     = g_FrameConstants.ptConsts.NEEEnabled != 0u;
-    const bool enableEnvNEE  = enableNEE && g_FrameConstants.ptConsts.environmentNEEEnabled != 0u;
+    const uint maxBounces    = max(g_Const.ptConsts.bounceCount, 1u);
+    const uint maxNEEBounces = min(g_Const.ptConsts.maxNEEBounceCount, maxBounces);
+    const bool enableNEE     = g_Const.ptConsts.NEEEnabled != 0u;
+    const bool enableEnvNEE  = enableNEE && g_Const.ptConsts.environmentNEEEnabled != 0u;
 
     [loop]
     for (uint bounce = 0u; bounce < maxBounces; ++bounce)
@@ -60,7 +60,7 @@ void main()
 
         // RAY_FLAG_NONE lets the alpha-test any-hit shader run for non-opaque (alpha-masked) geometry.
         // Opaque geometry still skips any-hit via its BLAS RAYTRACING_GEOMETRY_FLAG_OPAQUE flag.
-        TraceRay(g_TLAS,
+        TraceRay(t_SceneBVH,
                  RAY_FLAG_NONE,
                  0xFF,
                  0,
@@ -72,7 +72,7 @@ void main()
         if (payload.hitFlag == 0u)
         {
             const float  misWeight   = PathTracer::ComputeBSDFEnvMISWeight(prevDidEnvNEE, prevBsdfPdf, prevNormal, rayDir);
-            const float3 envRadiance = payload.emission * g_FrameConstants.ptConsts.environmentIntensity;
+            const float3 envRadiance = payload.emission * g_Const.ptConsts.environmentIntensity;
             pathRadiance += throughput * envRadiance * misWeight;
             break;
         }
@@ -105,7 +105,7 @@ void main()
         throughput *= weight;
 
         // Russian roulette once we are past minBounceCount - unbiased early termination of dim paths.
-        if (bounce >= g_FrameConstants.ptConsts.minBounceCount)
+        if (bounce >= g_Const.ptConsts.minBounceCount)
         {
             const float survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 1.0);
             if (sampleNext1D(sg) > survive)
@@ -123,18 +123,18 @@ void main()
 
     // Blend into the accumulation buffer. resetAccumulation == 1 means this is the first sample after a reset.
     float3     accumulated = pathRadiance;
-    const uint reset       = g_FrameConstants.ptConsts.resetAccumulation;
-    const uint frame       = max(g_FrameConstants.ptConsts.sampleIndex, 1u);
+    const uint reset       = g_Const.ptConsts.resetAccumulation;
+    const uint frame       = max(g_Const.ptConsts.sampleIndex, 1u);
     if (reset == 0u)
     {
-        const float4 previous = g_AccumColor[pixel];
+        const float4 previous = u_AccumulationBuffer[pixel];
         const float  invN     = 1.0 / float(frame);
         accumulated           = previous.rgb + (pathRadiance - previous.rgb) * invN;
     }
-    g_AccumColor[pixel] = float4(accumulated, 1.0);
+    u_AccumulationBuffer[pixel] = float4(accumulated, 1.0);
 
     // OutputColor is the rgba8 image consumed by the existing blit/compute chain.
-    g_OutputColor[pixel] = float4(ToneMapACES(accumulated), 1.0);
+    u_Output[pixel] = float4(ToneMapACES(accumulated), 1.0);
 }
 
 // TODO(RTXPT-Port Phase R6): Add transmission / nested dielectrics to the BSDF (currently opaque diffuse + GGX specular).

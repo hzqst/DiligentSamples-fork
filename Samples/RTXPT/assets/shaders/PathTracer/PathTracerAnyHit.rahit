@@ -4,7 +4,7 @@
 
 // Alpha-test any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE
 // (set for ALPHA_MODE_MASK materials in RTXPTAccelerationStructures::BuildStaticScene). Opaque geometry never
-// reaches this shader. Compiled into the hit group only when RTXPT_ENABLE_MATERIAL_TEXTURES is defined.
+// reaches this shader. Compiled into the hit group only when ENABLE_MATERIAL_TEXTURES is defined.
 [shader("anyhit")]
 void main(inout PathPayload Payload,
           in BuiltInTriangleIntersectionAttributes Attributes)

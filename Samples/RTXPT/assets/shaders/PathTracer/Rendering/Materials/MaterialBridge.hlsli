@@ -1,15 +1,16 @@
 #ifndef __MATERIAL_BRIDGE_HLSLI__
 #define __MATERIAL_BRIDGE_HLSLI__
 
+#include "Config.h"
 #include "PathTracerShared.h"
 
-StructuredBuffer<MaterialPTData> g_Materials;
+StructuredBuffer<MaterialPTData> t_PTMaterialData;
 
-#ifdef RTXPT_ENABLE_MATERIAL_TEXTURES
+#ifdef ENABLE_MATERIAL_TEXTURES
 // One Texture2DArray per loaded GLTF texture (the Diligent loader creates RESOURCE_DIM_TEX_2D_ARRAY textures).
-// RTXPT_MATERIAL_TEXTURE_COUNT is supplied at compile time and equals RTXPTMaterials::GetTextureCount().
-Texture2DArray g_MaterialTextures[RTXPT_MATERIAL_TEXTURE_COUNT];
-SamplerState   g_MaterialSampler;
+// MATERIAL_TEXTURE_COUNT is supplied at compile time and equals RTXPTMaterials::GetTextureCount().
+Texture2DArray t_BindlessTextures[MATERIAL_TEXTURE_COUNT];
+SamplerState   s_MaterialSampler;
 #endif
 
 namespace Bridge
@@ -18,7 +19,7 @@ namespace Bridge
     {
         uint count  = 0;
         uint stride = 0;
-        g_Materials.GetDimensions(count, stride);
+        t_PTMaterialData.GetDimensions(count, stride);
         return count > 0;
     }
 
@@ -26,7 +27,7 @@ namespace Bridge
     {
         uint count  = 0;
         uint stride = 0;
-        g_Materials.GetDimensions(count, stride);
+        t_PTMaterialData.GetDimensions(count, stride);
         return count;
     }
 
@@ -35,15 +36,15 @@ namespace Bridge
     {
         const uint lastIndex = max(getMaterialCount(), 1u) - 1u;
         const uint index     = min(materialID, lastIndex);
-        return g_Materials[index];
+        return t_PTMaterialData[index];
     }
 
-#ifdef RTXPT_ENABLE_MATERIAL_TEXTURES
+#ifdef ENABLE_MATERIAL_TEXTURES
     // Ray tracing shaders cannot derive LOD, so we sample the most detailed level. Slice is 0 for the
     // non-atlas bistro load; it is carried so an atlas path can be added later without touching call sites.
     float4 sampleMaterialTexture(uint textureIndex, float slice, float2 uv)
     {
-        return g_MaterialTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(g_MaterialSampler, float3(uv, slice), 0.0);
+        return t_BindlessTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(s_MaterialSampler, float3(uv, slice), 0.0);
     }
 
     float4 getBaseColor(MaterialPTData material, float2 uv)

@@ -4,11 +4,11 @@
 #include "PathTracerShared.h"
 
 // Global shader resources used by the scene bridge. C++ binds these as static SRVs.
-ConstantBuffer<SampleConstants>        g_FrameConstants;
-StructuredBuffer<SubInstanceData>      g_SubInstanceData;
-StructuredBuffer<PolymorphicLightInfo> g_Lights;
-StructuredBuffer<GeometryVertexData>   g_VertexBuffer;
-Buffer<uint>                           g_IndexBuffer;
+ConstantBuffer<SampleConstants>        g_Const;
+StructuredBuffer<SubInstanceData>      t_SubInstanceData;
+StructuredBuffer<PolymorphicLightInfo> t_Lights;
+StructuredBuffer<GeometryVertexData>   t_VertexBuffer;
+Buffer<uint>                           t_IndexBuffer;
 
 namespace Bridge
 {
@@ -25,16 +25,16 @@ namespace Bridge
     // The caller is responsible for guarding against an empty/unbound table via hasSubInstanceTable().
     SubInstanceData getSubInstanceData()
     {
-        return g_SubInstanceData[getSubInstanceIndex()];
+        return t_SubInstanceData[getSubInstanceIndex()];
     }
 
-    // True when g_SubInstanceData has at least one entry. The C++ side guarantees a dummy entry
+    // True when t_SubInstanceData has at least one entry. The C++ side guarantees a dummy entry
     // is bound when the scene has no real geometry so that this helper still returns a defined value.
     bool hasSubInstanceTable()
     {
         uint count  = 0;
         uint stride = 0;
-        g_SubInstanceData.GetDimensions(count, stride);
+        t_SubInstanceData.GetDimensions(count, stride);
         return count > 0;
     }
 
@@ -47,9 +47,9 @@ namespace Bridge
         if ((subInstance.Flags & kSubInstanceFlagIndexed) != 0u)
         {
             return uint3(
-                g_IndexBuffer[subInstance.IndexOffset + baseIndex + 0u],
-                g_IndexBuffer[subInstance.IndexOffset + baseIndex + 1u],
-                g_IndexBuffer[subInstance.IndexOffset + baseIndex + 2u]);
+                t_IndexBuffer[subInstance.IndexOffset + baseIndex + 0u],
+                t_IndexBuffer[subInstance.IndexOffset + baseIndex + 1u],
+                t_IndexBuffer[subInstance.IndexOffset + baseIndex + 2u]);
         }
         return uint3(baseIndex + 0u, baseIndex + 1u, baseIndex + 2u);
     }
@@ -62,9 +62,9 @@ namespace Bridge
                              out GeometryVertexData v2)
     {
         const uint3 indices = getTriangleIndices(subInstance, localPrimitiveIndex);
-        v0                  = g_VertexBuffer[subInstance.VertexOffset + indices.x];
-        v1                  = g_VertexBuffer[subInstance.VertexOffset + indices.y];
-        v2                  = g_VertexBuffer[subInstance.VertexOffset + indices.z];
+        v0                  = t_VertexBuffer[subInstance.VertexOffset + indices.x];
+        v1                  = t_VertexBuffer[subInstance.VertexOffset + indices.y];
+        v2                  = t_VertexBuffer[subInstance.VertexOffset + indices.z];
     }
 
     // Barycentric-interpolated object-space normal -> world-space, renormalized.
@@ -142,12 +142,12 @@ namespace Bridge
     // that dummy is intentionally excluded from sampling.
     uint getLightCount()
     {
-        return g_FrameConstants.ptConsts.analyticLightCount;
+        return g_Const.ptConsts.analyticLightCount;
     }
 
     PolymorphicLightInfo getLight(uint index)
     {
-        return g_Lights[index];
+        return t_Lights[index];
     }
 } // namespace Bridge
 

@@ -119,8 +119,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     ShaderMacroHelper Macros;
     if (UseTextures)
     {
-        Macros.Add("RTXPT_ENABLE_MATERIAL_TEXTURES", 1);
-        Macros.Add("RTXPT_MATERIAL_TEXTURE_COUNT", static_cast<int>(MaterialTextureCount));
+        Macros.Add("ENABLE_MATERIAL_TEXTURES", 1);
+        Macros.Add("MATERIAL_TEXTURE_COUNT", static_cast<int>(MaterialTextureCount));
     }
     ShaderCI.Macros = Macros;
 
@@ -170,24 +170,24 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
-        .AddVariable(SHADER_TYPE_RAY_GEN, "g_FrameConstants", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_RAY_GEN, "g_TLAS", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(HitStages, "g_Materials", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(HitStages, "g_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(HitStages, "g_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(HitStages, "g_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_RAY_GEN, "g_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_RAY_GEN, "g_OutputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
-        .AddVariable(SHADER_TYPE_RAY_GEN, "g_AccumColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
+        .AddVariable(SHADER_TYPE_RAY_GEN, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(HitStages, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(HitStages, "t_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(HitStages, "t_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(HitStages, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "u_AccumulationBuffer", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
 
     if (UseTextures)
     {
-        ResourceLayout.AddVariable(HitStages, "g_MaterialTextures", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
+        ResourceLayout.AddVariable(HitStages, "t_BindlessTextures", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
 
         const SamplerDesc MaterialSamplerDesc{
             FILTER_TYPE_LINEAR, FILTER_TYPE_LINEAR, FILTER_TYPE_LINEAR,
             TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP};
-        ResourceLayout.AddImmutableSampler(HitStages, "g_MaterialSampler", MaterialSamplerDesc);
+        ResourceLayout.AddImmutableSampler(HitStages, "s_MaterialSampler", MaterialSamplerDesc);
     }
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
@@ -210,8 +210,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         return true;
     };
 
-    const bool FrameConstantsBound = SetStatic(SHADER_TYPE_RAY_GEN, "g_FrameConstants", pFrameConstants);
-    const bool TLASBound           = SetStatic(SHADER_TYPE_RAY_GEN, "g_TLAS", m_TLAS);
+    const bool FrameConstantsBound = SetStatic(SHADER_TYPE_RAY_GEN, "g_Const", pFrameConstants);
+    const bool TLASBound           = SetStatic(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS);
 
     if (!FrameConstantsBound || !TLASBound)
     {
@@ -244,11 +244,11 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         return false;
     }
 
-    m_Stats.MaterialBridgeBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_Materials", pMaterialsView);
-    m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_SubInstanceData", pSubInstanceView);
-    m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_GEN, "g_Lights", pLightsView);
-    m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_VertexBuffer", pVertexView);
-    m_Stats.IndexBufferBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "g_IndexBuffer", m_IndexBufferView);
+    m_Stats.MaterialBridgeBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_PTMaterialData", pMaterialsView);
+    m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SubInstanceData", pSubInstanceView);
+    m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView);
+    m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_VertexBuffer", pVertexView);
+    m_Stats.IndexBufferBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_IndexBuffer", m_IndexBufferView);
 
     if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound ||
         !m_Stats.VertexBufferBound || !m_Stats.IndexBufferBound)
@@ -266,7 +266,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
     if (UseTextures)
     {
-        IShaderResourceVariable* pTexVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_CLOSEST_HIT, "g_MaterialTextures");
+        IShaderResourceVariable* pTexVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_CLOSEST_HIT, "t_BindlessTextures");
         if (pTexVar == nullptr)
         {
             m_Stats.LastError = "Failed to find RTXPT material texture array binding";
@@ -309,8 +309,8 @@ bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext,
     if (!IsReady() || pOutputUAV == nullptr || pAccumulationUAV == nullptr || Width == 0 || Height == 0)
         return false;
 
-    IShaderResourceVariable* pOutputColorVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "g_OutputColor");
-    IShaderResourceVariable* pAccumColorVar  = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "g_AccumColor");
+    IShaderResourceVariable* pOutputColorVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Output");
+    IShaderResourceVariable* pAccumColorVar  = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_AccumulationBuffer");
     if (pOutputColorVar == nullptr || pAccumColorVar == nullptr)
     {
         m_Stats.LastError = "Failed to find RTXPT output bindings";

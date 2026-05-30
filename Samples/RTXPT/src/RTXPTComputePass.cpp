@@ -90,9 +90,9 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
-        .AddVariable(SHADER_TYPE_COMPUTE, "g_FrameConstants", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_COMPUTE, "g_InputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
-        .AddVariable(SHADER_TYPE_COMPUTE, "g_OutputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
+        .AddVariable(SHADER_TYPE_COMPUTE, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "t_InputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
     pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
@@ -102,7 +102,7 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
         return false;
     }
 
-    m_PSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "g_FrameConstants")->Set(pFrameConstants);
+    m_PSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "g_Const")->Set(pFrameConstants);
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
     if (!m_SRB)
     {
@@ -122,8 +122,8 @@ bool RTXPTComputePass::Dispatch(IDeviceContext* pContext, ITextureView* pInputSR
     if (!IsReady() || pInputSRV == nullptr || pOutputUAV == nullptr || Width == 0 || Height == 0)
         return false;
 
-    m_SRB->GetVariableByName(SHADER_TYPE_COMPUTE, "g_InputColor")->Set(pInputSRV);
-    m_SRB->GetVariableByName(SHADER_TYPE_COMPUTE, "g_OutputColor")->Set(pOutputUAV);
+    m_SRB->GetVariableByName(SHADER_TYPE_COMPUTE, "t_InputColor")->Set(pInputSRV);
+    m_SRB->GetVariableByName(SHADER_TYPE_COMPUTE, "u_Output")->Set(pOutputUAV);
 
     pContext->SetPipelineState(m_PSO);
     pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

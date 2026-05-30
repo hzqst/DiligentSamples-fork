@@ -72,7 +72,7 @@ struct RTXPTPathTracerSettings
     Uint32 Padding1           = 0;
     Uint32 Padding2           = 0;
 };
-static_assert(sizeof(RTXPTPathTracerSettings) == 48, "RTXPTPathTracerSettings layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTPathTracerSettings) == 48, "RTXPTPathTracerSettings layout must match PathTracer/PathTracerShared.h");
 
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
 // (D:/RTXPT-fork/Rtxpt/SampleUI.h). These fields back the present-but-disabled placeholder
@@ -105,7 +105,7 @@ struct RTXPTFrameConstants
     float4                  ViewportSize_FrameIdx = float4{0, 0, 0, 0};
     RTXPTPathTracerSettings PathTracer            = {};
 };
-static_assert(sizeof(RTXPTFrameConstants) == 208, "RTXPTFrameConstants layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTFrameConstants) == 208, "RTXPTFrameConstants layout must match PathTracer/PathTracerShared.h");
 
 class RTXPTSample final : public SampleBase
 {

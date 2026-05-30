@@ -1,8 +1,8 @@
-#include "RTXPTSceneBridge.hlsli"
-#include "RTXPTEnvironment.hlsli"
-#include "RTXPTLightSampling.hlsli"
-#include "RTXPTRandom.hlsli"
-#include "RTXPTBSDF.hlsli"
+#include "PathTracerBridge.hlsli"
+#include "Lighting/EnvMap.hlsli"
+#include "Lighting/PolymorphicLight.hlsli"
+#include "Utils/SampleGenerators.hlsli"
+#include "Rendering/Materials/BxDF.hlsli"
 
 RaytracingAccelerationStructure                g_TLAS;
 VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   g_OutputColor;

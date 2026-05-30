@@ -1,6 +1,6 @@
 #define RTXPT_ENABLE_HIT_BRIDGE 1
-#include "RTXPTSceneBridge.hlsli"
-#include "RTXPTMaterialBridge.hlsli"
+#include "PathTracerBridge.hlsli"
+#include "Rendering/Materials/MaterialBridge.hlsli"
 
 // Alpha-test any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE
 // (set for ALPHA_MODE_MASK materials in RTXPTAccelerationStructures::BuildStaticScene). Opaque geometry never

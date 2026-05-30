@@ -29,17 +29,17 @@ set(INCLUDE
 
 set(SHADERS
     assets/shaders/RTXPTCommon.fxh
-    assets/shaders/RTXPTShaderShared.hlsli
-    assets/shaders/RTXPTSceneBridge.hlsli
-    assets/shaders/RTXPTMaterialBridge.hlsli
-    assets/shaders/RTXPTEnvironment.hlsli
-    assets/shaders/RTXPTLightSampling.hlsli
-    assets/shaders/RTXPTRandom.hlsli
-    assets/shaders/RTXPTBSDF.hlsli
-    assets/shaders/RTXPTReference.rgen
-    assets/shaders/RTXPTReference.rmiss
-    assets/shaders/RTXPTReference.rchit
-    assets/shaders/RTXPTReference.rahit
+    assets/shaders/PathTracer/PathTracerShared.h
+    assets/shaders/PathTracer/PathTracerBridge.hlsli
+    assets/shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli
+    assets/shaders/PathTracer/Lighting/EnvMap.hlsli
+    assets/shaders/PathTracer/Lighting/PolymorphicLight.hlsli
+    assets/shaders/PathTracer/Utils/SampleGenerators.hlsli
+    assets/shaders/PathTracer/Rendering/Materials/BxDF.hlsli
+    assets/shaders/PathTracer/PathTracerSample.rgen
+    assets/shaders/PathTracer/PathTracerMiss.rmiss
+    assets/shaders/PathTracer/PathTracerClosestHit.rchit
+    assets/shaders/PathTracer/PathTracerAnyHit.rahit
     assets/shaders/RTXPTDebugCompute.csh
     assets/shaders/RTXPTBlit.vsh
     assets/shaders/RTXPTBlit.psh

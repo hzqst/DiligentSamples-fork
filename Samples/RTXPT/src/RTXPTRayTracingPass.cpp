@@ -90,7 +90,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     m_TLAS = pTLAS;
 
     RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
-    pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders", &pShaderSourceFactory);
+    pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders;shaders\\PathTracer", &pShaderSourceFactory);
 
     ShaderCreateInfo ShaderCI;
     ShaderCI.Desc.UseCombinedTextureSamplers = false;
@@ -104,14 +104,14 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     RefCntAutoPtr<IShader> pRayGen;
     ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_GEN;
     ShaderCI.Desc.Name       = "RTXPT reference raygen";
-    ShaderCI.FilePath        = "RTXPTReference.rgen";
+    ShaderCI.FilePath        = "PathTracer/PathTracerSample.rgen";
     ShaderCI.EntryPoint      = "main";
     pDevice->CreateShader(ShaderCI, &pRayGen);
 
     RefCntAutoPtr<IShader> pMiss;
     ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
     ShaderCI.Desc.Name       = "RTXPT reference miss";
-    ShaderCI.FilePath        = "RTXPTReference.rmiss";
+    ShaderCI.FilePath        = "PathTracer/PathTracerMiss.rmiss";
     ShaderCI.EntryPoint      = "main";
     pDevice->CreateShader(ShaderCI, &pMiss);
 
@@ -127,7 +127,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     RefCntAutoPtr<IShader> pClosestHit;
     ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_CLOSEST_HIT;
     ShaderCI.Desc.Name       = "RTXPT reference closest hit";
-    ShaderCI.FilePath        = "RTXPTReference.rchit";
+    ShaderCI.FilePath        = "PathTracer/PathTracerClosestHit.rchit";
     ShaderCI.EntryPoint      = "main";
     pDevice->CreateShader(ShaderCI, &pClosestHit);
 
@@ -136,7 +136,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     {
         ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_ANY_HIT;
         ShaderCI.Desc.Name       = "RTXPT reference any hit";
-        ShaderCI.FilePath        = "RTXPTReference.rahit";
+        ShaderCI.FilePath        = "PathTracer/PathTracerAnyHit.rahit";
         ShaderCI.EntryPoint      = "main";
         pDevice->CreateShader(ShaderCI, &pAnyHit);
     }

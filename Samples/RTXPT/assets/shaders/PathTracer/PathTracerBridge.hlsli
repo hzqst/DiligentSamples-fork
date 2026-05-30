@@ -1,7 +1,7 @@
 #ifndef RTXPT_SCENE_BRIDGE_HLSLI
 #define RTXPT_SCENE_BRIDGE_HLSLI
 
-#include "RTXPTShaderShared.hlsli"
+#include "PathTracerShared.h"
 
 // Global shader resources used by the scene bridge. C++ binds these as static SRVs.
 ConstantBuffer<RTXPTFrameConstants>    g_FrameConstants;

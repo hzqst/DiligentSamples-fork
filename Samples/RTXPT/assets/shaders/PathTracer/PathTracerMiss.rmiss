@@ -1,5 +1,5 @@
-#include "RTXPTShaderShared.hlsli"
-#include "RTXPTEnvironment.hlsli"
+#include "PathTracerShared.h"
+#include "Lighting/EnvMap.hlsli"
 
 [shader("miss")]
 void main(inout RTXPTPathTracerPayload Payload)

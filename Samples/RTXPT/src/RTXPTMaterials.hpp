@@ -41,7 +41,7 @@
 namespace Diligent
 {
 
-// GPU material record consumed by the reference path tracer (mirrors RTXPTMaterialData in RTXPTShaderShared.hlsli).
+// GPU material record consumed by the reference path tracer (mirrors RTXPTMaterialData in PathTracer/PathTracerShared.h).
 // One entry per GLTF material; the closest-hit / any-hit shaders index it via RTXPTSubInstanceData::MaterialID.
 // All texture indices/slices reference the shared bindless material-texture table (one entry per GLTF texture).
 struct RTXPTMaterialData
@@ -71,15 +71,15 @@ struct RTXPTMaterialData
     float Padding2 = 0.0f;
     float Padding3 = 0.0f;
 };
-static_assert(sizeof(RTXPTMaterialData) == 96, "RTXPTMaterialData layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTMaterialData) == 96, "RTXPTMaterialData layout must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(RTXPTMaterialData, MetallicRoughnessTextureIndex) == 60,
-              "RTXPTMaterialData MetallicRoughnessTextureIndex offset must match RTXPTShaderShared.hlsli");
+              "RTXPTMaterialData MetallicRoughnessTextureIndex offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(RTXPTMaterialData, NormalTextureIndex) == 68,
-              "RTXPTMaterialData NormalTextureIndex offset must match RTXPTShaderShared.hlsli");
+              "RTXPTMaterialData NormalTextureIndex offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(RTXPTMaterialData, NormalScale) == 76,
-              "RTXPTMaterialData NormalScale offset must match RTXPTShaderShared.hlsli");
+              "RTXPTMaterialData NormalScale offset must match PathTracer/PathTracerShared.h");
 
-// Flag bits for RTXPTMaterialData::Flags. Keep in sync with kRTXPTMaterialFlag* in RTXPTShaderShared.hlsli.
+// Flag bits for RTXPTMaterialData::Flags. Keep in sync with kRTXPTMaterialFlag* in PathTracer/PathTracerShared.h.
 constexpr Uint32 kRTXPTMaterialFlag_HasBaseColorTexture         = 0x1u;
 constexpr Uint32 kRTXPTMaterialFlag_AlphaTested                 = 0x2u;
 constexpr Uint32 kRTXPTMaterialFlag_HasEmissiveTexture          = 0x4u;

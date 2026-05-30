@@ -1,6 +1,6 @@
 #define RTXPT_ENABLE_HIT_BRIDGE 1
-#include "RTXPTSceneBridge.hlsli"
-#include "RTXPTMaterialBridge.hlsli"
+#include "PathTracerBridge.hlsli"
+#include "Rendering/Materials/MaterialBridge.hlsli"
 
 [shader("closesthit")]
 void main(inout RTXPTPathTracerPayload Payload,

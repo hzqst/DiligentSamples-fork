@@ -51,7 +51,7 @@ struct RTXPTSubInstanceData
     Uint32 Padding0    = 0;
     Uint32 Padding1    = 0;
 };
-static_assert(sizeof(RTXPTSubInstanceData) == 32, "RTXPTSubInstanceData layout must match RTXPTShaderShared.hlsli");
+static_assert(sizeof(RTXPTSubInstanceData) == 32, "RTXPTSubInstanceData layout must match PathTracer/PathTracerShared.h");
 
 // Flag bits for RTXPTSubInstanceData::Flags.
 constexpr Uint32 kRTXPTSubInstanceFlag_Indexed = 0x1u;

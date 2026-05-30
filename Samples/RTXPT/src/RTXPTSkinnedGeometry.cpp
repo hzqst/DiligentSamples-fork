@@ -244,6 +244,11 @@ bool RTXPTSkinnedGeometry::Initialize(IRenderDevice*     pDevice,
     }
 
     BuildNodeTable(Model, SceneIndex);
+    if (!m_Nodes.empty() && (pSourceVertexBuffer == nullptr || pSourceSkinBuffer == nullptr))
+    {
+        m_Stats.LastError = "Skinned GLTF nodes require buffer 0 POSITION/NORMAL/TEXCOORD_0 and buffer 1 JOINTS_0/WEIGHTS_0";
+        return false;
+    }
     if (!CreateBuffers(pDevice, pSourceVertexBuffer, pSourceSkinBuffer))
         return false;
 

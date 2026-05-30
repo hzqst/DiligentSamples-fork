@@ -350,3 +350,14 @@ Raygen locals become camelCase:
   RTXPT-fork splits them into separate helper headers.
 - `RTXPTCommon.fxh`, `RTXPTDebugCompute.csh`, and `RTXPTBlit.vsh` / `psh` keep
   their `RTXPT`-prefixed names because they sit outside the algorithm layer.
+
+## Skinned glTF Current Geometry
+
+The Diligent RTXPT port uses a Diligent-native current-geometry path for skinned glTF:
+
+- static primitives read the original GLTF vertex buffer 0
+- skinned glTF node instances write current-frame vertices into `RTXPTSkinnedGeometry`
+- `SubInstanceData::Flags & kSubInstanceFlag_Skinned` selects the skinned vertex arena in `PathTracerBridge.hlsli`
+- skinned BLAS records update from that same arena before ray dispatch
+
+This intentionally differs from RTXPT-fork's scene framework and keeps the invariant needed by emissive-triangle R2 work: BLAS, closest-hit fetch, and future emissive-triangle extraction must all consume the same current-frame GPU geometry. Bind-pose fallback is not allowed for skinned emissive meshes.

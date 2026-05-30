@@ -54,13 +54,13 @@ namespace PathTracer
     float3 SampleAnalyticNEE(StandardBSDFData bsdfData, float3 hitPos, float3 visibilityOrigin,
                              float3 wo, inout SampleGenerator sg)
     {
-        const uint lightCount = Bridge::GetLightCount();
+        const uint lightCount = Bridge::getLightCount();
         if (lightCount == 0u || g_FrameConstants.PathTracer.LightIntensityScale <= 0.0)
             return float3(0.0, 0.0, 0.0);
 
         const uint lightIndex = min(uint(sampleNext1D(sg) * float(lightCount)), lightCount - 1u);
 
-        LightSample light = EvalAnalyticLight(Bridge::GetLight(lightIndex), hitPos);
+        LightSample light = EvalAnalyticLight(Bridge::getLight(lightIndex), hitPos);
         if (!light.valid)
             return float3(0.0, 0.0, 0.0);
 

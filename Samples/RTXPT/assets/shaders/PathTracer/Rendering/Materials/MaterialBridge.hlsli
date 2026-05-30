@@ -1,5 +1,5 @@
-#ifndef RTXPT_MATERIAL_BRIDGE_HLSLI
-#define RTXPT_MATERIAL_BRIDGE_HLSLI
+#ifndef __MATERIAL_BRIDGE_HLSLI__
+#define __MATERIAL_BRIDGE_HLSLI__
 
 #include "PathTracerShared.h"
 
@@ -14,97 +14,97 @@ SamplerState   g_MaterialSampler;
 
 namespace Bridge
 {
-    bool HasMaterialTable()
+    bool hasMaterialTable()
     {
-        uint Count  = 0;
-        uint Stride = 0;
-        g_Materials.GetDimensions(Count, Stride);
-        return Count > 0;
+        uint count  = 0;
+        uint stride = 0;
+        g_Materials.GetDimensions(count, stride);
+        return count > 0;
     }
 
-    uint GetMaterialCount()
+    uint getMaterialCount()
     {
-        uint Count  = 0;
-        uint Stride = 0;
-        g_Materials.GetDimensions(Count, Stride);
-        return Count;
+        uint count  = 0;
+        uint stride = 0;
+        g_Materials.GetDimensions(count, stride);
+        return count;
     }
 
-    // Out-of-range indices clamp to the last material so a bad MaterialID never UB-reads.
-    RTXPTMaterialData GetMaterial(uint MaterialID)
+    // Out-of-range indices clamp to the last material so a bad materialID never UB-reads.
+    RTXPTMaterialData getMaterial(uint materialID)
     {
-        const uint LastIndex = max(GetMaterialCount(), 1u) - 1u;
-        const uint Index     = min(MaterialID, LastIndex);
-        return g_Materials[Index];
+        const uint lastIndex = max(getMaterialCount(), 1u) - 1u;
+        const uint index     = min(materialID, lastIndex);
+        return g_Materials[index];
     }
 
 #ifdef RTXPT_ENABLE_MATERIAL_TEXTURES
     // Ray tracing shaders cannot derive LOD, so we sample the most detailed level. Slice is 0 for the
     // non-atlas bistro load; it is carried so an atlas path can be added later without touching call sites.
-    float4 SampleMaterialTexture(uint TextureIndex, float Slice, float2 UV)
+    float4 sampleMaterialTexture(uint textureIndex, float slice, float2 uv)
     {
-        return g_MaterialTextures[NonUniformResourceIndex(TextureIndex)].SampleLevel(g_MaterialSampler, float3(UV, Slice), 0.0);
+        return g_MaterialTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(g_MaterialSampler, float3(uv, slice), 0.0);
     }
 
-    float4 GetBaseColor(RTXPTMaterialData Material, float2 UV)
+    float4 getBaseColor(RTXPTMaterialData material, float2 uv)
     {
-        float4 Color = Material.BaseColorFactor;
-        if ((Material.Flags & kRTXPTMaterialFlagHasBaseColorTexture) != 0u)
-            Color *= SampleMaterialTexture(Material.BaseColorTextureIndex, Material.BaseColorTextureSlice, UV);
-        return Color;
+        float4 color = material.BaseColorFactor;
+        if ((material.Flags & kRTXPTMaterialFlagHasBaseColorTexture) != 0u)
+            color *= sampleMaterialTexture(material.BaseColorTextureIndex, material.BaseColorTextureSlice, uv);
+        return color;
     }
 
-    float3 GetEmission(RTXPTMaterialData Material, float2 UV)
+    float3 getEmission(RTXPTMaterialData material, float2 uv)
     {
-        float3 Emission = Material.EmissiveFactor;
-        if ((Material.Flags & kRTXPTMaterialFlagHasEmissiveTexture) != 0u)
-            Emission *= SampleMaterialTexture(Material.EmissiveTextureIndex, Material.EmissiveTextureSlice, UV).rgb;
-        return Emission;
+        float3 emission = material.EmissiveFactor;
+        if ((material.Flags & kRTXPTMaterialFlagHasEmissiveTexture) != 0u)
+            emission *= sampleMaterialTexture(material.EmissiveTextureIndex, material.EmissiveTextureSlice, uv).rgb;
+        return emission;
     }
 
     // True when the hit passes the alpha test (or is not alpha tested).
-    bool AlphaTestPasses(RTXPTMaterialData Material, float2 UV)
+    bool alphaTestPasses(RTXPTMaterialData material, float2 uv)
     {
-        if ((Material.Flags & kRTXPTMaterialFlagAlphaTested) == 0u)
+        if ((material.Flags & kRTXPTMaterialFlagAlphaTested) == 0u)
             return true;
-        return GetBaseColor(Material, UV).a >= Material.AlphaCutoff;
+        return getBaseColor(material, uv).a >= material.AlphaCutoff;
     }
 
     // glTF metallic-roughness packing: roughness in .g, metallic in .b, each scaled by the material factor.
-    float2 GetMetallicRoughness(RTXPTMaterialData Material, float2 UV)
+    float2 getMetallicRoughness(RTXPTMaterialData material, float2 uv)
     {
-        float Metallic  = Material.MetallicFactor;
-        float Roughness = Material.RoughnessFactor;
-        if ((Material.Flags & kRTXPTMaterialFlagHasMetallicRoughnessTexture) != 0u)
+        float metallic  = material.MetallicFactor;
+        float roughness = material.RoughnessFactor;
+        if ((material.Flags & kRTXPTMaterialFlagHasMetallicRoughnessTexture) != 0u)
         {
-            const float4 MR = SampleMaterialTexture(Material.MetallicRoughnessTextureIndex, Material.MetallicRoughnessTextureSlice, UV);
-            Roughness *= MR.g;
-            Metallic  *= MR.b;
+            const float4 mr = sampleMaterialTexture(material.MetallicRoughnessTextureIndex, material.MetallicRoughnessTextureSlice, uv);
+            roughness *= mr.g;
+            metallic  *= mr.b;
         }
-        return float2(Metallic, Roughness);
+        return float2(metallic, roughness);
     }
 
     // Tangent-space normal unpacked to [-1, 1] with NormalScale applied to xy. Returns (0,0,1) when there is no
     // normal map, which the caller treats as "no perturbation".
-    float3 GetTangentNormal(RTXPTMaterialData Material, float2 UV)
+    float3 getTangentNormal(RTXPTMaterialData material, float2 uv)
     {
-        if ((Material.Flags & kRTXPTMaterialFlagHasNormalTexture) == 0u)
+        if ((material.Flags & kRTXPTMaterialFlagHasNormalTexture) == 0u)
             return float3(0.0, 0.0, 1.0);
 
-        float3 N = SampleMaterialTexture(Material.NormalTextureIndex, Material.NormalTextureSlice, UV).xyz * 2.0 - 1.0;
-        N.xy *= Material.NormalScale;
-        return normalize(N);
+        float3 n = sampleMaterialTexture(material.NormalTextureIndex, material.NormalTextureSlice, uv).xyz * 2.0 - 1.0;
+        n.xy *= material.NormalScale;
+        return normalize(n);
     }
 #else
     // Factor-only fallback (bindless material textures unavailable): no texture sampling, never alpha tested.
-    float4 GetBaseColor(RTXPTMaterialData Material, float2 UV) { return Material.BaseColorFactor; }
-    float3 GetEmission(RTXPTMaterialData Material, float2 UV) { return Material.EmissiveFactor; }
-    bool   AlphaTestPasses(RTXPTMaterialData Material, float2 UV) { return true; }
-    float2 GetMetallicRoughness(RTXPTMaterialData Material, float2 UV) { return float2(Material.MetallicFactor, Material.RoughnessFactor); }
-    float3 GetTangentNormal(RTXPTMaterialData Material, float2 UV) { return float3(0.0, 0.0, 1.0); }
+    float4 getBaseColor(RTXPTMaterialData material, float2 uv) { return material.BaseColorFactor; }
+    float3 getEmission(RTXPTMaterialData material, float2 uv) { return material.EmissiveFactor; }
+    bool   alphaTestPasses(RTXPTMaterialData material, float2 uv) { return true; }
+    float2 getMetallicRoughness(RTXPTMaterialData material, float2 uv) { return float2(material.MetallicFactor, material.RoughnessFactor); }
+    float3 getTangentNormal(RTXPTMaterialData material, float2 uv) { return float3(0.0, 0.0, 1.0); }
 #endif
 } // namespace Bridge
 
 // TODO(RTXPT-Port Phase 5.3): Honor TextureShaderAttribs UV selectors / wrap modes / atlas transform (currently assumes TEXCOORD_0 + wrap + slice).
 
-#endif // RTXPT_MATERIAL_BRIDGE_HLSLI
+#endif // __MATERIAL_BRIDGE_HLSLI__

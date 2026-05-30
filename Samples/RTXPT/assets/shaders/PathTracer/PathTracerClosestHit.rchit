@@ -1,4 +1,4 @@
-#define RTXPT_ENABLE_HIT_BRIDGE 1
+#define ENABLE_HIT_BRIDGE 1
 #include "PathTracerBridge.hlsli"
 #include "Rendering/Materials/MaterialBridge.hlsli"
 
@@ -19,53 +19,53 @@ void main(inout RTXPTPathTracerPayload Payload,
     float  Metallic    = 0.0;
     float  Roughness   = 1.0;
 
-    if (Bridge::HasSubInstanceTable() && Bridge::HasMaterialTable())
+    if (Bridge::hasSubInstanceTable() && Bridge::hasMaterialTable())
     {
-        const RTXPTSubInstanceData SubInstance = Bridge::GetSubInstanceData();
-        const RTXPTMaterialData    Material    = Bridge::GetMaterial(SubInstance.MaterialID);
+        const RTXPTSubInstanceData subInstance = Bridge::getSubInstanceData();
+        const RTXPTMaterialData    material    = Bridge::getMaterial(subInstance.MaterialID);
 
         RTXPTVertex V0;
         RTXPTVertex V1;
         RTXPTVertex V2;
-        Bridge::GetTriangleVertices(SubInstance, PrimitiveIndex(), V0, V1, V2);
+        Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
 
-        const float2 TexCoord = Bridge::InterpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
+        const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
 
         const float3 RayDir = WorldRayDirection();
-        const float3 GeometricNormal = Bridge::ComputeGeometricNormal(V0, V1, V2);
-        WorldPos    = Bridge::ComputeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
-        WorldNormal = Bridge::InterpolateNormal(V0, V1, V2, Attributes.barycentrics);
+        const float3 geometricNormal = Bridge::computeGeometricNormal(V0, V1, V2);
+        WorldPos    = Bridge::computeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
+        WorldNormal = Bridge::interpolateNormal(V0, V1, V2, Attributes.barycentrics);
         // Renormalize against the geometric normal if the interpolated normal is nearly zero
         // (degenerate vertex data) - keeps the shader robust on bad assets.
         if (dot(WorldNormal, WorldNormal) < 1e-6)
-            WorldNormal = GeometricNormal;
+            WorldNormal = geometricNormal;
         // Flip the shading normal to face the camera (single-sided shading; transmission is deferred).
         if (dot(WorldNormal, RayDir) > 0.0)
             WorldNormal = -WorldNormal;
 
         // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
-        const float3 TangentNormal = Bridge::GetTangentNormal(Material, TexCoord);
-        if (abs(TangentNormal.x) + abs(TangentNormal.y) > 1e-5)
+        const float3 tangentNormal = Bridge::getTangentNormal(material, texCoord);
+        if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
         {
-            const float4 WorldTangent = Bridge::ComputeWorldTangent(V0, V1, V2, WorldNormal);
-            const float3 T            = WorldTangent.xyz;
-            const float3 B            = cross(WorldNormal, T) * WorldTangent.w;
-            const float3 MappedNormal = T * TangentNormal.x + B * TangentNormal.y + WorldNormal * TangentNormal.z;
-            const float  LenSq        = dot(MappedNormal, MappedNormal);
-            if (LenSq > 1e-8)
+            const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, WorldNormal);
+            const float3 T            = worldTangent.xyz;
+            const float3 B            = cross(WorldNormal, T) * worldTangent.w;
+            const float3 mappedNormal = T * tangentNormal.x + B * tangentNormal.y + WorldNormal * tangentNormal.z;
+            const float  lenSq        = dot(mappedNormal, mappedNormal);
+            if (lenSq > 1e-8)
             {
-                WorldNormal = MappedNormal * rsqrt(LenSq);
+                WorldNormal = mappedNormal * rsqrt(lenSq);
                 if (dot(WorldNormal, RayDir) > 0.0)
                     WorldNormal = -WorldNormal;
             }
         }
 
-        const float2 MetalRough = Bridge::GetMetallicRoughness(Material, TexCoord);
-        Metallic                = MetalRough.x;
-        Roughness               = MetalRough.y;
+        const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
+        Metallic                = metalRough.x;
+        Roughness               = metalRough.y;
 
-        BaseColor        = Bridge::GetBaseColor(Material, TexCoord).rgb;
-        Payload.Emission = Bridge::GetEmission(Material, TexCoord);
+        BaseColor        = Bridge::getBaseColor(material, texCoord).rgb;
+        Payload.Emission = Bridge::getEmission(material, texCoord);
     }
 
     Payload.WorldPos    = WorldPos;

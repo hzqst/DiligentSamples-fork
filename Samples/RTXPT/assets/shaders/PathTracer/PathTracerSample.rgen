@@ -1,6 +1,7 @@
+RaytracingAccelerationStructure                g_TLAS;
+
 #include "PathTracer.hlsli"
 
-RaytracingAccelerationStructure                g_TLAS;
 VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   g_OutputColor;
 VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> g_AccumColor;
 

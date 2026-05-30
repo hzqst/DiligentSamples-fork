@@ -52,6 +52,7 @@ struct RTXPTRayTracingPassStats
     bool        SubInstanceBound      = false;
     bool        LightBridgeBound      = false;
     bool        VertexBufferBound     = false;
+    bool        SkinnedVertexBufferBound = false;
     bool        IndexBufferBound      = false;
     bool        AccumulationBound     = false;
     bool        MaterialTexturesBound = false;
@@ -75,6 +76,7 @@ public:
                     IBuffer*              pSubInstanceBuffer,
                     IBuffer*              pLightBuffer,
                     IBuffer*              pVertexBuffer,
+                    IBuffer*              pSkinnedVertexBuffer,
                     IBuffer*              pIndexBuffer,
                     VALUE_TYPE            IndexValueType,
                     ITopLevelAS*          pTLAS,

@@ -67,6 +67,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                                      IBuffer*              pSubInstanceBuffer,
                                      IBuffer*              pLightBuffer,
                                      IBuffer*              pVertexBuffer,
+                                     IBuffer*              pSkinnedVertexBuffer,
                                      IBuffer*              pIndexBuffer,
                                      VALUE_TYPE            IndexValueType,
                                      ITopLevelAS*          pTLAS,
@@ -101,9 +102,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         return false;
     }
 
-    if (FullPathTracer && (pVertexBuffer == nullptr || pIndexBuffer == nullptr))
+    if (FullPathTracer && (pVertexBuffer == nullptr || pSkinnedVertexBuffer == nullptr || pIndexBuffer == nullptr))
     {
-        m_Stats.DisabledReason = "Vertex or index buffer is unavailable for the reference path tracer";
+        m_Stats.DisabledReason = "Vertex, skinned vertex, or index buffer is unavailable for the reference path tracer";
         return false;
     }
 
@@ -219,6 +220,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             .AddVariable(HitStages, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(HitStages, "t_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(HitStages, "t_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(HitStages, "t_SkinnedVertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(HitStages, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(SHADER_TYPE_RAY_GEN, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
     }
@@ -277,6 +279,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         m_Stats.SubInstanceBound      = true;
         m_Stats.LightBridgeBound      = true;
         m_Stats.VertexBufferBound     = true;
+        m_Stats.SkinnedVertexBufferBound = true;
         m_Stats.IndexBufferBound      = true;
         m_Stats.MaterialTexturesBound = true;
         m_Stats.MaterialTextureCount  = 0;
@@ -288,6 +291,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     IDeviceObject* pLightsView      = pLightBuffer != nullptr ? pLightBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pVertexView =
         FullPathTracer && pVertexBuffer != nullptr ? pVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+    IDeviceObject* pSkinnedVertexView =
+        FullPathTracer && pSkinnedVertexBuffer != nullptr ? pSkinnedVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
 
     // The GLTF loader creates the index buffer in BUFFER_MODE_FORMATTED but does not pre-create a typed view;
     // create one here so HLSL can declare it as Buffer<uint>.
@@ -318,6 +323,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
         m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer");
         m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_VertexBuffer", pVertexView, "vertex buffer");
+        m_Stats.SkinnedVertexBufferBound =
+            SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
         m_Stats.IndexBufferBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_IndexBuffer", m_IndexBufferView, "index buffer");
 
         if (UseTextures)
@@ -328,13 +335,15 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                 SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
             m_Stats.VertexBufferBound = m_Stats.VertexBufferBound &&
                 SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_VertexBuffer", pVertexView, "vertex buffer");
+            m_Stats.SkinnedVertexBufferBound = m_Stats.SkinnedVertexBufferBound &&
+                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
             m_Stats.IndexBufferBound = m_Stats.IndexBufferBound &&
                 SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_IndexBuffer", m_IndexBufferView, "index buffer");
         }
     }
 
     if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound ||
-        !m_Stats.VertexBufferBound || !m_Stats.IndexBufferBound)
+        !m_Stats.VertexBufferBound || !m_Stats.SkinnedVertexBufferBound || !m_Stats.IndexBufferBound)
     {
         if (m_Stats.LastError.empty())
             m_Stats.LastError = "Failed to bind required RTXPT bridge buffers";

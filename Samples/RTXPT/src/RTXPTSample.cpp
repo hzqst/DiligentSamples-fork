@@ -210,6 +210,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_Materials.Reset();
     m_Lights.Reset();
     m_AccelerationStructures.Reset();
+    m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
 
     m_SelectedSceneCamera   = -1;
@@ -229,6 +230,12 @@ bool RTXPTSample::RebuildSceneDependentResources()
     }
 
     bool ResourcesReady = true;
+    if (m_Scene.HasSkinnedGeometry() && m_Scene.HasAnimation())
+    {
+        // Seed the initial animated pose before scene-dependent resources snapshot transforms.
+        m_Scene.Update(0.0, 0.0);
+    }
+
     ResourcesReady &= m_Materials.Upload(m_pDevice, *pModel);
     if (m_Scene.GetSceneIndex() < pModel->Scenes.size())
         ResourcesReady &= m_Lights.Upload(m_pDevice, pModel->Scenes[m_Scene.GetSceneIndex()], m_Scene.GetTransforms());
@@ -236,13 +243,26 @@ bool RTXPTSample::RebuildSceneDependentResources()
         m_Lights.Reset();
 
     ResourcesReady &=
-        m_AccelerationStructures.BuildStaticScene(m_pDevice,
-                                                  m_pImmediateContext,
-                                                  *pModel,
-                                                  m_Scene.GetSceneIndex(),
-                                                  m_Scene.GetIndexType(),
-                                                  m_Scene.GetTransforms(),
-                                                  m_FeatureCaps.RayTracing);
+        m_SkinnedGeometry.Initialize(m_pDevice,
+                                     m_pEngineFactory,
+                                     *pModel,
+                                     m_Scene.GetSceneIndex(),
+                                     m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
+                                     m_Scene.GetSkinningBuffer(m_pDevice, m_pImmediateContext),
+                                     m_FeatureCaps.ComputeShaders);
+
+    if (m_SkinnedGeometry.HasSkinnedGeometry() && m_SkinnedGeometry.IsReady())
+        ResourcesReady &= m_SkinnedGeometry.Update(m_pImmediateContext, m_Scene.GetTransforms());
+
+    ResourcesReady &=
+        m_AccelerationStructures.BuildScene(m_pDevice,
+                                            m_pImmediateContext,
+                                            *pModel,
+                                            m_Scene.GetSceneIndex(),
+                                            m_Scene.GetIndexType(),
+                                            m_Scene.GetTransforms(),
+                                            &m_SkinnedGeometry,
+                                            m_FeatureCaps.RayTracing);
 
     CreatePhase4Passes();
     return ResourcesReady;
@@ -441,6 +461,7 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_AccelerationStructures.GetSubInstanceBuffer(),
                                     m_Lights.GetLightBuffer(),
                                     m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
+                                    m_SkinnedGeometry.GetSkinnedVertexBuffer(),
                                     m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
                                     m_Scene.GetIndexType(),
                                     m_AccelerationStructures.GetTLAS(),
@@ -460,6 +481,7 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_AccelerationStructures.GetSubInstanceBuffer(),
                                     m_Lights.GetLightBuffer(),
                                     m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
+                                    m_SkinnedGeometry.GetSkinnedVertexBuffer(),
                                     m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
                                     m_Scene.GetIndexType(),
                                     m_AccelerationStructures.GetTLAS(),
@@ -576,6 +598,17 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
     m_HasLastCameraMatrices = true;
 
     m_Scene.Update(CurrTime, ElapsedTime);
+    if (m_Scene.IsGeometryDirty() && m_SkinnedGeometry.HasSkinnedGeometry() && m_SkinnedGeometry.IsReady())
+    {
+        const bool SkinningExecuted = m_SkinnedGeometry.Update(m_pImmediateContext, m_Scene.GetTransforms());
+        const bool ASUpdated =
+            SkinningExecuted && m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, m_SkinnedGeometry);
+        if (ASUpdated)
+        {
+            RequestAccumulationReset("Skinned geometry updated");
+            m_Scene.ClearGeometryDirty();
+        }
+    }
     UpdateFrameConstants(CurrTime);
 }
 
@@ -856,6 +889,10 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Primitives: %u", m_Scene.GetPrimitiveCount());
         ImGui::Text("Materials: %u", m_Materials.GetStats().MaterialCount);
         ImGui::Text("Lights: %u", m_Lights.GetStats().LightCount);
+        const RTXPTSceneGeometryStats& GeometryStats = m_Scene.GetGeometryStats();
+        ImGui::Text("Animations: %s", GeometryStats.HasAnimations ? "yes" : "no");
+        ImGui::Text("Skinned nodes: %u", GeometryStats.SkinnedNodeCount);
+        ImGui::Text("Skinned primitives: %u", GeometryStats.SkinnedPrimitiveCount);
         if (!m_Materials.GetStats().LastError.empty())
             ImGui::TextWrapped("Material buffer error: %s", m_Materials.GetStats().LastError.c_str());
         if (!m_Lights.GetStats().LastError.empty())
@@ -902,6 +939,12 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
         ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
         ImGui::Text("Vertex buffer: %s", RTPassStats.VertexBufferBound ? "bound" : "fallback");
+        ImGui::Text("Skinned vertex buffer: %s", RTPassStats.SkinnedVertexBufferBound ? "bound" : "fallback");
+        ImGui::Text("Skinning pass: %s", m_SkinnedGeometry.IsReady() ? "ready" : "not ready");
+        if (!m_SkinnedGeometry.GetStats().DisabledReason.empty())
+            ImGui::TextWrapped("Skinning disabled: %s", m_SkinnedGeometry.GetStats().DisabledReason.c_str());
+        if (!m_SkinnedGeometry.GetStats().LastError.empty())
+            ImGui::TextWrapped("Skinning error: %s", m_SkinnedGeometry.GetStats().LastError.c_str());
         ImGui::Text("Index buffer: %s", RTPassStats.IndexBufferBound ? "bound" : "fallback");
         ImGui::Text("Material textures loaded: %u", m_Materials.GetStats().TextureCount);
         ImGui::Text("Material textures bound: %s (%u)", RTPassStats.MaterialTexturesBound ? "yes" : "no", RTPassStats.MaterialTextureCount);

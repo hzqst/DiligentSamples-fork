@@ -1,8 +1,8 @@
 #ifndef __MATERIAL_BRIDGE_HLSLI__
 #define __MATERIAL_BRIDGE_HLSLI__
 
-#include "Config.h"
-#include "PathTracerShared.h"
+#include "../../Config.h"
+#include "../../PathTracerShared.h"
 
 StructuredBuffer<MaterialPTData> t_PTMaterialData;
 

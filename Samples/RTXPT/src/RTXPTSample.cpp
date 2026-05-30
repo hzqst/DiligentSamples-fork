@@ -37,6 +37,9 @@ namespace Diligent
 namespace
 {
 
+constexpr float kDefaultCameraNearPlane      = 1.0f;
+constexpr float kMinClipPlaneSeparation      = 1e-3f;
+
 RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
 {
     RTXPTFeatureCaps Caps{};
@@ -128,6 +131,15 @@ std::string ResolveRTXPTAssetsRoot()
     return FileSystem::SimplifyPath("DiligentSamples/Samples/RTXPT/assets");
 }
 
+void SanitizeCameraClipPlanes(float& NearPlane, float& FarPlane)
+{
+    if (!(NearPlane > 0.0f))
+        NearPlane = kDefaultCameraNearPlane;
+
+    if (!(FarPlane > NearPlane))
+        FarPlane = NearPlane + kMinClipPlaneSeparation;
+}
+
 } // namespace
 
 SampleBase* CreateSample()
@@ -193,8 +205,11 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
 
     m_SelectedSceneCamera = static_cast<int>(CameraIndex);
     m_CameraVerticalFov   = pCamera->VerticalFov;
-    m_CameraNearPlane     = pCamera->NearPlane;
-    m_CameraFarPlane      = pCamera->FarPlane;
+    if (pCamera->HasExplicitClipPlanes)
+    {
+        m_CameraNearPlane = pCamera->NearPlane;
+        m_CameraFarPlane  = pCamera->FarPlane;
+    }
 
     m_Camera.SetPos(pCamera->Position);
     m_Camera.SetLookAt(pCamera->Position + Forward);
@@ -391,7 +406,7 @@ void RTXPTSample::Render()
 
     if (!EnsureRenderTargets())
     {
-        ClearFallback(ClearColor);
+        ClearFallback(float4{1.0f, 0.0f, 0.0f, 1.0f});
         return;
     }
 
@@ -404,7 +419,16 @@ void RTXPTSample::Render()
 
     if (!TraceExecuted)
     {
-        ClearFallback(ClearColor);
+        if (!m_RayTracingPass.IsReady())
+            ClearFallback(float4{1.0f, 0.0f, 1.0f, 1.0f});
+        else if (m_RenderTargets.GetOutputColorUAV() == nullptr)
+            ClearFallback(float4{1.0f, 0.45f, 0.0f, 1.0f});
+        else if (m_RenderTargets.GetAccumColorUAV() == nullptr)
+            ClearFallback(float4{0.0f, 0.2f, 1.0f, 1.0f});
+        else if (m_RenderTargets.GetWidth() == 0 || m_RenderTargets.GetHeight() == 0)
+            ClearFallback(float4{1.0f, 1.0f, 1.0f, 1.0f});
+        else
+            ClearFallback(float4{1.0f, 1.0f, 0.0f, 1.0f});
         return;
     }
 
@@ -419,7 +443,7 @@ void RTXPTSample::Render()
     ITextureView* pDisplaySRV = m_RenderTargets.GetDisplaySRV(ComputeExecuted);
     if (!m_BlitPass.Render(m_pImmediateContext, m_pSwapChain, pDisplaySRV))
     {
-        ClearFallback(ClearColor);
+        ClearFallback(float4{0.0f, 1.0f, 1.0f, 1.0f});
         return;
     }
 }
@@ -678,6 +702,18 @@ void RTXPTSample::UpdateUI()
                 ImGui::EndCombo();
             }
         }
+
+        bool ClipPlanesChanged = false;
+        ClipPlanesChanged |= ImGui::InputFloat("zNear", &m_CameraNearPlane, 0.1f, 1.0f, "%.6f");
+        ClipPlanesChanged |= ImGui::InputFloat("zFar", &m_CameraFarPlane, 10.0f, 100.0f, "%.1f");
+        if (ClipPlanesChanged)
+        {
+            SanitizeCameraClipPlanes(m_CameraNearPlane, m_CameraFarPlane);
+            const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+            UpdateCameraProjection(SCDesc.Width, SCDesc.Height);
+            RequestAccumulationReset("Camera clip planes changed");
+        }
+
         if (!m_Scene.GetLastError().empty())
             ImGui::TextWrapped("Asset load error: %s", m_Scene.GetLastError().c_str());
         ImGui::Text("Mesh nodes: %u", m_Scene.GetMeshNodeCount());

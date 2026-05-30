@@ -1,3 +1,53 @@
+#ifndef RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
+#    define RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC 0
+#endif
+
+#if RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
+
+struct DiagnosticPayload
+{
+    float3 color;
+    uint   hit;
+};
+
+uint RTXPTDiagnosticHash(uint Value)
+{
+    Value ^= Value >> 16;
+    Value *= 0x7feb352du;
+    Value ^= Value >> 15;
+    Value *= 0x846ca68bu;
+    Value ^= Value >> 16;
+    return Value;
+}
+
+float3 RTXPTDiagnosticColor(uint Value)
+{
+    const uint Hash = RTXPTDiagnosticHash(Value);
+    return float3(float((Hash >> 0) & 0xffu),
+                  float((Hash >> 8) & 0xffu),
+                  float((Hash >> 16) & 0xffu)) /
+        255.0;
+}
+
+[shader("closesthit")]
+void main(inout DiagnosticPayload Payload,
+          in BuiltInTriangleIntersectionAttributes Attributes)
+{
+    const float3 barycentrics = float3(Attributes.barycentrics.x,
+                                       Attributes.barycentrics.y,
+                                       1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
+    const float  depthShade   = saturate(1.0 / (1.0 + RayTCurrent() * 0.01));
+    const uint   hitKey       = ((InstanceIndex() + 1u) * 0x9e3779b9u) ^
+        ((GeometryIndex() + 1u) * 0x85ebca6bu) ^
+        ((InstanceID() + 1u) * 0xc2b2ae35u);
+    const float3 objectColor = RTXPTDiagnosticColor(hitKey);
+
+    Payload.hit   = 1u;
+    Payload.color = lerp(objectColor, barycentrics, depthShade * 0.45);
+}
+
+#else
+
 #define ENABLE_HIT_BRIDGE 1
 #include "PathTracerBridge.hlsli"
 #include "Rendering/Materials/MaterialBridge.hlsli"
@@ -76,3 +126,5 @@ void main(inout PathPayload Payload,
 }
 
 // TODO(RTXPT-Port Phase 5.4): Emissive surfaces are gathered by BSDF sampling only; add emissive-triangle area-light NEE + MIS once an emissive light list exists.
+
+#endif

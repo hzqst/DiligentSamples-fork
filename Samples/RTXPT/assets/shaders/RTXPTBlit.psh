@@ -14,6 +14,21 @@ struct PSOutput
 void main(in PSInput Input,
           out PSOutput Output)
 {
+    // Diagnostic: bypass the RTXPT output texture and draw a stable fullscreen
+    // pattern directly from the blit shader. This isolates presentation/blit from
+    // raygen UAV writes.
+    const bool ForceBlitPatternDiagnostic = false;
+    if (ForceBlitPatternDiagnostic)
+    {
+        const float2 cell    = floor(Input.UV * float2(32.0, 18.0));
+        const float  checker = fmod(cell.x + cell.y, 2.0);
+        Output.Color = float4(lerp(float3(Input.UV, 0.2),
+                                   float3(1.0 - Input.UV.x, Input.UV.y, 0.9),
+                                   checker),
+                              1.0);
+        return;
+    }
+
     float2 Dimensions;
     g_Texture.GetDimensions(Dimensions.x, Dimensions.y);
     const int3 Texel = int3(Input.UV * Dimensions, 0);

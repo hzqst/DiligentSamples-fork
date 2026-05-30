@@ -144,8 +144,16 @@ void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera
             Camera.Rotation            = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
 
             Camera.VerticalFov = ReadOptionalFloat(Node, "verticalFov", Camera.VerticalFov);
-            Camera.NearPlane   = ReadOptionalFloat(Node, "zNear", Camera.NearPlane);
-            Camera.FarPlane    = ReadOptionalFloat(Node, "zFar", Camera.FarPlane);
+
+            const auto NearPlaneIt = Node.find("zNear");
+            const auto FarPlaneIt  = Node.find("zFar");
+            const bool HasZNear    = NearPlaneIt != Node.end() && NearPlaneIt->is_number();
+            const bool HasZFar     = FarPlaneIt != Node.end() && FarPlaneIt->is_number();
+            if (HasZNear)
+                Camera.NearPlane = NearPlaneIt->get<float>();
+            if (HasZFar)
+                Camera.FarPlane = FarPlaneIt->get<float>();
+            Camera.HasExplicitClipPlanes = HasZNear && HasZFar;
 
             if (Camera.VerticalFov > 0.0f && Camera.NearPlane > 0.0f && Camera.FarPlane > Camera.NearPlane)
                 Cameras.emplace_back(std::move(Camera));
@@ -363,6 +371,7 @@ bool RTXPTScene::LoadSceneCameras(const std::string& ScenePath)
         CameraDefaults.VerticalFov = m_Cameras.front().VerticalFov;
         CameraDefaults.NearPlane   = m_Cameras.front().NearPlane;
         CameraDefaults.FarPlane    = m_Cameras.front().FarPlane;
+        CameraDefaults.HasExplicitClipPlanes = m_Cameras.front().HasExplicitClipPlanes;
     }
     AppendAnimatedCameras(SceneJson, CameraDefaults, m_Cameras);
 

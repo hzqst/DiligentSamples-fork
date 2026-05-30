@@ -32,6 +32,23 @@
 namespace Diligent
 {
 
+namespace
+{
+
+enum class RTXPTDiagnosticMode
+{
+    FullPathTracer,
+    ScreenPattern,
+    MinimalTraceRay,
+};
+
+RTXPTDiagnosticMode GetRTXPTDiagnosticMode()
+{
+    return RTXPTDiagnosticMode::FullPathTracer;
+}
+
+} // namespace
+
 void RTXPTRayTracingPass::Reset()
 {
     m_PSO.Release();
@@ -73,19 +90,24 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         return false;
     }
 
-    if (pFrameConstants == nullptr || pTLAS == nullptr)
+    const RTXPTDiagnosticMode DiagnosticMode            = GetRTXPTDiagnosticMode();
+    const bool                ScreenPatternDiagnostic   = DiagnosticMode == RTXPTDiagnosticMode::ScreenPattern;
+    const bool                MinimalTraceRayDiagnostic = DiagnosticMode == RTXPTDiagnosticMode::MinimalTraceRay;
+    const bool                FullPathTracer            = DiagnosticMode == RTXPTDiagnosticMode::FullPathTracer;
+
+    if (!ScreenPatternDiagnostic && (pFrameConstants == nullptr || pTLAS == nullptr))
     {
         m_Stats.DisabledReason = "Frame constants or TLAS are unavailable";
         return false;
     }
 
-    if (pVertexBuffer == nullptr || pIndexBuffer == nullptr)
+    if (FullPathTracer && (pVertexBuffer == nullptr || pIndexBuffer == nullptr))
     {
         m_Stats.DisabledReason = "Vertex or index buffer is unavailable for the reference path tracer";
         return false;
     }
 
-    const bool UseTextures = EnableMaterialTextures && pMaterialTextures != nullptr && MaterialTextureCount > 0;
+    const bool UseTextures = FullPathTracer && EnableMaterialTextures && pMaterialTextures != nullptr && MaterialTextureCount > 0;
 
     m_TLAS = pTLAS;
 
@@ -100,7 +122,18 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     ShaderCI.HLSLVersion                     = {6, 5};
     ShaderCI.pShaderSourceStreamFactory      = pShaderSourceFactory;
 
-    // Raygen + miss do not include the material bridge, so they compile without material-texture macros.
+    ShaderMacroHelper Macros;
+    if (ScreenPatternDiagnostic)
+        Macros.Add("RTXPT_SCREEN_PATTERN_DIAGNOSTIC", 1);
+    if (MinimalTraceRayDiagnostic)
+        Macros.Add("RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC", 1);
+    if (UseTextures)
+    {
+        Macros.Add("ENABLE_MATERIAL_TEXTURES", 1);
+        Macros.Add("MATERIAL_TEXTURE_COUNT", static_cast<int>(MaterialTextureCount));
+    }
+    ShaderCI.Macros = Macros;
+
     RefCntAutoPtr<IShader> pRayGen;
     ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_GEN;
     ShaderCI.Desc.Name       = "RTXPT reference raygen";
@@ -109,30 +142,27 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     pDevice->CreateShader(ShaderCI, &pRayGen);
 
     RefCntAutoPtr<IShader> pMiss;
-    ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
-    ShaderCI.Desc.Name       = "RTXPT reference miss";
-    ShaderCI.FilePath        = "PathTracer/PathTracerMiss.rmiss";
-    ShaderCI.EntryPoint      = "main";
-    pDevice->CreateShader(ShaderCI, &pMiss);
-
-    // The closest-hit and any-hit shaders sample the bindless material-texture table when it is available.
-    ShaderMacroHelper Macros;
-    if (UseTextures)
+    if (!ScreenPatternDiagnostic)
     {
-        Macros.Add("ENABLE_MATERIAL_TEXTURES", 1);
-        Macros.Add("MATERIAL_TEXTURE_COUNT", static_cast<int>(MaterialTextureCount));
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
+        ShaderCI.Desc.Name       = "RTXPT reference miss";
+        ShaderCI.FilePath        = "PathTracer/PathTracerMiss.rmiss";
+        ShaderCI.EntryPoint      = "main";
+        pDevice->CreateShader(ShaderCI, &pMiss);
     }
-    ShaderCI.Macros = Macros;
 
     RefCntAutoPtr<IShader> pClosestHit;
-    ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_CLOSEST_HIT;
-    ShaderCI.Desc.Name       = "RTXPT reference closest hit";
-    ShaderCI.FilePath        = "PathTracer/PathTracerClosestHit.rchit";
-    ShaderCI.EntryPoint      = "main";
-    pDevice->CreateShader(ShaderCI, &pClosestHit);
+    if (!ScreenPatternDiagnostic)
+    {
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_CLOSEST_HIT;
+        ShaderCI.Desc.Name       = "RTXPT reference closest hit";
+        ShaderCI.FilePath        = "PathTracer/PathTracerClosestHit.rchit";
+        ShaderCI.EntryPoint      = "main";
+        pDevice->CreateShader(ShaderCI, &pClosestHit);
+    }
 
     RefCntAutoPtr<IShader> pAnyHit;
-    if (UseTextures)
+    if (!ScreenPatternDiagnostic && UseTextures)
     {
         ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_ANY_HIT;
         ShaderCI.Desc.Name       = "RTXPT reference any hit";
@@ -141,7 +171,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         pDevice->CreateShader(ShaderCI, &pAnyHit);
     }
 
-    if (!pRayGen || !pMiss || !pClosestHit || (UseTextures && !pAnyHit))
+    if (!pRayGen || (!ScreenPatternDiagnostic && (!pMiss || !pClosestHit || (UseTextures && !pAnyHit))))
     {
         m_Stats.LastError = "Failed to create RTXPT reference ray tracing shaders";
         return false;
@@ -151,11 +181,14 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PSOCreateInfo.PSODesc.Name         = "RTXPT reference RT PSO";
     PSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_RAY_TRACING;
     PSOCreateInfo.AddGeneralShader("Main", pRayGen);
-    PSOCreateInfo.AddGeneralShader("PrimaryMiss", pMiss);
-    if (UseTextures)
-        PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit, pAnyHit);
-    else
-        PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
+    if (!ScreenPatternDiagnostic)
+    {
+        PSOCreateInfo.AddGeneralShader("PrimaryMiss", pMiss);
+        if (UseTextures)
+            PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit, pAnyHit);
+        else
+            PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
+    }
     PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth = 1; // Raygen drives bounces in a loop; chit/miss/anyhit do not recurse.
     PSOCreateInfo.RayTracingPipeline.ShaderRecordSize  = 0;
     PSOCreateInfo.MaxAttributeSize                     = static_cast<Uint32>(sizeof(float) * 2);
@@ -170,17 +203,27 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
-        .AddVariable(SHADER_TYPE_RAY_GEN, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_RAY_GEN, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(HitStages, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(HitStages, "t_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(HitStages, "t_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(HitStages, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_RAY_GEN, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_RAY_GEN, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_RAY_GEN, "u_AccumulationBuffer", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
 
-    if (UseTextures)
+    if (!ScreenPatternDiagnostic)
+    {
+        ResourceLayout
+            .AddVariable(SHADER_TYPE_RAY_GEN, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(SHADER_TYPE_RAY_GEN, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
+    }
+
+    if (FullPathTracer)
+    {
+        ResourceLayout
+            .AddVariable(HitStages, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(HitStages, "t_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(HitStages, "t_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(HitStages, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(SHADER_TYPE_RAY_GEN, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
+    }
+
+    if (!ScreenPatternDiagnostic && UseTextures)
     {
         ResourceLayout.AddVariable(HitStages, "t_BindlessTextures", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
 
@@ -198,62 +241,103 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         return false;
     }
 
-    auto SetStatic = [&](SHADER_TYPE Stage, const char* Name, IDeviceObject* pObject) {
+    auto SetStatic = [&](SHADER_TYPE Stage, const char* Name, IDeviceObject* pObject, const char* ObjectName) {
         if (pObject == nullptr)
+        {
+            m_Stats.LastError = std::string{"RTXPT static resource object is null: "} + ObjectName;
             return false;
+        }
 
         IShaderResourceVariable* pVar = m_PSO->GetStaticVariableByName(Stage, Name);
         if (pVar == nullptr)
+        {
+            m_Stats.LastError = std::string{"RTXPT static shader variable is missing: "} + Name;
             return false;
+        }
 
         pVar->Set(pObject);
         return true;
     };
 
-    const bool FrameConstantsBound = SetStatic(SHADER_TYPE_RAY_GEN, "g_Const", pFrameConstants);
-    const bool TLASBound           = SetStatic(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS);
+    const bool FrameConstantsBound =
+        ScreenPatternDiagnostic || SetStatic(SHADER_TYPE_RAY_GEN, "g_Const", pFrameConstants, "frame constants");
+    const bool TLASBound =
+        ScreenPatternDiagnostic || SetStatic(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS, "TLAS");
 
     if (!FrameConstantsBound || !TLASBound)
     {
-        m_Stats.LastError = "Failed to bind required RTXPT frame constants or TLAS";
+        if (m_Stats.LastError.empty())
+            m_Stats.LastError = "Failed to bind required RTXPT frame constants or TLAS";
         return false;
+    }
+
+    if (!FullPathTracer)
+    {
+        m_Stats.MaterialBridgeBound   = true;
+        m_Stats.SubInstanceBound      = true;
+        m_Stats.LightBridgeBound      = true;
+        m_Stats.VertexBufferBound     = true;
+        m_Stats.IndexBufferBound      = true;
+        m_Stats.MaterialTexturesBound = true;
+        m_Stats.MaterialTextureCount  = 0;
+        m_Stats.AnyHitEnabled         = false;
     }
 
     IDeviceObject* pMaterialsView   = pMaterialBuffer != nullptr ? pMaterialBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pSubInstanceView = pSubInstanceBuffer != nullptr ? pSubInstanceBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pLightsView      = pLightBuffer != nullptr ? pLightBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
-    IDeviceObject* pVertexView      = pVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+    IDeviceObject* pVertexView =
+        FullPathTracer && pVertexBuffer != nullptr ? pVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
 
     // The GLTF loader creates the index buffer in BUFFER_MODE_FORMATTED but does not pre-create a typed view;
     // create one here so HLSL can declare it as Buffer<uint>.
-    if (IndexValueType != VT_UINT16 && IndexValueType != VT_UINT32)
+    if (FullPathTracer && IndexValueType != VT_UINT16 && IndexValueType != VT_UINT32)
     {
         m_Stats.LastError = "Reference path tracer requires VT_UINT16 or VT_UINT32 indices";
         return false;
     }
-    BufferViewDesc IndexViewDesc;
-    IndexViewDesc.Name                 = "RTXPT reference index buffer SRV";
-    IndexViewDesc.ViewType             = BUFFER_VIEW_SHADER_RESOURCE;
-    IndexViewDesc.Format.ValueType     = IndexValueType;
-    IndexViewDesc.Format.NumComponents = 1;
-    IndexViewDesc.Format.IsNormalized  = false;
-    pIndexBuffer->CreateView(IndexViewDesc, &m_IndexBufferView);
-    if (!m_IndexBufferView)
+    if (FullPathTracer)
     {
-        m_Stats.LastError = "Failed to create RTXPT index buffer view";
-        return false;
+        BufferViewDesc IndexViewDesc;
+        IndexViewDesc.Name                 = "RTXPT reference index buffer SRV";
+        IndexViewDesc.ViewType             = BUFFER_VIEW_SHADER_RESOURCE;
+        IndexViewDesc.Format.ValueType     = IndexValueType;
+        IndexViewDesc.Format.NumComponents = 1;
+        IndexViewDesc.Format.IsNormalized  = false;
+        pIndexBuffer->CreateView(IndexViewDesc, &m_IndexBufferView);
+        if (!m_IndexBufferView)
+        {
+            m_Stats.LastError = "Failed to create RTXPT index buffer view";
+            return false;
+        }
     }
 
-    m_Stats.MaterialBridgeBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_PTMaterialData", pMaterialsView);
-    m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SubInstanceData", pSubInstanceView);
-    m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView);
-    m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_VertexBuffer", pVertexView);
-    m_Stats.IndexBufferBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_IndexBuffer", m_IndexBufferView);
+    if (FullPathTracer)
+    {
+        m_Stats.MaterialBridgeBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_PTMaterialData", pMaterialsView, "material buffer");
+        m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
+        m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer");
+        m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_VertexBuffer", pVertexView, "vertex buffer");
+        m_Stats.IndexBufferBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_IndexBuffer", m_IndexBufferView, "index buffer");
+
+        if (UseTextures)
+        {
+            m_Stats.MaterialBridgeBound = m_Stats.MaterialBridgeBound &&
+                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_PTMaterialData", pMaterialsView, "material buffer");
+            m_Stats.SubInstanceBound = m_Stats.SubInstanceBound &&
+                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
+            m_Stats.VertexBufferBound = m_Stats.VertexBufferBound &&
+                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_VertexBuffer", pVertexView, "vertex buffer");
+            m_Stats.IndexBufferBound = m_Stats.IndexBufferBound &&
+                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_IndexBuffer", m_IndexBufferView, "index buffer");
+        }
+    }
 
     if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound ||
         !m_Stats.VertexBufferBound || !m_Stats.IndexBufferBound)
     {
-        m_Stats.LastError = "Failed to bind required RTXPT bridge buffers";
+        if (m_Stats.LastError.empty())
+            m_Stats.LastError = "Failed to bind required RTXPT bridge buffers";
         return false;
     }
 
@@ -264,15 +348,19 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         return false;
     }
 
-    if (UseTextures)
+    if (!ScreenPatternDiagnostic && UseTextures)
     {
-        IShaderResourceVariable* pTexVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_CLOSEST_HIT, "t_BindlessTextures");
-        if (pTexVar == nullptr)
+        IShaderResourceVariable* pClosestHitTexVar =
+            m_SRB->GetVariableByName(SHADER_TYPE_RAY_CLOSEST_HIT, "t_BindlessTextures");
+        IShaderResourceVariable* pAnyHitTexVar =
+            m_SRB->GetVariableByName(SHADER_TYPE_RAY_ANY_HIT, "t_BindlessTextures");
+        if (pClosestHitTexVar == nullptr || pAnyHitTexVar == nullptr)
         {
             m_Stats.LastError = "Failed to find RTXPT material texture array binding";
             return false;
         }
-        pTexVar->SetArray(pMaterialTextures, 0, MaterialTextureCount);
+        pClosestHitTexVar->SetArray(pMaterialTextures, 0, MaterialTextureCount);
+        pAnyHitTexVar->SetArray(pMaterialTextures, 0, MaterialTextureCount);
         m_Stats.MaterialTexturesBound = true;
         m_Stats.MaterialTextureCount  = MaterialTextureCount;
     }
@@ -289,8 +377,11 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     }
 
     m_SBT->BindRayGenShader("Main");
-    m_SBT->BindMissShader("PrimaryMiss", 0);
-    m_SBT->BindHitGroupForTLAS(m_TLAS, 0, "PrimaryHit");
+    if (!ScreenPatternDiagnostic)
+    {
+        m_SBT->BindMissShader("PrimaryMiss", 0);
+        m_SBT->BindHitGroupForTLAS(m_TLAS, 0, "PrimaryHit");
+    }
     pContext->UpdateSBT(m_SBT);
 
     m_Stats.Ready = true;
@@ -307,7 +398,20 @@ bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext,
     m_Stats.AccumulationBound = false;
 
     if (!IsReady() || pOutputUAV == nullptr || pAccumulationUAV == nullptr || Width == 0 || Height == 0)
+    {
+        if (!IsReady())
+        {
+            if (m_Stats.LastError.empty() && m_Stats.DisabledReason.empty())
+                m_Stats.LastError = "Trace skipped: RTXPT ray tracing pass is not ready";
+        }
+        else if (pOutputUAV == nullptr)
+            m_Stats.LastError = "Trace skipped: output UAV is null";
+        else if (pAccumulationUAV == nullptr)
+            m_Stats.LastError = "Trace skipped: accumulation UAV is null";
+        else
+            m_Stats.LastError = "Trace skipped: render target dimensions are zero";
         return false;
+    }
 
     IShaderResourceVariable* pOutputColorVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Output");
     IShaderResourceVariable* pAccumColorVar  = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_AccumulationBuffer");

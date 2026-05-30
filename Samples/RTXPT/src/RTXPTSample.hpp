@@ -148,7 +148,7 @@ private:
     float4x4                    m_LastCameraView           = float4x4::Identity();
     float4x4                    m_LastCameraProj           = float4x4::Identity();
     float                       m_CameraVerticalFov        = PI_F / 4.0f;
-    float                       m_CameraNearPlane          = 0.1f;
+    float                       m_CameraNearPlane          = 1.0f;
     float                       m_CameraFarPlane           = 10000.0f;
     Uint32                      m_FrameIndex               = 0;
     Uint32                      m_AccumulationFrame        = 0;

@@ -104,9 +104,22 @@ bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFa
 bool RTXPTBlitPass::Render(IDeviceContext* pContext, ISwapChain* pSwapChain, ITextureView* pSourceSRV)
 {
     if (!IsReady() || pSourceSRV == nullptr)
+    {
+        if (!IsReady())
+            m_LastError = "RTXPT blit pass is not ready";
+        else
+            m_LastError = "RTXPT blit source SRV is null";
         return false;
+    }
 
-    m_SRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture")->Set(pSourceSRV);
+    IShaderResourceVariable* pTextureVar = m_SRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture");
+    if (pTextureVar == nullptr)
+    {
+        m_LastError = "RTXPT blit texture binding is unavailable";
+        return false;
+    }
+
+    pTextureVar->Set(pSourceSRV);
 
     ITextureView* pRTV = pSwapChain->GetCurrentBackBufferRTV();
     pContext->SetRenderTargets(1, &pRTV, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

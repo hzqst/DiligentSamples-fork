@@ -1,7 +1,7 @@
 #ifndef __POLYMORPHIC_LIGHT_HLSLI__
 #define __POLYMORPHIC_LIGHT_HLSLI__
 
-#include "PathTracerShared.h"
+#include "../PathTracerShared.h"
 
 struct LightSample
 {

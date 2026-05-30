@@ -1,3 +1,160 @@
+// Temporary diagnostic mode: compile a minimal raygen that does not include the
+// full path tracer. This isolates DXC/runtime shader-compilation failures from
+// TraceRay, hit groups, material bridge code, and include expansion.
+#ifndef RTXPT_SCREEN_PATTERN_DIAGNOSTIC
+#    define RTXPT_SCREEN_PATTERN_DIAGNOSTIC 0
+#endif
+
+#ifndef RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
+#    define RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC 0
+#endif
+
+#if RTXPT_SCREEN_PATTERN_DIAGNOSTIC
+
+VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   u_Output;
+VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
+
+[shader("raygeneration")]
+void main()
+{
+    const uint2  pixel      = DispatchRaysIndex().xy;
+    const uint2  dimensions = DispatchRaysDimensions().xy;
+    const float2 uv         = (float2(pixel) + 0.5) / float2(dimensions);
+    const float2 cell       = floor(uv * float2(32.0, 18.0));
+    const float  checker    = fmod(cell.x + cell.y, 2.0);
+
+    const float3 patternA   = float3(uv.x, uv.y, 0.25);
+    const float3 patternB   = float3(1.0 - uv.x, uv.y, 0.85);
+    const float3 debugColor = lerp(patternA, patternB, checker);
+
+    u_AccumulationBuffer[pixel] = float4(debugColor, 1.0);
+    u_Output[pixel]             = float4(debugColor, 1.0);
+}
+
+#elif RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
+
+RaytracingAccelerationStructure                t_SceneBVH;
+
+#include "RTXPTCommon.fxh"
+
+VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   u_Output;
+VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
+
+struct DiagnosticPayload
+{
+    float3 color;
+    uint   hit;
+};
+
+static bool RTXPT_IsInvalidFloat(float value)
+{
+    return value != value || abs(value) > 1e30;
+}
+
+static bool RTXPT_IsInvalidFloat3(float3 value)
+{
+    return RTXPT_IsInvalidFloat(value.x) ||
+           RTXPT_IsInvalidFloat(value.y) ||
+           RTXPT_IsInvalidFloat(value.z);
+}
+
+[shader("raygeneration")]
+void main()
+{
+    const uint2  pixel      = DispatchRaysIndex().xy;
+    const uint2  dimensions = DispatchRaysDimensions().xy;
+    const float2 uv         = (float2(pixel) + 0.5) / float2(dimensions);
+    const float2 ndc        = uv * 2.0 - 1.0;
+
+    // Use the near plane for this diagnostic pass. With the Bistro camera's 1e-7 near/far ratio,
+    // far-plane unprojection loses too much precision to distinguish a valid ray from a bad matrix.
+    const float4 worldPos4 = mul(float4(ndc, 0.0, 1.0), g_Const.viewProjInv);
+    const float3 origin    = g_Const.cameraPositionAndTime.xyz;
+
+    float3 diagnosticColor = float3(0.0, 0.0, 0.0);
+    bool   invalidRay      = true;
+
+    if (RTXPT_IsInvalidFloat3(origin))
+    {
+        diagnosticColor = float3(0.0, 0.0, 1.0); // #0000FF: camera origin is invalid.
+    }
+    else if (RTXPT_IsInvalidFloat3(worldPos4.xyz))
+    {
+        diagnosticColor = float3(0.0, 1.0, 0.0); // #00FF00: inverse view-projection xyz is invalid.
+    }
+    else if (worldPos4.w != worldPos4.w)
+    {
+        diagnosticColor = float3(0.0, 1.0, 1.0); // #00FFFF: inverse view-projection w is NaN.
+    }
+    else if (abs(worldPos4.w) < 1e-8)
+    {
+        diagnosticColor = float3(1.0, 1.0, 0.0); // #FFFF00: inverse view-projection w is too close to zero.
+    }
+    else if (abs(worldPos4.w) > 1e20)
+    {
+        diagnosticColor = float3(1.0, 0.5, 0.0); // #FF8000: inverse view-projection w is far outside expected range.
+    }
+    else
+    {
+        const float3 target     = worldPos4.xyz / worldPos4.w;
+        const float3 rayVector  = target - origin;
+        const float  rayLength2 = dot(rayVector, rayVector);
+
+        if (RTXPT_IsInvalidFloat3(target) || RTXPT_IsInvalidFloat(rayLength2))
+        {
+            diagnosticColor = float3(1.0, 1.0, 1.0); // #FFFFFF: division produced an invalid target or ray length.
+        }
+        else if (rayLength2 < 1e-12)
+        {
+            diagnosticColor = float3(1.0, 0.0, 0.0); // #FF0000: target collapsed onto the camera origin.
+        }
+        else if (rayLength2 > 1e16)
+        {
+            diagnosticColor = float3(1.0, 0.0, 1.0); // #FF00FF: ray target is extremely far away.
+        }
+        else
+        {
+            invalidRay = false;
+        }
+    }
+
+    if (invalidRay)
+    {
+        const float4 debugColor = float4(diagnosticColor, 1.0);
+        u_AccumulationBuffer[pixel] = debugColor;
+        u_Output[pixel]             = debugColor;
+        return;
+    }
+
+    const float3 target     = worldPos4.xyz / worldPos4.w;
+    const float3 rayVector  = target - origin;
+    const float  rayLength2 = dot(rayVector, rayVector);
+
+    RayDesc ray;
+    ray.Origin    = origin;
+    ray.Direction = rayVector * rsqrt(rayLength2);
+    ray.TMin      = 1e-3;
+    ray.TMax      = 10000.0;
+
+    DiagnosticPayload payload;
+    payload.color = float3(1.0, 0.0, 1.0);
+    payload.hit   = 0u;
+
+    TraceRay(t_SceneBVH,
+             RAY_FLAG_NONE,
+             0xFF,
+             0,
+             1,
+             0,
+             ray,
+             payload);
+
+    u_AccumulationBuffer[pixel] = float4(payload.color, 1.0);
+    u_Output[pixel]             = float4(payload.color, 1.0);
+}
+
+#else
+
 RaytracingAccelerationStructure                t_SceneBVH;
 
 #include "PathTracer.hlsli"
@@ -33,7 +190,9 @@ void main()
     const float2    uv       = (float2(pixel) + jitter) / float2(dimensions);
     const float2    ndc      = uv * 2.0 - 1.0;
 
-    const float4 worldPos4 = mul(float4(ndc, 1.0, 1.0), g_Const.viewProjInv);
+    // Use the near plane for the production ray path as well. With the Bistro camera's large
+    // near/far span, far-plane unprojection can collapse precision and produce unstable rays.
+    const float4 worldPos4 = mul(float4(ndc, 0.0, 1.0), g_Const.viewProjInv);
     const float3 origin    = g_Const.cameraPositionAndTime.xyz;
     float3       rayOrigin = origin;
     float3       rayDir    = normalize(worldPos4.xyz / worldPos4.w - origin);
@@ -164,3 +323,5 @@ void main()
 // TODO(RTXPT-Port Phase R6): Add transmission / nested dielectrics to the BSDF (currently opaque diffuse + GGX specular).
 // TODO(RTXPT-Port Phase R2/R3/R4): Add emissive-triangle area lights, light importance sampling / RIS, and HDR environment-map MIS (NEE currently uses uniform light selection + a procedural-sky cosine env sampler).
 // TODO(RTXPT-Port Phase 6): Move tone mapping from raygen into the dedicated post-process chain.
+
+#endif

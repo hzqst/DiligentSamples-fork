@@ -43,6 +43,7 @@ struct RTXPTSceneCamera
     float       VerticalFov = PI_F / 4.0f;
     float       NearPlane   = 0.1f;
     float       FarPlane    = 10000.0f;
+    bool        HasExplicitClipPlanes = false;
 };
 
 class RTXPTScene

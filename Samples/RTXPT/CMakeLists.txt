@@ -8,6 +8,7 @@ set(SOURCE
     src/RTXPTMaterials.cpp
     src/RTXPTLights.cpp
     src/RTXPTAccelerationStructures.cpp
+    src/RTXPTSkinnedGeometry.cpp
     src/RTXPTRenderTargets.cpp
     src/RTXPTRayTracingPass.cpp
     src/RTXPTComputePass.cpp
@@ -20,6 +21,7 @@ set(INCLUDE
     src/RTXPTMaterials.hpp
     src/RTXPTLights.hpp
     src/RTXPTAccelerationStructures.hpp
+    src/RTXPTSkinnedGeometry.hpp
     src/RTXPTRenderTargets.hpp
     src/RTXPTRayTracingPass.hpp
     src/RTXPTComputePass.hpp
@@ -43,6 +45,7 @@ set(SHADERS
     assets/shaders/PathTracer/PathTracerMiss.rmiss
     assets/shaders/PathTracer/PathTracerClosestHit.rchit
     assets/shaders/PathTracer/PathTracerAnyHit.rahit
+    assets/shaders/PathTracer/SkinnedVertexBuild.csh
     assets/shaders/RTXPTDebugCompute.csh
     assets/shaders/RTXPTBlit.vsh
     assets/shaders/RTXPTBlit.psh

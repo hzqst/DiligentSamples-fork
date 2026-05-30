@@ -46,6 +46,15 @@ struct RTXPTSceneCamera
     bool        HasExplicitClipPlanes = false;
 };
 
+struct RTXPTSceneGeometryStats
+{
+    bool   HasSkinnedGeometry    = false;
+    bool   HasAnimations         = false;
+    Uint32 SkinnedNodeCount      = 0;
+    Uint32 SkinnedPrimitiveCount = 0;
+    Uint32 SkinnedVertexCount    = 0;
+};
+
 class RTXPTScene
 {
 public:
@@ -71,11 +80,17 @@ public:
     Uint32                       GetMaterialCount() const { return m_MaterialCount; }
     Uint32                       GetLightCount() const { return m_LightCount; }
     Uint32                       GetCameraCount() const { return static_cast<Uint32>(m_Cameras.size()); }
-    const RTXPTSceneCamera*      GetCamera(Uint32 CameraIndex) const;
+    const RTXPTSceneCamera*        GetCamera(Uint32 CameraIndex) const;
+    const RTXPTSceneGeometryStats& GetGeometryStats() const { return m_GeometryStats; }
+    bool                           HasSkinnedGeometry() const { return m_GeometryStats.HasSkinnedGeometry; }
+    bool                           HasAnimation() const { return m_GeometryStats.HasAnimations; }
+    bool                           IsGeometryDirty() const { return m_GeometryDirty; }
+    void                           ClearGeometryDirty() { m_GeometryDirty = false; }
 
     // Buffer 0 packs POSITION + NORMAL + TEXCOORD_0 (the Diligent GLTF default layout).
     // VertexStride0 is the per-vertex stride for buffer 0 and must equal sizeof(GeometryVertexData) on the shader side.
     IBuffer* GetVertexBuffer0(IRenderDevice* pDevice = nullptr, IDeviceContext* pContext = nullptr) const;
+    IBuffer* GetSkinningBuffer(IRenderDevice* pDevice = nullptr, IDeviceContext* pContext = nullptr) const;
     IBuffer* GetIndexBuffer(IRenderDevice* pDevice = nullptr, IDeviceContext* pContext = nullptr) const;
     Uint32   GetVertexStride0() const { return m_VertexStride0; }
 
@@ -98,6 +113,10 @@ private:
     Uint32                        m_MaterialCount  = 0;
     Uint32                        m_LightCount     = 0;
     Uint32                        m_VertexStride0  = 0;
+    RTXPTSceneGeometryStats       m_GeometryStats;
+    float                         m_AnimationTime  = 0.0f;
+    Int32                         m_AnimationIndex = -1;
+    bool                          m_GeometryDirty  = false;
 };
 
 } // namespace Diligent

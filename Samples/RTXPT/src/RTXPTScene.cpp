@@ -30,6 +30,7 @@
 #include "json.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -133,6 +134,32 @@ Uint32 CountLightNodes(const GLTF::Scene& Scene)
             ++Count;
     }
     return Count;
+}
+
+RTXPTSceneGeometryStats ComputeGeometryStats(const GLTF::Scene& Scene, const GLTF::Model& Model)
+{
+    RTXPTSceneGeometryStats Stats;
+    Stats.HasAnimations = !Model.Animations.empty();
+
+    for (const GLTF::Node* pNode : Scene.LinearNodes)
+    {
+        if (pNode == nullptr || pNode->pMesh == nullptr || pNode->pSkin == nullptr)
+            continue;
+
+        ++Stats.SkinnedNodeCount;
+        Stats.HasSkinnedGeometry = true;
+
+        for (const GLTF::Primitive& Primitive : pNode->pMesh->Primitives)
+        {
+            if (Primitive.VertexCount == 0 && Primitive.IndexCount == 0)
+                continue;
+
+            ++Stats.SkinnedPrimitiveCount;
+            Stats.SkinnedVertexCount += Primitive.VertexCount;
+        }
+    }
+
+    return Stats;
 }
 
 bool ReadFloatArray(const nlohmann::json& Object, const char* Key, float* Values, size_t Count)
@@ -348,6 +375,10 @@ void RTXPTScene::ResetLoadedData()
     m_MaterialCount  = 0;
     m_LightCount     = 0;
     m_VertexStride0  = 0;
+    m_GeometryStats  = {};
+    m_AnimationTime  = 0.0f;
+    m_AnimationIndex = -1;
+    m_GeometryDirty  = false;
 }
 
 void RTXPTScene::CacheSceneData()
@@ -366,6 +397,9 @@ void RTXPTScene::CacheSceneData()
     m_PrimitiveCount         = CountPrimitives(Scene);
     m_MaterialCount          = static_cast<Uint32>(m_Model->Materials.size());
     m_LightCount             = CountLightNodes(Scene);
+    m_GeometryStats          = ComputeGeometryStats(Scene, *m_Model);
+    m_AnimationIndex         = m_GeometryStats.HasAnimations ? 0 : -1;
+    m_GeometryDirty          = m_GeometryStats.HasSkinnedGeometry;
 
     m_VertexStride0 = 0;
     if (m_Model && m_Model->GetVertexBufferCount() > 0)
@@ -462,6 +496,9 @@ bool RTXPTScene::LoadScene(IRenderDevice*      pDevice,
         BindFlags = BIND_VERTEX_BUFFER | BIND_RAY_TRACING;
     // Buffer 0 is the path-tracer vertex stream (POSITION + NORMAL + TEXCOORD_0); chit reads it as a StructuredBuffer<GeometryVertexData>.
     ModelCI.VertBufferBindFlags[0] = BIND_VERTEX_BUFFER | BIND_RAY_TRACING | BIND_SHADER_RESOURCE;
+    // Buffer 1 is the default GLTF skinning stream (JOINTS_0 + WEIGHTS_0).
+    // RTXPTSkinnedGeometry reads it as StructuredBuffer<SkinVertexData> when skinned nodes exist.
+    ModelCI.VertBufferBindFlags[1] = BIND_VERTEX_BUFFER | BIND_SHADER_RESOURCE;
 
     try
     {
@@ -490,7 +527,20 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
 void RTXPTScene::Update(double CurrTime, double ElapsedTime)
 {
     (void)CurrTime;
-    (void)ElapsedTime;
+
+    if (!m_Model || m_AnimationIndex < 0 || !m_GeometryStats.HasSkinnedGeometry)
+    {
+        m_GeometryDirty = false;
+        return;
+    }
+
+    const GLTF::Animation& Animation = m_Model->Animations[static_cast<Uint32>(m_AnimationIndex)];
+    const float            Duration  = std::max(Animation.End - Animation.Start, 1e-5f);
+    m_AnimationTime += static_cast<float>(ElapsedTime);
+    const float WrappedTime = Animation.Start + std::fmod(m_AnimationTime, Duration);
+
+    m_Model->ComputeTransforms(m_SceneIndex, m_Transforms, float4x4::Identity(), m_AnimationIndex, WrappedTime);
+    m_GeometryDirty = true;
 }
 
 bool RTXPTScene::HasValidContent() const
@@ -501,6 +551,11 @@ bool RTXPTScene::HasValidContent() const
 IBuffer* RTXPTScene::GetVertexBuffer0(IRenderDevice* pDevice, IDeviceContext* pContext) const
 {
     return m_Model ? m_Model->GetVertexBuffer(0, pDevice, pContext) : nullptr;
+}
+
+IBuffer* RTXPTScene::GetSkinningBuffer(IRenderDevice* pDevice, IDeviceContext* pContext) const
+{
+    return m_Model && m_Model->GetVertexBufferCount() > 1 ? m_Model->GetVertexBuffer(1, pDevice, pContext) : nullptr;
 }
 
 IBuffer* RTXPTScene::GetIndexBuffer(IRenderDevice* pDevice, IDeviceContext* pContext) const

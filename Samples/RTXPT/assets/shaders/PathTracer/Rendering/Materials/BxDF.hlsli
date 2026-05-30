@@ -103,11 +103,12 @@ void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, o
 // Importance-sample an incident direction Wi. Returns false for invalid samples.
 // Weight = f(Wo,Wi) * NoL / pdf is the throughput multiplier the path tracer applies.
 bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, inout SampleGenerator sg,
-                out float3 wi, out float3 weight, out float pdf)
+                out float3 wi, out float3 weight, out float pdf, out float lobeP)
 {
     wi     = float3(0.0, 0.0, 0.0);
     weight = float3(0.0, 0.0, 0.0);
     pdf    = 0.0;
+    lobeP  = 0.0;
 
     const float NdotV = dot(bsdfData.N, wo);
     if (NdotV <= 0.0)
@@ -125,6 +126,7 @@ bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, inout SampleGenerator sg,
 
     if (lobe < specProb)
     {
+        lobeP = specProb;
         // GGX half-vector (NDF) sampling in the local frame, then reflect Wo about H.
         const float a    = bsdfData.alpha;
         const float phi  = 2.0 * K_PI * rand2.x;
@@ -139,6 +141,7 @@ bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, inout SampleGenerator sg,
     }
     else
     {
+        lobeP = 1.0 - specProb;
         // Cosine-weighted diffuse hemisphere sample.
         float pdfUnused;
         wi = sampleCosineHemisphere(rand2, bsdfData.N, pdfUnused);

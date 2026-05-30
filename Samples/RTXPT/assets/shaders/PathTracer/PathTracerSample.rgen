@@ -99,7 +99,8 @@ void main()
         float3 nextDir;
         float3 weight;
         float  pdf;
-        if (!SampleBSDF(bsdfData, wo, sg, nextDir, weight, pdf))
+        float  lobeP;
+        if (!SampleBSDF(bsdfData, wo, sg, nextDir, weight, pdf, lobeP))
             break;
 
         throughput *= weight;

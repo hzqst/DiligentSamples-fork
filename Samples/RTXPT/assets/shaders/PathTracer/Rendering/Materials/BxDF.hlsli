@@ -61,13 +61,6 @@ float luminance(float3 C)
     return dot(C, float3(0.2126, 0.7152, 0.0722));
 }
 
-float PowerHeuristic(float nf, float fPdf, float ng, float gPdf)
-{
-    const float f = nf * fPdf;
-    const float g = ng * gPdf;
-    return (f * f) / max((f * f) + (g * g), 1e-7);
-}
-
 float getSpecularProbability(StandardBSDFData bsdfData, float3 wo)
 {
     const float  NdotV   = saturate(dot(bsdfData.N, wo));

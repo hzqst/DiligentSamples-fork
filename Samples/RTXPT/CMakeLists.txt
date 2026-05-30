@@ -29,6 +29,8 @@ set(INCLUDE
 
 set(SHADERS
     assets/shaders/RTXPTCommon.fxh
+    assets/shaders/PathTracer/PathTracer.hlsli
+    assets/shaders/PathTracer/PathTracerHelpers.hlsli
     assets/shaders/PathTracer/PathTracerShared.h
     assets/shaders/PathTracer/PathTracerBridge.hlsli
     assets/shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli

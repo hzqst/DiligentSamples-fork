@@ -461,139 +461,313 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
 
 void RTXPTSample::UpdateUI()
 {
-    ImGui::Begin("RTXPT Status");
-    ImGui::Text("Backend: %s", GetRenderDeviceTypeString(m_pDevice->GetDeviceInfo().Type));
-    ImGui::Text("RayTracing: %s", m_FeatureCaps.RayTracing ? "yes" : "no");
-    ImGui::Text("Standalone RT shaders: %s", m_FeatureCaps.StandaloneRayTracingShaders ? "yes" : "no");
-    ImGui::Text("RayQuery: %s", m_FeatureCaps.RayQuery ? "yes" : "no");
-    ImGui::Text("Bindless: %s", m_FeatureCaps.BindlessResources ? "yes" : "no");
-    ImGui::Text("Compute: %s", m_FeatureCaps.ComputeShaders ? "yes" : "no");
-    ImGui::Separator();
-    ImGui::Text("Assets root: %s", m_AssetsRoot.c_str());
-    ImGui::Text("Scene: %s", m_Scene.HasValidContent() ? "loaded" : "missing");
-    ImGui::Text("Scene file: %s", m_Scene.GetLoadedSceneName().empty() ? "none" : m_Scene.GetLoadedSceneName().c_str());
-    ImGui::Text("Model path: %s", m_Scene.GetModelPath().empty() ? "none" : m_Scene.GetModelPath().c_str());
-    ImGui::Text("Scene cameras: %u", m_Scene.GetCameraCount());
-    if (m_Scene.GetCameraCount() > 0)
+    // RESET_ON_CHANGE equivalent (cf. D:/RTXPT-fork/Rtxpt/SampleUI.cpp:49): when a control
+    // reports a change, restart progressive accumulation. Returns the change flag so callers
+    // can also write the edited value back.
+    auto ResetOnChange = [this](bool Changed, const char* Reason) -> bool {
+        if (Changed)
+            RequestAccumulationReset(Reason);
+        return Changed;
+    };
+    // Tooltip for a present-but-disabled placeholder control. AllowWhenDisabled lets the
+    // tooltip appear even though the preceding item was inside BeginDisabled()/EndDisabled().
+    auto PlaceholderTooltip = [](const char* Text) {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", Text);
+    };
+
+    const ImVec4 CategoryColor{0.60f, 0.85f, 1.00f, 1.00f};
+    const float  Indent = 16.0f;
+
+    ImGui::Begin("RTXPT");
+
+    // ------------------------------------------------------------------ Path Tracer
+    if (ImGui::CollapsingHeader("Path Tracer", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        const char* PreviewName = "none";
-        if (m_SelectedSceneCamera >= 0)
+        ImGui::Indent(Indent);
+
+        // Mode (Reference only; Realtime track is out of scope).
         {
-            if (const RTXPTSceneCamera* pSelectedCamera = m_Scene.GetCamera(static_cast<Uint32>(m_SelectedSceneCamera)))
-                PreviewName = pSelectedCamera->Name.c_str();
+            int ModeIndex = 0;
+            ImGui::BeginDisabled(true);
+            ImGui::Combo("Mode", &ModeIndex, "Reference\0Realtime\0\0");
+            ImGui::EndDisabled();
+            PlaceholderTooltip("Realtime mode is out of scope for the reference path tracer (umbrella Phase 5.5+).");
         }
 
-        if (ImGui::BeginCombo("Scene camera", PreviewName))
+        ImGui::TextColored(CategoryColor, "Setup:");
+        ImGui::Indent(Indent);
         {
-            for (Uint32 CameraIdx = 0; CameraIdx < m_Scene.GetCameraCount(); ++CameraIdx)
+            if (ImGui::Button("Reset##REFMACC"))
+                RequestAccumulationReset("User reset");
+            ImGui::SameLine();
+            ImGui::Text("Accumulated samples: %u", m_AccumulationFrame);
+
+            // Jitter AA: always on in our port; shown checked + disabled.
+            ImGui::BeginDisabled(true);
+            ImGui::Checkbox("Jitter anti-aliasing", &m_ReferenceUI.AccumulationAA);
+            ImGui::EndDisabled();
+            PlaceholderTooltip("Per-sample pixel jitter is always enabled in the reference path tracer.");
+
+            int MaxBouncesUI = static_cast<int>(m_MaxBounces);
+            if (ResetOnChange(ImGui::SliderInt("Max bounces", &MaxBouncesUI, 1, 16), "Max bounces changed"))
+                m_MaxBounces = static_cast<Uint32>(MaxBouncesUI);
+
+            // Max diffuse bounces: placeholder until the BSDF/sampler work (Phase R5).
+            ImGui::BeginDisabled(true);
+            ImGui::SliderInt("Max diffuse bounces", &m_ReferenceUI.DiffuseBounceCount, 0, 16);
+            ImGui::EndDisabled();
+            PlaceholderTooltip("Separate diffuse-bounce limit lands with the BSDF/sampler work (Phase R5).");
+
+            int MinBouncesUI = static_cast<int>(m_MinBounces);
+            if (ResetOnChange(ImGui::SliderInt("Min bounces (RR start)", &MinBouncesUI, 0, 16), "Min bounces changed"))
+                m_MinBounces = static_cast<Uint32>(MinBouncesUI);
+
+            // Russian roulette: always on; start bounce is "Min bounces (RR start)".
+            ImGui::BeginDisabled(true);
+            ImGui::Checkbox("Use Russian Roulette early out", &m_ReferenceUI.EnableRussianRoulette);
+            ImGui::EndDisabled();
+            PlaceholderTooltip("Russian roulette is always enabled; its start bounce is 'Min bounces (RR start)'.");
+
+            // Adaptive firefly filter: Phase R1 (G1). Each control gets its own
+            // BeginDisabled/EndDisabled scope so IsItemHovered() in PlaceholderTooltip()
+            // attaches a tooltip to that specific item rather than only the last one.
+            ImGui::BeginDisabled(true);
+            ImGui::Checkbox("FireflyFilter (reference *)", &m_ReferenceUI.ReferenceFireflyFilterEnabled);
+            ImGui::EndDisabled();
+            PlaceholderTooltip("Adaptive firefly filter lands in Phase R1.");
+            if (m_ReferenceUI.ReferenceFireflyFilterEnabled)
             {
-                const RTXPTSceneCamera* pCamera = m_Scene.GetCamera(CameraIdx);
-                if (pCamera == nullptr)
-                    continue;
-
-                const bool IsSelected = static_cast<int>(CameraIdx) == m_SelectedSceneCamera;
-                ImGui::PushID(static_cast<int>(CameraIdx));
-                if (ImGui::Selectable(pCamera->Name.c_str(), IsSelected))
-                    ApplySceneCamera(CameraIdx);
-                if (IsSelected)
-                    ImGui::SetItemDefaultFocus();
-                ImGui::PopID();
+                ImGui::Indent(Indent);
+                ImGui::BeginDisabled(true);
+                ImGui::InputFloat("FF Threshold", &m_ReferenceUI.ReferenceFireflyFilterThreshold, 0.1f, 0.2f, "%.5f");
+                ImGui::EndDisabled();
+                PlaceholderTooltip("Adaptive firefly filter threshold lands in Phase R1.");
+                ImGui::Unindent(Indent);
             }
-            ImGui::EndCombo();
         }
+        ImGui::Unindent(Indent); // end Setup
+
+        ImGui::TextColored(CategoryColor, "Post processing:");
+        ImGui::Indent(Indent);
+        {
+            // Tone mapping: ACES is always applied in raygen today; a configurable
+            // tone-map pass is tracked separately as Phase 6.
+            ImGui::BeginDisabled(true);
+            ImGui::Checkbox("Enable tone mapping", &m_ReferenceUI.EnableToneMapping);
+            ImGui::EndDisabled();
+            PlaceholderTooltip("ACES tone mapping is always applied in raygen; a configurable tone-map pass is tracked as Phase 6.");
+        }
+        ImGui::Unindent(Indent); // end Post processing
+
+        ImGui::TextColored(CategoryColor, "Light sampling:");
+        ImGui::Indent(Indent);
+        {
+            ResetOnChange(ImGui::Checkbox("Use Next Event Estimation", &m_EnableNEE), "NEE toggled");
+            ResetOnChange(ImGui::Checkbox("Environment NEE + MIS", &m_EnableEnvNEE), "Environment NEE toggled");
+
+            int MaxNEEBouncesUI = static_cast<int>(m_MaxNEEBounces);
+            if (ResetOnChange(ImGui::SliderInt("NEE bounces", &MaxNEEBouncesUI, 0, 16), "NEE bounce budget changed"))
+                m_MaxNEEBounces = static_cast<Uint32>(MaxNEEBouncesUI);
+
+            ResetOnChange(ImGui::SliderFloat("Light intensity scale", &m_LightIntensityScale, 0.0f, 10.0f), "Light intensity changed");
+
+            if (m_EnableNEE)
+            {
+                ImGui::TextColored(CategoryColor, "NEE settings:");
+                ImGui::Indent(Indent);
+                {
+                    // Light importance sampling (RIS/WRS) + MIS type: Phase R3 (G5).
+                    ImGui::BeginDisabled(true);
+                    ImGui::Combo("Sampling technique", &m_ReferenceUI.NEEType, "Uniform\0Power+\0NEE-AT\0\0");
+                    ImGui::EndDisabled();
+                    PlaceholderTooltip("Light importance sampling (RIS/WRS) lands in Phase R3.");
+
+                    ImGui::BeginDisabled(true);
+                    ImGui::InputInt("Candidate samples", &m_ReferenceUI.NEECandidateSamples, 1);
+                    ImGui::EndDisabled();
+                    PlaceholderTooltip("RIS candidate count lands in Phase R3.");
+
+                    ImGui::BeginDisabled(true);
+                    ImGui::InputInt("Full samples", &m_ReferenceUI.NEEFullSamples, 1);
+                    ImGui::EndDisabled();
+                    PlaceholderTooltip("Visibility-tested full-sample count lands in Phase R3.");
+
+                    ImGui::BeginDisabled(true);
+                    ImGui::Combo("MIS Type", &m_ReferenceUI.NEEMISType, "Full\0ApproxInRealtime\0Approximate\0\0");
+                    ImGui::EndDisabled();
+                    PlaceholderTooltip("Selectable MIS type lands in Phase R3.");
+                }
+                ImGui::Unindent(Indent);
+            }
+        }
+        ImGui::Unindent(Indent); // end Light sampling
+
+        ImGui::Unindent(Indent); // end Path Tracer
     }
-    if (!m_Scene.GetLastError().empty())
-        ImGui::TextWrapped("Asset load error: %s", m_Scene.GetLastError().c_str());
-    ImGui::Text("Mesh nodes: %u", m_Scene.GetMeshNodeCount());
-    ImGui::Text("Primitives: %u", m_Scene.GetPrimitiveCount());
-    ImGui::Text("Materials: %u", m_Materials.GetStats().MaterialCount);
-    ImGui::Text("Lights: %u", m_Lights.GetStats().LightCount);
-    if (!m_Materials.GetStats().LastError.empty())
-        ImGui::TextWrapped("Material buffer error: %s", m_Materials.GetStats().LastError.c_str());
-    if (!m_Lights.GetStats().LastError.empty())
-        ImGui::TextWrapped("Light buffer error: %s", m_Lights.GetStats().LastError.c_str());
-    const RTXPTAccelerationStructureStats& ASStats = m_AccelerationStructures.GetStats();
-    ImGui::Separator();
-    ImGui::Text("Acceleration structures: %s", m_AccelerationStructures.IsBuilt() ? "built" : "not built");
-    ImGui::Text("BLAS: %u", ASStats.BLASCount);
-    ImGui::Text("TLAS instances: %u", ASStats.InstanceCount);
-    ImGui::Text("RT geometries: %u", ASStats.GeometryCount);
-    ImGui::Text("Sub-instances: %u", ASStats.SubInstanceCount);
-    ImGui::Text("Alpha-tested geometries: %u", ASStats.AlphaTestedGeometryCount);
-    if (!ASStats.DisabledReason.empty())
-        ImGui::TextWrapped("AS disabled: %s", ASStats.DisabledReason.c_str());
-    if (!ASStats.LastError.empty())
-        ImGui::TextWrapped("AS error: %s", ASStats.LastError.c_str());
-    ImGui::Separator();
-    ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
-    ImGui::Text("Frame index: %u", m_FrameIndex);
-    ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.ViewportSize_FrameIdx.x, m_LastFrameConstants.ViewportSize_FrameIdx.y);
-    const RTXPTRayTracingPassStats& RTPassStats  = m_RayTracingPass.GetStats();
-    const RTXPTComputePassStats&    ComputeStats = m_DebugComputePass.GetStats();
-    ImGui::Separator();
-    ImGui::Text("OutputColor: %s", m_RenderTargets.IsValid() ? "created" : "missing");
-    ImGui::Text("TraceRays pass: %s", m_RayTracingPass.IsReady() ? "ready" : "not ready");
-    ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
-    ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
-    ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
-    ImGui::Text("Vertex buffer: %s", RTPassStats.VertexBufferBound ? "bound" : "fallback");
-    ImGui::Text("Index buffer: %s", RTPassStats.IndexBufferBound ? "bound" : "fallback");
-    ImGui::Text("Material textures loaded: %u", m_Materials.GetStats().TextureCount);
-    ImGui::Text("Material textures bound: %s (%u)", RTPassStats.MaterialTexturesBound ? "yes" : "no", RTPassStats.MaterialTextureCount);
-    ImGui::Text("Alpha-test any-hit: %s", RTPassStats.AnyHitEnabled ? "enabled" : "disabled");
-    ImGui::Text("Accumulation target: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA8 fallback)");
-    ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
-    ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
-    ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
-    int MaxBouncesUI = static_cast<int>(m_MaxBounces);
-    if (ImGui::SliderInt("Max bounces", &MaxBouncesUI, 1, 16))
+
+    // ------------------------------------------------------------ PT: Advanced Settings
+    if (ImGui::CollapsingHeader("PT: Advanced Settings"))
     {
-        m_MaxBounces = static_cast<Uint32>(MaxBouncesUI);
-        RequestAccumulationReset("Max bounces changed");
+        ImGui::Indent(Indent);
+
+        // Nested dielectrics: Phase R6 (G10).
+        ImGui::BeginDisabled(true);
+        ImGui::Combo("Nested Dielectrics", &m_ReferenceUI.NestedDielectricsQuality, "Off\0Fast\0Quality\0\0");
+        ImGui::EndDisabled();
+        PlaceholderTooltip("Nested dielectrics land in Phase R6.");
+
+        // Low-discrepancy sampler for BSDF: Phase R5 (G9).
+        ImGui::BeginDisabled(true);
+        ImGui::Checkbox("Enable LD sampler for BSDF", &m_ReferenceUI.EnableLDSamplerForBSDF);
+        ImGui::EndDisabled();
+        PlaceholderTooltip("Low-discrepancy (Sobol/Owen) sampler lands in Phase R5.");
+
+        ImGui::Unindent(Indent);
     }
-    int MinBouncesUI = static_cast<int>(m_MinBounces);
-    if (ImGui::SliderInt("Min bounces (RR start)", &MinBouncesUI, 0, 16))
+
+    // ------------------------------------------------------------------ Environment Map
+    if (ImGui::CollapsingHeader("Environment Map"))
     {
-        m_MinBounces = static_cast<Uint32>(MinBouncesUI);
-        RequestAccumulationReset("Min bounces changed");
+        ImGui::Indent(Indent);
+
+        // HDR env-map loading: Phase R4 (G7). A procedural sky is always active.
+        ImGui::BeginDisabled(true);
+        ImGui::Checkbox("Enabled", &m_ReferenceUI.EnvironmentMapEnabled);
+        ImGui::EndDisabled();
+        PlaceholderTooltip("HDR environment-map loading lands in Phase R4; a procedural sky is always active.");
+
+        ResetOnChange(ImGui::SliderFloat("Intensity", &m_EnvIntensity, 0.0f, 5.0f), "Environment intensity changed");
+
+        ImGui::Unindent(Indent);
     }
-    int MaxNEEBouncesUI = static_cast<int>(m_MaxNEEBounces);
-    if (ImGui::SliderInt("NEE bounces", &MaxNEEBouncesUI, 0, 16))
+
+    // ------------------------------------------------------------------------- Scene
+    if (ImGui::CollapsingHeader("Scene"))
     {
-        m_MaxNEEBounces = static_cast<Uint32>(MaxNEEBouncesUI);
-        RequestAccumulationReset("NEE bounce budget changed");
+        ImGui::Indent(Indent);
+
+        ImGui::Text("Scene: %s", m_Scene.HasValidContent() ? "loaded" : "missing");
+        ImGui::Text("Scene file: %s", m_Scene.GetLoadedSceneName().empty() ? "none" : m_Scene.GetLoadedSceneName().c_str());
+        ImGui::Text("Model path: %s", m_Scene.GetModelPath().empty() ? "none" : m_Scene.GetModelPath().c_str());
+        ImGui::Text("Scene cameras: %u", m_Scene.GetCameraCount());
+        if (m_Scene.GetCameraCount() > 0)
+        {
+            const char* PreviewName = "none";
+            if (m_SelectedSceneCamera >= 0)
+            {
+                if (const RTXPTSceneCamera* pSelectedCamera = m_Scene.GetCamera(static_cast<Uint32>(m_SelectedSceneCamera)))
+                    PreviewName = pSelectedCamera->Name.c_str();
+            }
+
+            if (ImGui::BeginCombo("Scene camera", PreviewName))
+            {
+                for (Uint32 CameraIdx = 0; CameraIdx < m_Scene.GetCameraCount(); ++CameraIdx)
+                {
+                    const RTXPTSceneCamera* pCamera = m_Scene.GetCamera(CameraIdx);
+                    if (pCamera == nullptr)
+                        continue;
+
+                    const bool IsSelected = static_cast<int>(CameraIdx) == m_SelectedSceneCamera;
+                    ImGui::PushID(static_cast<int>(CameraIdx));
+                    if (ImGui::Selectable(pCamera->Name.c_str(), IsSelected))
+                        ApplySceneCamera(CameraIdx);
+                    if (IsSelected)
+                        ImGui::SetItemDefaultFocus();
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+        }
+        if (!m_Scene.GetLastError().empty())
+            ImGui::TextWrapped("Asset load error: %s", m_Scene.GetLastError().c_str());
+        ImGui::Text("Mesh nodes: %u", m_Scene.GetMeshNodeCount());
+        ImGui::Text("Primitives: %u", m_Scene.GetPrimitiveCount());
+        ImGui::Text("Materials: %u", m_Materials.GetStats().MaterialCount);
+        ImGui::Text("Lights: %u", m_Lights.GetStats().LightCount);
+        if (!m_Materials.GetStats().LastError.empty())
+            ImGui::TextWrapped("Material buffer error: %s", m_Materials.GetStats().LastError.c_str());
+        if (!m_Lights.GetStats().LastError.empty())
+            ImGui::TextWrapped("Light buffer error: %s", m_Lights.GetStats().LastError.c_str());
+
+        ImGui::Unindent(Indent);
     }
-    if (ImGui::Checkbox("Next-event estimation (NEE)", &m_EnableNEE))
-        RequestAccumulationReset("NEE toggled");
-    if (ImGui::Checkbox("Environment NEE + MIS", &m_EnableEnvNEE))
-        RequestAccumulationReset("Environment NEE toggled");
-    if (ImGui::SliderFloat("Light intensity scale", &m_LightIntensityScale, 0.0f, 10.0f))
-        RequestAccumulationReset("Light intensity changed");
-    if (ImGui::SliderFloat("Environment intensity", &m_EnvIntensity, 0.0f, 5.0f))
-        RequestAccumulationReset("Environment intensity changed");
-    if (ImGui::Button("Reset accumulation"))
-        RequestAccumulationReset("User reset");
-    if (!RTPassStats.DisabledReason.empty())
-        ImGui::TextWrapped("TraceRays disabled: %s", RTPassStats.DisabledReason.c_str());
-    if (!RTPassStats.LastError.empty())
-        ImGui::TextWrapped("TraceRays error: %s", RTPassStats.LastError.c_str());
-    ImGui::Checkbox("Debug compute pass", &m_EnableDebugComputePass);
-    ImGui::Text("Compute dispatch: %s", m_DebugComputePass.IsReady() ? "ready" : "not ready");
-    ImGui::Text("Compute executed: %s", ComputeStats.LastDispatchExecuted ? "yes" : "no");
-    ImGui::Text("Compute dispatch count: %u", ComputeStats.DispatchCount);
-    if (!ComputeStats.DisabledReason.empty())
-        ImGui::TextWrapped("Compute disabled: %s", ComputeStats.DisabledReason.c_str());
-    if (!ComputeStats.LastError.empty())
-        ImGui::TextWrapped("Compute error: %s", ComputeStats.LastError.c_str());
-    if (!m_RenderTargets.GetLastError().empty())
-        ImGui::TextWrapped("Render target error: %s", m_RenderTargets.GetLastError().c_str());
-    if (!m_BlitPass.GetLastError().empty())
-        ImGui::TextWrapped("Blit error: %s", m_BlitPass.GetLastError().c_str());
-    ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
-    ImGui::Text("TODO(RTXPT-Port Phase 1): add backend-specific warnings and fallback explanations.");
-    ImGui::Text("TODO(RTXPT-Port Phase 4): expose stable-plane, RTXDI, light feedback, and denoising-guide pass toggles after their shaders are ported.");
-    ImGui::Text("TODO(RTXPT-Port Phase 5.3): add transmission / nested dielectrics and ALPHA_MODE_BLEND (current BSDF is opaque metallic-roughness GGX + alpha-mask).");
-    ImGui::Text("TODO(RTXPT-Port Phase 5.4): NEE samples analytic + procedural-sky lights with MIS; add emissive area lights, light RIS, and HDR env-map IBL.");
+
+    // ------------------------------------------------------------------ Status / Debug
+    if (ImGui::CollapsingHeader("Status / Debug"))
+    {
+        ImGui::Indent(Indent);
+
+        const RTXPTAccelerationStructureStats& ASStats      = m_AccelerationStructures.GetStats();
+        const RTXPTRayTracingPassStats&        RTPassStats  = m_RayTracingPass.GetStats();
+        const RTXPTComputePassStats&           ComputeStats = m_DebugComputePass.GetStats();
+
+        ImGui::Text("Backend: %s", GetRenderDeviceTypeString(m_pDevice->GetDeviceInfo().Type));
+        ImGui::Text("RayTracing: %s", m_FeatureCaps.RayTracing ? "yes" : "no");
+        ImGui::Text("Standalone RT shaders: %s", m_FeatureCaps.StandaloneRayTracingShaders ? "yes" : "no");
+        ImGui::Text("RayQuery: %s", m_FeatureCaps.RayQuery ? "yes" : "no");
+        ImGui::Text("Bindless: %s", m_FeatureCaps.BindlessResources ? "yes" : "no");
+        ImGui::Text("Compute: %s", m_FeatureCaps.ComputeShaders ? "yes" : "no");
+        ImGui::Text("Assets root: %s", m_AssetsRoot.c_str());
+        ImGui::Separator();
+        ImGui::Text("Acceleration structures: %s", m_AccelerationStructures.IsBuilt() ? "built" : "not built");
+        ImGui::Text("BLAS: %u", ASStats.BLASCount);
+        ImGui::Text("TLAS instances: %u", ASStats.InstanceCount);
+        ImGui::Text("RT geometries: %u", ASStats.GeometryCount);
+        ImGui::Text("Sub-instances: %u", ASStats.SubInstanceCount);
+        ImGui::Text("Alpha-tested geometries: %u", ASStats.AlphaTestedGeometryCount);
+        if (!ASStats.DisabledReason.empty())
+            ImGui::TextWrapped("AS disabled: %s", ASStats.DisabledReason.c_str());
+        if (!ASStats.LastError.empty())
+            ImGui::TextWrapped("AS error: %s", ASStats.LastError.c_str());
+        ImGui::Separator();
+        ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
+        ImGui::Text("Frame index: %u", m_FrameIndex);
+        ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.ViewportSize_FrameIdx.x, m_LastFrameConstants.ViewportSize_FrameIdx.y);
+        ImGui::Separator();
+        ImGui::Text("OutputColor: %s", m_RenderTargets.IsValid() ? "created" : "missing");
+        ImGui::Text("TraceRays pass: %s", m_RayTracingPass.IsReady() ? "ready" : "not ready");
+        ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
+        ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
+        ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
+        ImGui::Text("Vertex buffer: %s", RTPassStats.VertexBufferBound ? "bound" : "fallback");
+        ImGui::Text("Index buffer: %s", RTPassStats.IndexBufferBound ? "bound" : "fallback");
+        ImGui::Text("Material textures loaded: %u", m_Materials.GetStats().TextureCount);
+        ImGui::Text("Material textures bound: %s (%u)", RTPassStats.MaterialTexturesBound ? "yes" : "no", RTPassStats.MaterialTextureCount);
+        ImGui::Text("Alpha-test any-hit: %s", RTPassStats.AnyHitEnabled ? "enabled" : "disabled");
+        ImGui::Text("Accumulation target: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA8 fallback)");
+        ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
+        ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
+        ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
+        if (!RTPassStats.DisabledReason.empty())
+            ImGui::TextWrapped("TraceRays disabled: %s", RTPassStats.DisabledReason.c_str());
+        if (!RTPassStats.LastError.empty())
+            ImGui::TextWrapped("TraceRays error: %s", RTPassStats.LastError.c_str());
+        ImGui::Separator();
+        ImGui::Checkbox("Debug compute pass", &m_EnableDebugComputePass);
+        ImGui::Text("Compute dispatch: %s", m_DebugComputePass.IsReady() ? "ready" : "not ready");
+        ImGui::Text("Compute executed: %s", ComputeStats.LastDispatchExecuted ? "yes" : "no");
+        ImGui::Text("Compute dispatch count: %u", ComputeStats.DispatchCount);
+        if (!ComputeStats.DisabledReason.empty())
+            ImGui::TextWrapped("Compute disabled: %s", ComputeStats.DisabledReason.c_str());
+        if (!ComputeStats.LastError.empty())
+            ImGui::TextWrapped("Compute error: %s", ComputeStats.LastError.c_str());
+        if (!m_RenderTargets.GetLastError().empty())
+            ImGui::TextWrapped("Render target error: %s", m_RenderTargets.GetLastError().c_str());
+        if (!m_BlitPass.GetLastError().empty())
+            ImGui::TextWrapped("Blit error: %s", m_BlitPass.GetLastError().c_str());
+        ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
+        ImGui::Separator();
+        ImGui::TextColored(CategoryColor, "Roadmap (open work):");
+        ImGui::TextWrapped("TODO(RTXPT-Port Phase R1): adaptive firefly filter, NEE at all bounces, decorrelated seeding.");
+        ImGui::TextWrapped("TODO(RTXPT-Port Phase R3): light importance sampling (RIS/WRS) + photometric units.");
+        ImGui::TextWrapped("TODO(RTXPT-Port Phase R4): HDR environment map with importance sampling + MIS.");
+        ImGui::TextWrapped("TODO(RTXPT-Port Phase R5): VNDF/Frostbite/multi-scatter BSDF + low-discrepancy sampler.");
+        ImGui::TextWrapped("TODO(RTXPT-Port Phase R6): transmission / nested dielectrics / ALPHA_MODE_BLEND.");
+
+        ImGui::Unindent(Indent);
+    }
+
     ImGui::End();
 }
 

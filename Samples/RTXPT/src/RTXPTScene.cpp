@@ -56,6 +56,46 @@ std::string JoinPath(const std::string& Root, const char* RelativePath)
     return FileSystem::SimplifyPath(Path.c_str());
 }
 
+bool ReadSceneModelPath(const std::string& ScenePath, std::string& ModelRelativePath, std::string& Error)
+{
+    std::ifstream SceneFile{ScenePath};
+    if (!SceneFile)
+    {
+        Error = "Unable to open scene file: " + ScenePath;
+        return false;
+    }
+
+    nlohmann::json SceneJson = nlohmann::json::parse(SceneFile, nullptr, false);
+    if (SceneJson.is_discarded() || !SceneJson.is_object())
+    {
+        Error = "Invalid scene JSON: " + ScenePath;
+        return false;
+    }
+
+    const auto ModelsIt = SceneJson.find("models");
+    if (ModelsIt == SceneJson.end() || !ModelsIt->is_array() || ModelsIt->empty())
+    {
+        Error = "Scene JSON does not contain a non-empty models array: " + ScenePath;
+        return false;
+    }
+
+    const nlohmann::json& FirstModel = (*ModelsIt)[0];
+    if (!FirstModel.is_string())
+    {
+        Error = "Scene JSON models[0] is not a string: " + ScenePath;
+        return false;
+    }
+
+    ModelRelativePath = FirstModel.get<std::string>();
+    if (ModelRelativePath.empty())
+    {
+        Error = "Scene JSON models[0] is empty: " + ScenePath;
+        return false;
+    }
+
+    return true;
+}
+
 Uint32 CountMeshNodes(const GLTF::Scene& Scene)
 {
     Uint32 Count = 0;
@@ -299,6 +339,7 @@ void RTXPTScene::ResetLoadedData()
     m_Transforms = {};
     m_Cameras.clear();
     m_LoadedSceneName.clear();
+    m_ModelPath.clear();
     m_LastError.clear();
     m_IndexType      = VT_UINT32;
     m_SceneIndex     = 0;
@@ -378,20 +419,32 @@ bool RTXPTScene::LoadSceneCameras(const std::string& ScenePath)
     return !m_Cameras.empty();
 }
 
-bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
+bool RTXPTScene::LoadScene(IRenderDevice*      pDevice,
+                           IDeviceContext*    pContext,
+                           const std::string& AssetsRoot,
+                           const std::string& SceneName)
 {
     ResetLoadedData();
 
-    m_AssetsRoot                = FileSystem::SimplifyPath(AssetsRoot.c_str());
-    const std::string ScenePath = JoinPath(m_AssetsRoot, "bistro-programmer-art.scene.json");
-    m_ModelPath                 = JoinPath(m_AssetsRoot, "Models/Bistro/bistro.gltf");
+    m_AssetsRoot = FileSystem::SimplifyPath(AssetsRoot.c_str());
+    if (SceneName.empty())
+    {
+        m_LastError = "Empty RTXPT scene file name";
+        return false;
+    }
 
+    const std::string ScenePath = JoinPath(m_AssetsRoot, SceneName.c_str());
     if (!FileSystem::FileExists(ScenePath.c_str()))
     {
         m_LastError = "Missing scene file: " + ScenePath;
         return false;
     }
 
+    std::string ModelRelativePath;
+    if (!ReadSceneModelPath(ScenePath, ModelRelativePath, m_LastError))
+        return false;
+
+    m_ModelPath = JoinPath(m_AssetsRoot, ModelRelativePath.c_str());
     if (!FileSystem::FileExists(m_ModelPath.c_str()))
     {
         m_LastError = "Missing glTF file: " + m_ModelPath;
@@ -413,7 +466,7 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
     try
     {
         m_Model           = std::make_unique<GLTF::Model>(pDevice, pContext, ModelCI);
-        m_LoadedSceneName = "bistro-programmer-art.scene.json";
+        m_LoadedSceneName = SceneName;
         CacheSceneData();
     }
     catch (const std::exception& e)
@@ -427,6 +480,11 @@ bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pConte
     // TODO(RTXPT-Port Phase 3): add dynamic/skinned BLAS update, AS compaction, and alpha/OMM geometry flags;
     // current path builds static opaque geometry.
     return m_Model != nullptr;
+}
+
+bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
+{
+    return LoadScene(pDevice, pContext, AssetsRoot, "bistro-programmer-art.scene.json");
 }
 
 void RTXPTScene::Update(double CurrTime, double ElapsedTime)

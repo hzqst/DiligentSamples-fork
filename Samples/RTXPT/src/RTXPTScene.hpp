@@ -49,6 +49,10 @@ struct RTXPTSceneCamera
 class RTXPTScene
 {
 public:
+    bool LoadScene(IRenderDevice*        pDevice,
+                   IDeviceContext*      pContext,
+                   const std::string&   AssetsRoot,
+                   const std::string&   SceneName);
     bool LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot);
     void Update(double CurrTime, double ElapsedTime);
     bool HasValidContent() const;

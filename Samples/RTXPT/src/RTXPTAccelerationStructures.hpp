@@ -35,6 +35,7 @@
 #include "GLTFLoader.hpp"
 #include "RefCntAutoPtr.hpp"
 #include "RenderDevice.h"
+#include "RTXPTSkinnedGeometry.hpp"
 #include "TopLevelAS.h"
 
 namespace Diligent
@@ -77,13 +78,29 @@ class RTXPTAccelerationStructures
 public:
     void Reset();
 
+    bool BuildScene(IRenderDevice*                 pDevice,
+                    IDeviceContext*                pContext,
+                    const GLTF::Model&             Model,
+                    Uint32                         SceneIndex,
+                    VALUE_TYPE                     IndexType,
+                    const GLTF::ModelTransforms&   Transforms,
+                    const RTXPTSkinnedGeometry*    pSkinnedGeometry,
+                    bool                           RayTracingSupported);
+
     bool BuildStaticScene(IRenderDevice*               pDevice,
                           IDeviceContext*              pContext,
                           const GLTF::Model&           Model,
                           Uint32                       SceneIndex,
                           VALUE_TYPE                   IndexType,
                           const GLTF::ModelTransforms& Transforms,
-                          bool                         RayTracingSupported);
+                          bool                         RayTracingSupported)
+    {
+        return BuildScene(pDevice, pContext, Model, SceneIndex, IndexType, Transforms,
+                          nullptr, RayTracingSupported);
+    }
+
+    bool UpdateDynamicBLAS(IDeviceContext*             pContext,
+                           const RTXPTSkinnedGeometry& SkinnedGeometry);
 
     bool IsBuilt() const { return m_Stats.Built && m_TLAS; }
 
@@ -95,9 +112,15 @@ public:
 private:
     struct BLASRecord
     {
-        std::string                   Name;
-        RefCntAutoPtr<IBottomLevelAS> BLAS;
-        Uint32                        GeometryCount = 0;
+        std::string                        Name;
+        RefCntAutoPtr<IBottomLevelAS>      BLAS;
+        RefCntAutoPtr<IBuffer>             VertexBuffer;
+        RefCntAutoPtr<IBuffer>             IndexBuffer;
+        std::vector<std::string>           GeometryNames;
+        std::vector<BLASBuildTriangleData> TriangleData;
+        Uint32                             GeometryCount = 0;
+        bool                               Dynamic       = false;
+        Uint32                             SkinningDispatchCount = 0;
     };
 
     std::vector<BLASRecord>         m_BLASRecords;

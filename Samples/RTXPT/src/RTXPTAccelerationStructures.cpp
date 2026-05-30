@@ -96,6 +96,19 @@ InstanceMatrix ToInstanceMatrix(const float4x4& Transform)
     return Matrix;
 }
 
+const RTXPTSkinnedNodeGeometry* FindSkinnedNode(const RTXPTSkinnedGeometry* pSkinnedGeometry, const GLTF::Node* pNode)
+{
+    if (pSkinnedGeometry == nullptr || pNode == nullptr)
+        return nullptr;
+
+    for (const RTXPTSkinnedNodeGeometry& Node : pSkinnedGeometry->GetNodes())
+    {
+        if (Node.pNode == pNode)
+            return &Node;
+    }
+    return nullptr;
+}
+
 } // namespace
 
 void RTXPTAccelerationStructures::Reset()
@@ -109,16 +122,23 @@ void RTXPTAccelerationStructures::Reset()
     m_Stats = {};
 }
 
-bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               pDevice,
-                                                   IDeviceContext*              pContext,
-                                                   const GLTF::Model&           Model,
-                                                   Uint32                       SceneIndex,
-                                                   VALUE_TYPE                   IndexType,
-                                                   const GLTF::ModelTransforms& Transforms,
-                                                   bool                         RayTracingSupported)
+bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDevice,
+                                             IDeviceContext*                pContext,
+                                             const GLTF::Model&             Model,
+                                             Uint32                         SceneIndex,
+                                             VALUE_TYPE                     IndexType,
+                                             const GLTF::ModelTransforms&   Transforms,
+                                             const RTXPTSkinnedGeometry*    pSkinnedGeometry,
+                                             bool                           RayTracingSupported)
 {
     Reset();
     m_Stats.RayTracingSupported = RayTracingSupported;
+
+    if (pDevice == nullptr || pContext == nullptr)
+    {
+        m_Stats.LastError = "RTXPT acceleration structure build requires a device and device context";
+        return false;
+    }
 
     if (!RayTracingSupported)
     {
@@ -184,6 +204,11 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
         return false;
     }
     const Uint32 IndexSize = GetValueSize(IndexType);
+    const bool SkinnedGeometryReady = pSkinnedGeometry != nullptr && pSkinnedGeometry->IsReady();
+    const Uint32 SkinningDispatchCount = pSkinnedGeometry != nullptr ? pSkinnedGeometry->GetStats().DispatchCount : 0;
+    IBuffer* const pSkinnedVertexBuffer = SkinnedGeometryReady ?
+        pSkinnedGeometry->GetSkinnedVertexBuffer() :
+        nullptr;
 
     std::vector<TLASBuildInstanceData> Instances;
     std::vector<std::string>           InstanceNames;
@@ -201,6 +226,30 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
         if (pNode->Index < 0 || static_cast<size_t>(pNode->Index) >= Transforms.NodeGlobalMatrices.size())
             continue;
 
+        const RTXPTSkinnedNodeGeometry* pSkinnedNode = FindSkinnedNode(pSkinnedGeometry, pNode);
+        if (pNode->pSkin != nullptr && pSkinnedGeometry != nullptr)
+        {
+            if (pSkinnedNode == nullptr)
+            {
+                m_Stats.LastError = "RTXPT skinned geometry is missing a node record";
+                return false;
+            }
+
+            if (!SkinnedGeometryReady || SkinningDispatchCount == 0)
+            {
+                m_Stats.LastError = "RTXPT skinned geometry is not ready for BLAS build";
+                return false;
+            }
+        }
+        const bool IsSkinnedNode =
+            SkinnedGeometryReady && pSkinnedNode != nullptr && pSkinnedVertexBuffer != nullptr;
+        IBuffer*     pNodeVertexBuffer     = IsSkinnedNode ? pSkinnedVertexBuffer : pVertexBuffer;
+        const Uint32 NodeVertexStride      = IsSkinnedNode ? static_cast<Uint32>(sizeof(RTXPTGeometryVertex)) : VertexStride;
+        const Uint64 NodeModelVertexOffset = IsSkinnedNode ?
+            Uint64{pSkinnedNode->VertexBase} * sizeof(RTXPTGeometryVertex) :
+            ModelVertexOffset;
+        const Uint32 NodeModelVertexCount  = IsSkinnedNode ? pSkinnedNode->VertexCount : ModelVertexCount;
+
         std::vector<std::string>           GeometryNames;
         std::vector<BLASTriangleDesc>      TriangleDescs;
         std::vector<BLASBuildTriangleData> TriangleData;
@@ -217,11 +266,21 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
 
             GeometryNames.emplace_back((pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name) + "_" + std::to_string(PrimitiveIndex));
 
+            const bool IsIndexed = Primitive.HasIndices();
+
             SubInstanceData SubEntry;
             SubEntry.MaterialID   = Primitive.MaterialId;
-            SubEntry.VertexOffset = BaseVertex + Primitive.FirstVertex;
             SubEntry.VertexCount  = Primitive.VertexCount;
-            if (Primitive.HasIndices())
+            if (IsSkinnedNode)
+            {
+                SubEntry.Flags |= kSubInstanceFlag_Skinned;
+                SubEntry.VertexOffset = pSkinnedNode->VertexBase + Primitive.FirstVertex;
+            }
+            else
+            {
+                SubEntry.VertexOffset = BaseVertex + Primitive.FirstVertex;
+            }
+            if (IsIndexed)
             {
                 SubEntry.Flags |= kSubInstanceFlag_Indexed;
                 SubEntry.IndexOffset = FirstIndex + Primitive.FirstIndex;
@@ -231,11 +290,12 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
 
             // The GLTF builder bakes VertexStart into indexed primitives and resets FirstVertex to 0.
             // BLAS indexed geometry therefore needs the whole model vertex range, not Primitive.VertexCount.
-            const bool   IsIndexed          = Primitive.HasIndices();
             const Uint64 PrimitiveVertexOff = IsIndexed ?
-                ModelVertexOffset :
-                (Uint64{BaseVertex + Primitive.FirstVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset});
-            const Uint32 PrimitiveVertexCnt = IsIndexed ? ModelVertexCount : Primitive.VertexCount;
+                NodeModelVertexOffset :
+                (IsSkinnedNode ?
+                     (Uint64{pSkinnedNode->VertexBase + Primitive.FirstVertex} * sizeof(RTXPTGeometryVertex)) :
+                     (Uint64{BaseVertex + Primitive.FirstVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset}));
+            const Uint32 PrimitiveVertexCnt = IsIndexed ? NodeModelVertexCount : Primitive.VertexCount;
 
             BLASTriangleDesc TriangleDesc;
             TriangleDesc.GeometryName         = GeometryNames.back().c_str();
@@ -247,9 +307,9 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
 
             BLASBuildTriangleData BuildData;
             BuildData.GeometryName         = TriangleDesc.GeometryName;
-            BuildData.pVertexBuffer        = pVertexBuffer;
+            BuildData.pVertexBuffer        = pNodeVertexBuffer;
             BuildData.VertexOffset         = PrimitiveVertexOff;
-            BuildData.VertexStride         = VertexStride;
+            BuildData.VertexStride         = NodeVertexStride;
             BuildData.VertexCount          = PrimitiveVertexCnt;
             BuildData.VertexValueType      = Position.ValueType;
             BuildData.VertexComponentCount = Position.ComponentCount;
@@ -282,6 +342,18 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
         const std::string NodeName = pNode->Name.empty() ? "node" : pNode->Name;
         Record.Name                = "RTXPT BLAS " + NodeName + " node_" + std::to_string(pNode->Index);
         Record.GeometryCount       = static_cast<Uint32>(TriangleDescs.size());
+        Record.Dynamic             = IsSkinnedNode;
+        Record.VertexBuffer        = pNodeVertexBuffer;
+        Record.IndexBuffer         = pIndexBuffer;
+        Record.SkinningDispatchCount = IsSkinnedNode ? SkinningDispatchCount : 0;
+        Record.GeometryNames       = std::move(GeometryNames);
+        Record.TriangleData        = TriangleData;
+        for (size_t i = 0; i < Record.TriangleData.size(); ++i)
+        {
+            const char* GeometryName = Record.GeometryNames[i].c_str();
+            TriangleDescs[i].GeometryName = GeometryName;
+            Record.TriangleData[i].GeometryName = GeometryName;
+        }
 
         if (Uint64{SubInstanceBase} + Uint64{Record.GeometryCount} > Uint64{MaxSubInstanceDataCount})
         {
@@ -291,7 +363,7 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
 
         BottomLevelASDesc BLASDesc;
         BLASDesc.Name          = Record.Name.c_str();
-        BLASDesc.Flags         = RAYTRACING_BUILD_AS_NONE;
+        BLASDesc.Flags         = IsSkinnedNode ? RAYTRACING_BUILD_AS_ALLOW_UPDATE : RAYTRACING_BUILD_AS_NONE;
         BLASDesc.pTriangles    = TriangleDescs.data();
         BLASDesc.TriangleCount = static_cast<Uint32>(TriangleDescs.size());
         pDevice->CreateBLAS(BLASDesc, &Record.BLAS);
@@ -302,25 +374,32 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
             return false;
         }
 
-        m_Stats.BLASScratchSize = std::max(m_Stats.BLASScratchSize, Record.BLAS->GetScratchBufferSizes().Build);
+        const Uint64 ScratchSize = std::max(Record.BLAS->GetScratchBufferSizes().Build,
+                                            Record.BLAS->GetScratchBufferSizes().Update);
+        m_Stats.BLASScratchSize = std::max(m_Stats.BLASScratchSize, ScratchSize);
 
-        if (!m_BLASScratch || m_BLASScratch->GetDesc().Size < Record.BLAS->GetScratchBufferSizes().Build)
+        if (!m_BLASScratch || m_BLASScratch->GetDesc().Size < ScratchSize)
         {
             BufferDesc ScratchDesc;
             ScratchDesc.Name      = "RTXPT BLAS scratch buffer";
             ScratchDesc.Usage     = USAGE_DEFAULT;
             ScratchDesc.BindFlags = BIND_RAY_TRACING;
-            ScratchDesc.Size      = Record.BLAS->GetScratchBufferSizes().Build;
+            ScratchDesc.Size      = ScratchSize;
             m_BLASScratch.Release();
             pDevice->CreateBuffer(ScratchDesc, nullptr, &m_BLASScratch);
+            if (!m_BLASScratch)
+            {
+                m_Stats.LastError = "Failed to create RTXPT BLAS scratch buffer";
+                return false;
+            }
         }
 
         BuildBLASAttribs BLASAttribs;
         BLASAttribs.pBLAS                       = Record.BLAS;
         BLASAttribs.BLASTransitionMode          = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
         BLASAttribs.GeometryTransitionMode      = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-        BLASAttribs.pTriangleData               = TriangleData.data();
-        BLASAttribs.TriangleDataCount           = static_cast<Uint32>(TriangleData.size());
+        BLASAttribs.pTriangleData               = Record.TriangleData.data();
+        BLASAttribs.TriangleDataCount           = static_cast<Uint32>(Record.TriangleData.size());
         BLASAttribs.pScratchBuffer              = m_BLASScratch;
         BLASAttribs.ScratchBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
         pContext->BuildBLAS(BLASAttribs);
@@ -367,6 +446,11 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
     InstanceBufferDesc.BindFlags = BIND_RAY_TRACING;
     InstanceBufferDesc.Size      = Uint64{TLAS_INSTANCE_DATA_SIZE} * Uint64{Instances.size()};
     pDevice->CreateBuffer(InstanceBufferDesc, nullptr, &m_InstanceBuffer);
+    if (!m_InstanceBuffer)
+    {
+        m_Stats.LastError = "Failed to create RTXPT TLAS instance buffer";
+        return false;
+    }
 
     BufferDesc TLASScratchDesc;
     TLASScratchDesc.Name      = "RTXPT TLAS scratch buffer";
@@ -374,6 +458,11 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
     TLASScratchDesc.BindFlags = BIND_RAY_TRACING;
     TLASScratchDesc.Size      = m_TLAS->GetScratchBufferSizes().Build;
     pDevice->CreateBuffer(TLASScratchDesc, nullptr, &m_TLASScratch);
+    if (!m_TLASScratch)
+    {
+        m_Stats.LastError = "Failed to create RTXPT TLAS scratch buffer";
+        return false;
+    }
 
     BuildTLASAttribs TLASAttribs;
     TLASAttribs.pTLAS                        = m_TLAS;
@@ -416,6 +505,69 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
     m_Stats.SubInstanceCount = static_cast<Uint32>(SubInstances.size());
     m_Stats.Built            = true;
     return true;
+}
+
+bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext* pContext, const RTXPTSkinnedGeometry& SkinnedGeometry)
+{
+    if (pContext == nullptr)
+    {
+        m_Stats.LastError = "RTXPT dynamic BLAS update requires a device context";
+        return false;
+    }
+
+    if (!IsBuilt())
+    {
+        m_Stats.LastError = "RTXPT dynamic BLAS update requires built acceleration structures";
+        return false;
+    }
+
+    if (!SkinnedGeometry.IsReady())
+    {
+        m_Stats.LastError = "RTXPT skinned geometry is not ready for dynamic BLAS update";
+        return false;
+    }
+
+    if (SkinnedGeometry.HasSkinnedGeometry() && SkinnedGeometry.GetStats().DispatchCount == 0)
+    {
+        m_Stats.LastError = "RTXPT skinned geometry has not been dispatched for this frame";
+        return false;
+    }
+
+    const Uint32 SkinningDispatchCount = SkinnedGeometry.GetStats().DispatchCount;
+
+    bool Updated = false;
+    for (BLASRecord& Record : m_BLASRecords)
+    {
+        if (!Record.Dynamic || !Record.BLAS)
+            continue;
+
+        if (Record.VertexBuffer.RawPtr() != SkinnedGeometry.GetSkinnedVertexBuffer())
+        {
+            m_Stats.LastError = "RTXPT dynamic BLAS was built with a different skinned vertex buffer";
+            return false;
+        }
+
+        if (Record.SkinningDispatchCount == SkinningDispatchCount)
+        {
+            m_Stats.LastError = "RTXPT dynamic BLAS update requires a newer skinned geometry dispatch";
+            return false;
+        }
+
+        BuildBLASAttribs BLASAttribs;
+        BLASAttribs.pBLAS                       = Record.BLAS;
+        BLASAttribs.BLASTransitionMode          = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+        BLASAttribs.GeometryTransitionMode      = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+        BLASAttribs.pTriangleData               = Record.TriangleData.data();
+        BLASAttribs.TriangleDataCount           = static_cast<Uint32>(Record.TriangleData.size());
+        BLASAttribs.pScratchBuffer              = m_BLASScratch;
+        BLASAttribs.ScratchBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+        BLASAttribs.Update                      = true;
+        pContext->BuildBLAS(BLASAttribs);
+        Record.SkinningDispatchCount = SkinningDispatchCount;
+        Updated = true;
+    }
+
+    return Updated;
 }
 
 } // namespace Diligent

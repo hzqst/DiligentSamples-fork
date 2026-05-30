@@ -8,6 +8,7 @@ ConstantBuffer<SampleConstants>        g_Const;
 StructuredBuffer<SubInstanceData>      t_SubInstanceData;
 StructuredBuffer<PolymorphicLightInfo> t_Lights;
 StructuredBuffer<GeometryVertexData>   t_VertexBuffer;
+StructuredBuffer<GeometryVertexData>   t_SkinnedVertexBuffer;
 Buffer<uint>                           t_IndexBuffer;
 
 namespace Bridge
@@ -54,6 +55,14 @@ namespace Bridge
         return uint3(baseIndex + 0u, baseIndex + 1u, baseIndex + 2u);
     }
 
+    GeometryVertexData getGeometryVertex(SubInstanceData subInstance, uint vertexIndex)
+    {
+        if ((subInstance.Flags & kSubInstanceFlagSkinned) != 0u)
+            return t_SkinnedVertexBuffer[subInstance.VertexOffset + vertexIndex];
+
+        return t_VertexBuffer[subInstance.VertexOffset + vertexIndex];
+    }
+
     // Fetch the 3 vertex records for the current closest-hit triangle.
     void getTriangleVertices(SubInstanceData subInstance,
                              uint            localPrimitiveIndex,
@@ -62,9 +71,9 @@ namespace Bridge
                              out GeometryVertexData v2)
     {
         const uint3 indices = getTriangleIndices(subInstance, localPrimitiveIndex);
-        v0                  = t_VertexBuffer[subInstance.VertexOffset + indices.x];
-        v1                  = t_VertexBuffer[subInstance.VertexOffset + indices.y];
-        v2                  = t_VertexBuffer[subInstance.VertexOffset + indices.z];
+        v0                  = getGeometryVertex(subInstance, indices.x);
+        v1                  = getGeometryVertex(subInstance, indices.y);
+        v2                  = getGeometryVertex(subInstance, indices.z);
     }
 
     // Barycentric-interpolated object-space normal -> world-space, renormalized.

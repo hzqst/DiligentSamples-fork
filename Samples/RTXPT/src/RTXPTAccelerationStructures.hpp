@@ -55,6 +55,7 @@ static_assert(sizeof(SubInstanceData) == 32, "SubInstanceData layout must match 
 
 // Flag bits for SubInstanceData::Flags.
 constexpr Uint32 kSubInstanceFlag_Indexed = 0x1u;
+constexpr Uint32 kSubInstanceFlag_Skinned = 0x2u;
 
 struct RTXPTAccelerationStructureStats
 {

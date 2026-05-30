@@ -3,6 +3,7 @@
 
 // Mirrors Diligent::kSubInstanceFlag_Indexed in RTXPTAccelerationStructures.hpp.
 static const uint kSubInstanceFlagIndexed = 0x1u;
+static const uint kSubInstanceFlagSkinned = 0x2u;
 
 // Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 48 bytes).
 struct PathTracerConstants
@@ -133,6 +134,13 @@ struct GeometryVertexData
     float3 position;
     float3 normal;
     float2 texCoord0;
+};
+
+// Mirrors the default GLTF skin stream in vertex buffer 1: JOINTS_0 followed by WEIGHTS_0.
+struct SkinVertexData
+{
+    float4 joints;
+    float4 weights;
 };
 
 #endif // __PATH_TRACER_SHARED_H__

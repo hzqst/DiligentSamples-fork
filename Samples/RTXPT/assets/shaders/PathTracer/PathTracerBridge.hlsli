@@ -4,10 +4,10 @@
 #include "PathTracerShared.h"
 
 // Global shader resources used by the scene bridge. C++ binds these as static SRVs.
-ConstantBuffer<RTXPTFrameConstants>    g_FrameConstants;
-StructuredBuffer<RTXPTSubInstanceData> g_SubInstanceData;
-StructuredBuffer<RTXPTLightData>       g_Lights;
-StructuredBuffer<RTXPTVertex>          g_VertexBuffer;
+ConstantBuffer<SampleConstants>        g_FrameConstants;
+StructuredBuffer<SubInstanceData>      g_SubInstanceData;
+StructuredBuffer<PolymorphicLightInfo> g_Lights;
+StructuredBuffer<GeometryVertexData>   g_VertexBuffer;
 Buffer<uint>                           g_IndexBuffer;
 
 namespace Bridge
@@ -23,7 +23,7 @@ namespace Bridge
 
     // Returns the SubInstanceData entry for the current hit.
     // The caller is responsible for guarding against an empty/unbound table via hasSubInstanceTable().
-    RTXPTSubInstanceData getSubInstanceData()
+    SubInstanceData getSubInstanceData()
     {
         return g_SubInstanceData[getSubInstanceIndex()];
     }
@@ -41,37 +41,37 @@ namespace Bridge
     // Fetch the 3 vertex indices for triangle `localPrimitiveIndex` within the geometry
     // described by `subInstance`. Falls back to a fan (i,i,i+1,i+2 sequence) for non-indexed
     // primitives so the math stays valid; non-indexed geometries are flagged via Flags.
-    uint3 getTriangleIndices(RTXPTSubInstanceData subInstance, uint localPrimitiveIndex)
+    uint3 getTriangleIndices(SubInstanceData subInstance, uint localPrimitiveIndex)
     {
         const uint baseIndex = localPrimitiveIndex * 3u;
-        if ((subInstance.Flags & kRTXPTSubInstanceFlagIndexed) != 0u)
+        if ((subInstance.Flags & kSubInstanceFlagIndexed) != 0u)
         {
             return uint3(
-                g_IndexBuffer[subInstance.FirstIndex + baseIndex + 0u],
-                g_IndexBuffer[subInstance.FirstIndex + baseIndex + 1u],
-                g_IndexBuffer[subInstance.FirstIndex + baseIndex + 2u]);
+                g_IndexBuffer[subInstance.IndexOffset + baseIndex + 0u],
+                g_IndexBuffer[subInstance.IndexOffset + baseIndex + 1u],
+                g_IndexBuffer[subInstance.IndexOffset + baseIndex + 2u]);
         }
         return uint3(baseIndex + 0u, baseIndex + 1u, baseIndex + 2u);
     }
 
     // Fetch the 3 vertex records for the current closest-hit triangle.
-    void getTriangleVertices(RTXPTSubInstanceData subInstance,
-                             uint                 localPrimitiveIndex,
-                             out RTXPTVertex      v0,
-                             out RTXPTVertex      v1,
-                             out RTXPTVertex      v2)
+    void getTriangleVertices(SubInstanceData subInstance,
+                             uint            localPrimitiveIndex,
+                             out GeometryVertexData v0,
+                             out GeometryVertexData v1,
+                             out GeometryVertexData v2)
     {
         const uint3 indices = getTriangleIndices(subInstance, localPrimitiveIndex);
-        v0                  = g_VertexBuffer[subInstance.FirstVertex + indices.x];
-        v1                  = g_VertexBuffer[subInstance.FirstVertex + indices.y];
-        v2                  = g_VertexBuffer[subInstance.FirstVertex + indices.z];
+        v0                  = g_VertexBuffer[subInstance.VertexOffset + indices.x];
+        v1                  = g_VertexBuffer[subInstance.VertexOffset + indices.y];
+        v2                  = g_VertexBuffer[subInstance.VertexOffset + indices.z];
     }
 
     // Barycentric-interpolated object-space normal -> world-space, renormalized.
-    float3 interpolateNormal(RTXPTVertex v0, RTXPTVertex v1, RTXPTVertex v2, float2 barycentrics)
+    float3 interpolateNormal(GeometryVertexData v0, GeometryVertexData v1, GeometryVertexData v2, float2 barycentrics)
     {
         const float3 bary        = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
-        const float3 objNormal   = v0.Normal * bary.x + v1.Normal * bary.y + v2.Normal * bary.z;
+        const float3 objNormal   = v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z;
         const float3 worldNormal = mul((float3x3)ObjectToWorld3x4(), objNormal);
         const float  len         = length(worldNormal);
         return len > 1e-6 ? worldNormal / len : float3(0.0, 1.0, 0.0);
@@ -79,38 +79,38 @@ namespace Bridge
 
     // Geometric (face) normal in world space; used as a fallback when interpolated normals
     // collapse (e.g. degenerate triangles or missing data).
-    float3 computeGeometricNormal(RTXPTVertex v0, RTXPTVertex v1, RTXPTVertex v2)
+    float3 computeGeometricNormal(GeometryVertexData v0, GeometryVertexData v1, GeometryVertexData v2)
     {
-        const float3 objFaceNormal   = cross(v1.Position - v0.Position, v2.Position - v0.Position);
+        const float3 objFaceNormal   = cross(v1.position - v0.position, v2.position - v0.position);
         const float3 worldFaceNormal = mul((float3x3)ObjectToWorld3x4(), objFaceNormal);
         const float  len             = length(worldFaceNormal);
         return len > 1e-6 ? worldFaceNormal / len : float3(0.0, 1.0, 0.0);
     }
 
     // World-space hit position using ObjectToWorld3x4().
-    float3 computeWorldHitPosition(RTXPTVertex v0, RTXPTVertex v1, RTXPTVertex v2, float2 barycentrics)
+    float3 computeWorldHitPosition(GeometryVertexData v0, GeometryVertexData v1, GeometryVertexData v2, float2 barycentrics)
     {
         const float3 bary   = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
-        const float3 objPos = v0.Position * bary.x + v1.Position * bary.y + v2.Position * bary.z;
+        const float3 objPos = v0.position * bary.x + v1.position * bary.y + v2.position * bary.z;
         return mul(ObjectToWorld3x4(), float4(objPos, 1.0));
     }
 
     // Barycentric-interpolated TEXCOORD_0 for the current closest-hit / any-hit triangle.
-    float2 interpolateTexCoord(RTXPTVertex v0, RTXPTVertex v1, RTXPTVertex v2, float2 barycentrics)
+    float2 interpolateTexCoord(GeometryVertexData v0, GeometryVertexData v1, GeometryVertexData v2, float2 barycentrics)
     {
         const float3 bary = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
-        return v0.TexCoord0 * bary.x + v1.TexCoord0 * bary.y + v2.TexCoord0 * bary.z;
+        return v0.texCoord0 * bary.x + v1.texCoord0 * bary.y + v2.texCoord0 * bary.z;
     }
 
     // World-space tangent derived from triangle edges + UV deltas (vertex buffer 0 carries no tangent attribute).
     // Returned tangent is orthonormalized against worldNormal; .w is the bitangent handedness for cross(N,T) * w.
     // Degenerate UVs fall back to an arbitrary perpendicular so the TBN frame is always valid.
-    float4 computeWorldTangent(RTXPTVertex v0, RTXPTVertex v1, RTXPTVertex v2, float3 worldNormal)
+    float4 computeWorldTangent(GeometryVertexData v0, GeometryVertexData v1, GeometryVertexData v2, float3 worldNormal)
     {
-        const float3 e1  = v1.Position - v0.Position;
-        const float3 e2  = v2.Position - v0.Position;
-        const float2 dU1 = v1.TexCoord0 - v0.TexCoord0;
-        const float2 dU2 = v2.TexCoord0 - v0.TexCoord0;
+        const float3 e1  = v1.position - v0.position;
+        const float3 e2  = v2.position - v0.position;
+        const float2 dU1 = v1.texCoord0 - v0.texCoord0;
+        const float2 dU2 = v2.texCoord0 - v0.texCoord0;
         const float  det = dU1.x * dU2.y - dU2.x * dU1.y;
 
         // Fallback perpendicular for degenerate UVs (det ~ 0): cross with the least-aligned axis.
@@ -142,10 +142,10 @@ namespace Bridge
     // that dummy is intentionally excluded from sampling.
     uint getLightCount()
     {
-        return g_FrameConstants.PathTracer.AnalyticLightCount;
+        return g_FrameConstants.ptConsts.analyticLightCount;
     }
 
-    RTXPTLightData getLight(uint index)
+    PolymorphicLightInfo getLight(uint index)
     {
         return g_Lights[index];
     }

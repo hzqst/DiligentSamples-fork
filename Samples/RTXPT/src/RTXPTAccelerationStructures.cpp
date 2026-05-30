@@ -187,7 +187,7 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
 
     std::vector<TLASBuildInstanceData> Instances;
     std::vector<std::string>           InstanceNames;
-    std::vector<RTXPTSubInstanceData>  SubInstances;
+    std::vector<SubInstanceData>       SubInstances;
     Instances.reserve(Scene.LinearNodes.size());
     InstanceNames.reserve(Scene.LinearNodes.size());
     SubInstances.reserve(Scene.LinearNodes.size());
@@ -217,15 +217,15 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
 
             GeometryNames.emplace_back((pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name) + "_" + std::to_string(PrimitiveIndex));
 
-            RTXPTSubInstanceData SubEntry;
-            SubEntry.MaterialID  = Primitive.MaterialId;
-            SubEntry.FirstVertex = BaseVertex + Primitive.FirstVertex;
-            SubEntry.VertexCount = Primitive.VertexCount;
+            SubInstanceData SubEntry;
+            SubEntry.MaterialID     = Primitive.MaterialId;
+            SubEntry.VertexOffset   = BaseVertex + Primitive.FirstVertex;
+            SubEntry.VertexCount    = Primitive.VertexCount;
             if (Primitive.HasIndices())
             {
-                SubEntry.Flags |= kRTXPTSubInstanceFlag_Indexed;
-                SubEntry.FirstIndex = FirstIndex + Primitive.FirstIndex;
-                SubEntry.IndexCount = Primitive.IndexCount;
+                SubEntry.Flags |= kSubInstanceFlag_Indexed;
+                SubEntry.IndexOffset = FirstIndex + Primitive.FirstIndex;
+                SubEntry.IndexCount  = Primitive.IndexCount;
             }
             SubInstances.emplace_back(SubEntry);
 
@@ -392,7 +392,7 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
     if (SubInstances.empty())
     {
         // Always upload at least one dummy entry so the bridge buffer can be bound unconditionally.
-        SubInstances.push_back(RTXPTSubInstanceData{});
+        SubInstances.push_back(SubInstanceData{});
     }
 
     BufferDesc SubInstanceDesc;
@@ -400,8 +400,8 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
     SubInstanceDesc.Usage             = USAGE_IMMUTABLE;
     SubInstanceDesc.BindFlags         = BIND_SHADER_RESOURCE;
     SubInstanceDesc.Mode              = BUFFER_MODE_STRUCTURED;
-    SubInstanceDesc.ElementByteStride = sizeof(RTXPTSubInstanceData);
-    SubInstanceDesc.Size              = sizeof(RTXPTSubInstanceData) * SubInstances.size();
+    SubInstanceDesc.ElementByteStride = sizeof(SubInstanceData);
+    SubInstanceDesc.Size              = sizeof(SubInstanceData) * SubInstances.size();
 
     BufferData SubInstanceData{SubInstances.data(), SubInstanceDesc.Size};
     pDevice->CreateBuffer(SubInstanceDesc, &SubInstanceData, &m_SubInstanceBuffer);

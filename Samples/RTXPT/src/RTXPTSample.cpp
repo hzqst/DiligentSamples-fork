@@ -147,7 +147,7 @@ void RTXPTSample::ModifyEngineInitInfo(const ModifyEngineInitInfoAttribs& Attrib
 
 void RTXPTSample::CreateFrameResources()
 {
-    CreateUniformBuffer(m_pDevice, sizeof(RTXPTFrameConstants), "RTXPT frame constants", &m_FrameConstantsCB);
+    CreateUniformBuffer(m_pDevice, sizeof(SampleConstants), "RTXPT frame constants", &m_FrameConstantsCB);
 }
 
 void RTXPTSample::InitializeCamera()
@@ -254,10 +254,10 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     const float4x4 CameraProj     = m_Camera.GetProjMatrix();
     const float4x4 ViewProj       = CameraView * CameraProj;
 
-    m_LastFrameConstants.ViewProj              = ViewProj;
-    m_LastFrameConstants.ViewProjInv           = ViewProj.Inverse();
-    m_LastFrameConstants.CameraPosition_Time   = float4{CameraPosition.x, CameraPosition.y, CameraPosition.z, static_cast<float>(CurrTime)};
-    m_LastFrameConstants.ViewportSize_FrameIdx = float4{Width, Height, Width > 0.0f ? 1.0f / Width : 0.0f, static_cast<float>(m_FrameIndex)};
+    m_LastFrameConstants.viewProj                  = ViewProj;
+    m_LastFrameConstants.viewProjInv               = ViewProj.Inverse();
+    m_LastFrameConstants.cameraPositionAndTime     = float4{CameraPosition.x, CameraPosition.y, CameraPosition.z, static_cast<float>(CurrTime)};
+    m_LastFrameConstants.viewportSizeAndFrameIndex = float4{Width, Height, Width > 0.0f ? 1.0f / Width : 0.0f, static_cast<float>(m_FrameIndex)};
 
     if (m_AccumulationActive)
     {
@@ -271,20 +271,20 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
         m_AccumulationFrame = 0;
     }
 
-    m_LastFrameConstants.PathTracer.MaxBounces          = m_MaxBounces;
-    m_LastFrameConstants.PathTracer.AccumulationFrame   = m_AccumulationFrame;
-    m_LastFrameConstants.PathTracer.ResetAccumulation   = m_ResetAccumulationPending ? 1u : 0u;
-    m_LastFrameConstants.PathTracer.MinBounces          = m_MinBounces;
-    m_LastFrameConstants.PathTracer.EnableNEE           = m_EnableNEE ? 1u : 0u;
-    m_LastFrameConstants.PathTracer.EnableEnvNEE        = m_EnableEnvNEE ? 1u : 0u;
-    m_LastFrameConstants.PathTracer.EnvIntensity        = m_EnvIntensity;
-    m_LastFrameConstants.PathTracer.LightIntensityScale = m_LightIntensityScale;
-    m_LastFrameConstants.PathTracer.MaxNEEBounces       = m_MaxNEEBounces;
-    m_LastFrameConstants.PathTracer.AnalyticLightCount  = m_Lights.GetStats().LightCount;
+    m_LastFrameConstants.ptConsts.bounceCount           = m_MaxBounces;
+    m_LastFrameConstants.ptConsts.sampleIndex           = m_AccumulationFrame;
+    m_LastFrameConstants.ptConsts.resetAccumulation     = m_ResetAccumulationPending ? 1u : 0u;
+    m_LastFrameConstants.ptConsts.minBounceCount        = m_MinBounces;
+    m_LastFrameConstants.ptConsts.NEEEnabled            = m_EnableNEE ? 1u : 0u;
+    m_LastFrameConstants.ptConsts.environmentNEEEnabled = m_EnableEnvNEE ? 1u : 0u;
+    m_LastFrameConstants.ptConsts.environmentIntensity  = m_EnvIntensity;
+    m_LastFrameConstants.ptConsts.lightIntensityScale   = m_LightIntensityScale;
+    m_LastFrameConstants.ptConsts.maxNEEBounceCount     = m_MaxNEEBounces;
+    m_LastFrameConstants.ptConsts.analyticLightCount    = m_Lights.GetStats().LightCount;
 
     if (m_FrameConstantsCB)
     {
-        MapHelper<RTXPTFrameConstants> Constants{m_pImmediateContext, m_FrameConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
+        MapHelper<SampleConstants> Constants{m_pImmediateContext, m_FrameConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
         *Constants = m_LastFrameConstants;
     }
 
@@ -723,7 +723,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Separator();
         ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
         ImGui::Text("Frame index: %u", m_FrameIndex);
-        ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.ViewportSize_FrameIdx.x, m_LastFrameConstants.ViewportSize_FrameIdx.y);
+        ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.viewportSizeAndFrameIndex.x, m_LastFrameConstants.viewportSizeAndFrameIndex.y);
         ImGui::Separator();
         ImGui::Text("OutputColor: %s", m_RenderTargets.IsValid() ? "created" : "missing");
         ImGui::Text("TraceRays pass: %s", m_RayTracingPass.IsReady() ? "ready" : "not ready");

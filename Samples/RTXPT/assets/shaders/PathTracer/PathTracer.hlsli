@@ -13,17 +13,17 @@ static const float kVisibilityRayTMax = 1e30;
 
 namespace PathTracer
 {
-    RTXPTPathTracerPayload MakeEmptyPayload(uint hitFlag)
+    PathPayload MakeEmptyPayload(uint hitFlag)
     {
-        RTXPTPathTracerPayload payload;
-        payload.WorldPos    = float3(0.0, 0.0, 0.0);
-        payload.HitDistance = -1.0;
-        payload.WorldNormal = float3(0.0, 1.0, 0.0);
-        payload.HitFlag     = hitFlag;
-        payload.BaseColor   = float3(0.0, 0.0, 0.0);
-        payload.Emission    = float3(0.0, 0.0, 0.0);
-        payload.Metallic    = 0.0;
-        payload.Roughness   = 1.0;
+        PathPayload payload;
+        payload.worldPos    = float3(0.0, 0.0, 0.0);
+        payload.hitDistance = -1.0;
+        payload.worldNormal = float3(0.0, 1.0, 0.0);
+        payload.hitFlag     = hitFlag;
+        payload.baseColor   = float3(0.0, 0.0, 0.0);
+        payload.emission    = float3(0.0, 0.0, 0.0);
+        payload.metallic    = 0.0;
+        payload.roughness   = 1.0;
         return payload;
     }
 
@@ -39,7 +39,7 @@ namespace PathTracer
         ray.TMax      = tMax;
 
         // Initial HitFlag = blocked. A true miss runs the miss shader, which clears HitFlag to visible.
-        RTXPTPathTracerPayload payload = MakeEmptyPayload(1u);
+        PathPayload payload = MakeEmptyPayload(1u);
         TraceRay(g_TLAS,
                  RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
                  0xFF,
@@ -48,14 +48,14 @@ namespace PathTracer
                  0,
                  ray,
                  payload);
-        return payload.HitFlag == 0u;
+        return payload.hitFlag == 0u;
     }
 
     float3 SampleAnalyticNEE(StandardBSDFData bsdfData, float3 hitPos, float3 visibilityOrigin,
                              float3 wo, inout SampleGenerator sg)
     {
         const uint lightCount = Bridge::getLightCount();
-        if (lightCount == 0u || g_FrameConstants.PathTracer.LightIntensityScale <= 0.0)
+        if (lightCount == 0u || g_FrameConstants.ptConsts.lightIntensityScale <= 0.0)
             return float3(0.0, 0.0, 0.0);
 
         const uint lightIndex = min(uint(sampleNext1D(sg) * float(lightCount)), lightCount - 1u);
@@ -74,13 +74,13 @@ namespace PathTracer
         if (!TraceVisibilityRay(visibilityOrigin, light.dir, light.distance))
             return float3(0.0, 0.0, 0.0);
 
-        return f * light.radiance * g_FrameConstants.PathTracer.LightIntensityScale * float(lightCount);
+        return f * light.radiance * g_FrameConstants.ptConsts.lightIntensityScale * float(lightCount);
     }
 
     float3 SampleEnvironmentNEE(StandardBSDFData bsdfData, float3 visibilityOrigin,
                                 float3 wo, inout SampleGenerator sg)
     {
-        if (g_FrameConstants.PathTracer.EnvIntensity <= 0.0)
+        if (g_FrameConstants.ptConsts.environmentIntensity <= 0.0)
             return float3(0.0, 0.0, 0.0);
 
         float envPdf;
@@ -98,7 +98,7 @@ namespace PathTracer
         if (!TraceVisibilityRay(visibilityOrigin, wi, kVisibilityRayTMax))
             return float3(0.0, 0.0, 0.0);
 
-        const float3 envRadiance = EnvMap::Eval(wi) * g_FrameConstants.PathTracer.EnvIntensity;
+        const float3 envRadiance = EnvMap::Eval(wi) * g_FrameConstants.ptConsts.environmentIntensity;
         const float  misWeight   = PowerHeuristic(1.0, envPdf, 1.0, bsdfPdf);
         return f * envRadiance * (misWeight / envPdf);
     }

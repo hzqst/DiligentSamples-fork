@@ -36,14 +36,14 @@
 namespace Diligent
 {
 
-struct RTXPTLightData
+struct PolymorphicLightInfo
 {
-    float4 ColorIntensity = float4{1, 1, 1, 0};
-    float4 PositionRange  = float4{0, 0, 0, 0};
-    float4 DirectionType  = float4{0, -1, 0, 0};
-    float4 SpotAngles     = float4{0, 0, 0, 0};
+    float4 colorIntensity = float4{1, 1, 1, 0};
+    float4 positionRange  = float4{0, 0, 0, 0};
+    float4 directionType  = float4{0, -1, 0, 0};
+    float4 spotAngles     = float4{0, 0, 0, 0};
 };
-static_assert(sizeof(RTXPTLightData) == 64, "RTXPTLightData layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(PolymorphicLightInfo) == 64, "PolymorphicLightInfo layout must match PathTracer/PathTracerShared.h");
 
 struct RTXPTLightStats
 {

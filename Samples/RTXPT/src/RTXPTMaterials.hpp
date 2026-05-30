@@ -41,50 +41,50 @@
 namespace Diligent
 {
 
-// GPU material record consumed by the reference path tracer (mirrors RTXPTMaterialData in PathTracer/PathTracerShared.h).
-// One entry per GLTF material; the closest-hit / any-hit shaders index it via RTXPTSubInstanceData::MaterialID.
+// GPU material record consumed by the reference path tracer (mirrors MaterialPTData in PathTracer/PathTracerShared.h).
+// One entry per GLTF material; the closest-hit / any-hit shaders index it via SubInstanceData::MaterialID.
 // All texture indices/slices reference the shared bindless material-texture table (one entry per GLTF texture).
-struct RTXPTMaterialData
+struct MaterialPTData
 {
-    float4 BaseColorFactor = float4{1, 1, 1, 1};
+    float4 baseColorFactor = float4{1, 1, 1, 1};
 
-    float3 EmissiveFactor = float3{0, 0, 0};
-    float  AlphaCutoff    = 0.5f;
+    float3 emissiveFactor = float3{0, 0, 0};
+    float  alphaCutoff    = 0.5f;
 
-    Uint32 Flags                 = 0;
-    Uint32 BaseColorTextureIndex = 0;
-    Uint32 EmissiveTextureIndex  = 0;
-    float  MetallicFactor        = 1.0f;
+    Uint32 flags                  = 0;
+    Uint32 baseColorTextureIndex  = 0;
+    Uint32 emissiveTextureIndex   = 0;
+    float  metallicFactor         = 1.0f;
 
-    float  RoughnessFactor               = 1.0f;
-    float  BaseColorTextureSlice         = 0.0f;
-    float  EmissiveTextureSlice          = 0.0f;
-    Uint32 MetallicRoughnessTextureIndex = 0;
+    float  roughnessFactor                = 1.0f;
+    float  baseColorTextureSlice          = 0.0f;
+    float  emissiveTextureSlice           = 0.0f;
+    Uint32 metallicRoughnessTextureIndex  = 0;
 
-    float  MetallicRoughnessTextureSlice = 0.0f;
-    Uint32 NormalTextureIndex            = 0;
-    float  NormalTextureSlice            = 0.0f;
-    float  NormalScale                   = 1.0f;
+    float  metallicRoughnessTextureSlice  = 0.0f;
+    Uint32 normalTextureIndex             = 0;
+    float  normalTextureSlice             = 0.0f;
+    float  normalScale                    = 1.0f;
 
-    float Padding0 = 0.0f;
-    float Padding1 = 0.0f;
-    float Padding2 = 0.0f;
-    float Padding3 = 0.0f;
+    float  _padding0 = 0.0f;
+    float  _padding1 = 0.0f;
+    float  _padding2 = 0.0f;
+    float  _padding3 = 0.0f;
 };
-static_assert(sizeof(RTXPTMaterialData) == 96, "RTXPTMaterialData layout must match PathTracer/PathTracerShared.h");
-static_assert(offsetof(RTXPTMaterialData, MetallicRoughnessTextureIndex) == 60,
-              "RTXPTMaterialData MetallicRoughnessTextureIndex offset must match PathTracer/PathTracerShared.h");
-static_assert(offsetof(RTXPTMaterialData, NormalTextureIndex) == 68,
-              "RTXPTMaterialData NormalTextureIndex offset must match PathTracer/PathTracerShared.h");
-static_assert(offsetof(RTXPTMaterialData, NormalScale) == 76,
-              "RTXPTMaterialData NormalScale offset must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(MaterialPTData) == 96, "MaterialPTData layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, metallicRoughnessTextureIndex) == 60,
+              "MaterialPTData metallicRoughnessTextureIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, normalTextureIndex) == 68,
+              "MaterialPTData normalTextureIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, normalScale) == 76,
+              "MaterialPTData normalScale offset must match PathTracer/PathTracerShared.h");
 
-// Flag bits for RTXPTMaterialData::Flags. Keep in sync with kRTXPTMaterialFlag* in PathTracer/PathTracerShared.h.
-constexpr Uint32 kRTXPTMaterialFlag_HasBaseColorTexture         = 0x1u;
-constexpr Uint32 kRTXPTMaterialFlag_AlphaTested                 = 0x2u;
-constexpr Uint32 kRTXPTMaterialFlag_HasEmissiveTexture          = 0x4u;
-constexpr Uint32 kRTXPTMaterialFlag_HasMetallicRoughnessTexture = 0x8u;
-constexpr Uint32 kRTXPTMaterialFlag_HasNormalTexture            = 0x10u;
+// Flag bits for MaterialPTData::flags. Keep in sync with kMaterialFlag* in PathTracer/PathTracerShared.h.
+constexpr Uint32 kMaterialFlag_HasBaseColorTexture         = 0x1u;
+constexpr Uint32 kMaterialFlag_AlphaTested                 = 0x2u;
+constexpr Uint32 kMaterialFlag_HasEmissiveTexture          = 0x4u;
+constexpr Uint32 kMaterialFlag_HasMetallicRoughnessTexture = 0x8u;
+constexpr Uint32 kMaterialFlag_HasNormalTexture            = 0x10u;
 
 // A material is alpha tested only when it uses ALPHA_MODE_MASK and actually has a base-color texture to
 // sample the alpha from. The acceleration-structure geometry flags and the GPU material flags must agree,
@@ -108,7 +108,7 @@ public:
     IBuffer*                  GetMaterialBuffer() const { return m_MaterialBuffer; }
 
     // Bindless material-texture table. Indices match GLTF::Model texture indices and are referenced by
-    // RTXPTMaterialData::BaseColorTextureIndex / EmissiveTextureIndex. The SRV views are owned here and keep
+    // MaterialPTData::baseColorTextureIndex / emissiveTextureIndex. The SRV views are owned here and keep
     // the underlying texture resources alive.
     Uint32                GetTextureCount() const { return static_cast<Uint32>(m_TextureBindings.size()); }
     IDeviceObject* const* GetTextureBindings() const { return m_TextureBindings.empty() ? nullptr : m_TextureBindings.data(); }

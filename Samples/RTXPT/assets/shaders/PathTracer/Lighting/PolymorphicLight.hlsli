@@ -34,10 +34,10 @@ bool tryNormalize(float3 v, out float3 dir)
     return true;
 }
 
-LightSample EvalAnalyticLight(RTXPTLightData light, float3 surfacePos)
+LightSample EvalAnalyticLight(PolymorphicLightInfo light, float3 surfacePos)
 {
-    const float  type      = light.DirectionType.w;
-    const float3 radiance  = max(light.ColorIntensity.rgb, float3(0.0, 0.0, 0.0)) * max(light.ColorIntensity.a, 0.0);
+    const float  type      = light.directionType.w;
+    const float3 radiance  = max(light.colorIntensity.rgb, float3(0.0, 0.0, 0.0)) * max(light.colorIntensity.a, 0.0);
     const float  maxEnergy = max(radiance.x, max(radiance.y, radiance.z));
     if (type < -0.5 || maxEnergy <= 0.0)
         return LightSample_make_empty();
@@ -46,7 +46,7 @@ LightSample EvalAnalyticLight(RTXPTLightData light, float3 surfacePos)
 
     if (type < 0.5)
     {
-        if (!tryNormalize(-light.DirectionType.xyz, ls.dir))
+        if (!tryNormalize(-light.directionType.xyz, ls.dir))
             return LightSample_make_empty();
 
         ls.distance = 1e30;
@@ -58,13 +58,13 @@ LightSample EvalAnalyticLight(RTXPTLightData light, float3 surfacePos)
     if (type >= 2.5)
         return LightSample_make_empty();
 
-    const float3 toLight  = light.PositionRange.xyz - surfacePos;
+    const float3 toLight  = light.positionRange.xyz - surfacePos;
     const float  distSq   = dot(toLight, toLight);
     const float  distance = sqrt(distSq);
     if (distance <= 1e-4)
         return LightSample_make_empty();
 
-    const float range = light.PositionRange.w;
+    const float range = light.positionRange.w;
     if (range > 0.0 && distance > range)
         return LightSample_make_empty();
 
@@ -76,12 +76,12 @@ LightSample EvalAnalyticLight(RTXPTLightData light, float3 surfacePos)
     if (type >= 1.5)
     {
         float3 lightDir;
-        if (!tryNormalize(light.DirectionType.xyz, lightDir))
+        if (!tryNormalize(light.directionType.xyz, lightDir))
             return LightSample_make_empty();
 
         const float cosTheta = dot(lightDir, -ls.dir);
-        const float innerCos = cos(light.SpotAngles.x);
-        const float outerCos = cos(light.SpotAngles.y);
+        const float innerCos = cos(light.spotAngles.x);
+        const float outerCos = cos(light.spotAngles.y);
         const float cone     = saturate((cosTheta - outerCos) / max(innerCos - outerCos, 1e-4));
         if (cone <= 0.0)
             return LightSample_make_empty();

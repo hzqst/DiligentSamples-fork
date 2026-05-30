@@ -23,7 +23,7 @@ void main()
     const uint2 pixel      = DispatchRaysIndex().xy;
     const uint2 dimensions = DispatchRaysDimensions().xy;
 
-    const uint  frameSeed = asuint(g_FrameConstants.ViewportSize_FrameIdx.w);
+    const uint  frameSeed = asuint(g_FrameConstants.viewportSizeAndFrameIndex.w);
     SampleGenerator sg    = SampleGenerator_make(pixel, frameSeed);
 
     // Jitter inside the pixel - gives free anti-aliasing across accumulated samples.
@@ -31,8 +31,8 @@ void main()
     const float2 uv     = (float2(pixel) + jitter) / float2(dimensions);
     const float2 ndc    = uv * 2.0 - 1.0;
 
-    const float4 worldPos4 = mul(float4(ndc, 1.0, 1.0), g_FrameConstants.ViewProjInv);
-    const float3 origin    = g_FrameConstants.CameraPosition_Time.xyz;
+    const float4 worldPos4 = mul(float4(ndc, 1.0, 1.0), g_FrameConstants.viewProjInv);
+    const float3 origin    = g_FrameConstants.cameraPositionAndTime.xyz;
     float3       rayOrigin = origin;
     float3       rayDir    = normalize(worldPos4.xyz / worldPos4.w - origin);
 
@@ -42,10 +42,10 @@ void main()
     float  prevBsdfPdf   = 0.0;
     float3 prevNormal    = float3(0.0, 1.0, 0.0);
     bool   prevDidEnvNEE = false;
-    const uint maxBounces    = max(g_FrameConstants.PathTracer.MaxBounces, 1u);
-    const uint maxNEEBounces = min(g_FrameConstants.PathTracer.MaxNEEBounces, maxBounces);
-    const bool enableNEE     = g_FrameConstants.PathTracer.EnableNEE != 0u;
-    const bool enableEnvNEE  = enableNEE && g_FrameConstants.PathTracer.EnableEnvNEE != 0u;
+    const uint maxBounces    = max(g_FrameConstants.ptConsts.bounceCount, 1u);
+    const uint maxNEEBounces = min(g_FrameConstants.ptConsts.maxNEEBounceCount, maxBounces);
+    const bool enableNEE     = g_FrameConstants.ptConsts.NEEEnabled != 0u;
+    const bool enableEnvNEE  = enableNEE && g_FrameConstants.ptConsts.environmentNEEEnabled != 0u;
 
     [loop]
     for (uint bounce = 0u; bounce < maxBounces; ++bounce)
@@ -56,7 +56,7 @@ void main()
         ray.TMin      = 1e-3;
         ray.TMax      = 10000.0;
 
-        RTXPTPathTracerPayload payload = PathTracer::MakeEmptyPayload(0u);
+        PathPayload payload = PathTracer::MakeEmptyPayload(0u);
 
         // RAY_FLAG_NONE lets the alpha-test any-hit shader run for non-opaque (alpha-masked) geometry.
         // Opaque geometry still skips any-hit via its BLAS RAYTRACING_GEOMETRY_FLAG_OPAQUE flag.
@@ -69,29 +69,29 @@ void main()
                  ray,
                  payload);
 
-        if (payload.HitFlag == 0u)
+        if (payload.hitFlag == 0u)
         {
             const float  misWeight   = PathTracer::ComputeBSDFEnvMISWeight(prevDidEnvNEE, prevBsdfPdf, prevNormal, rayDir);
-            const float3 envRadiance = payload.Emission * g_FrameConstants.PathTracer.EnvIntensity;
+            const float3 envRadiance = payload.emission * g_FrameConstants.ptConsts.environmentIntensity;
             pathRadiance += throughput * envRadiance * misWeight;
             break;
         }
 
         // Accumulate emissive surfaces hit by BSDF sampling. Area-light NEE is deferred to a later lighting pass.
-        pathRadiance += throughput * payload.Emission;
+        pathRadiance += throughput * payload.emission;
 
         // Build the glTF metallic-roughness surface the closest-hit filled in, then add explicit direct lighting
         // before importance-sampling the GGX BSDF for the next direction.
         const float3    wo       = -rayDir;
-        StandardBSDFData bsdfData = MakeStandardBSDFData(payload.WorldNormal, payload.BaseColor, payload.Metallic, payload.Roughness);
+        StandardBSDFData bsdfData = MakeStandardBSDFData(payload.worldNormal, payload.baseColor, payload.metallic, payload.roughness);
 
-        const float  bias             = max(1e-4, 1e-3 * payload.HitDistance);
-        const float3 visibilityOrigin = payload.WorldPos + bsdfData.N * bias;
+        const float  bias             = max(1e-4, 1e-3 * payload.hitDistance);
+        const float3 visibilityOrigin = payload.worldPos + bsdfData.N * bias;
 
         const bool useNEE = enableNEE && bounce < maxNEEBounces;
         if (useNEE)
         {
-            pathRadiance += throughput * PathTracer::SampleAnalyticNEE(bsdfData, payload.WorldPos, visibilityOrigin, wo, sg);
+            pathRadiance += throughput * PathTracer::SampleAnalyticNEE(bsdfData, payload.worldPos, visibilityOrigin, wo, sg);
             if (enableEnvNEE)
                 pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData, visibilityOrigin, wo, sg);
         }
@@ -104,8 +104,8 @@ void main()
 
         throughput *= weight;
 
-        // Russian roulette once we are past MinBounces - unbiased early termination of dim paths.
-        if (bounce >= g_FrameConstants.PathTracer.MinBounces)
+        // Russian roulette once we are past minBounceCount - unbiased early termination of dim paths.
+        if (bounce >= g_FrameConstants.ptConsts.minBounceCount)
         {
             const float survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 1.0);
             if (sampleNext1D(sg) > survive)
@@ -121,10 +121,10 @@ void main()
         rayDir    = nextDir;
     }
 
-    // Blend into the accumulation buffer. ResetAccumulation == 1 means this is the first sample after a reset.
+    // Blend into the accumulation buffer. resetAccumulation == 1 means this is the first sample after a reset.
     float3     accumulated = pathRadiance;
-    const uint reset       = g_FrameConstants.PathTracer.ResetAccumulation;
-    const uint frame       = max(g_FrameConstants.PathTracer.AccumulationFrame, 1u);
+    const uint reset       = g_FrameConstants.ptConsts.resetAccumulation;
+    const uint frame       = max(g_FrameConstants.ptConsts.sampleIndex, 1u);
     if (reset == 0u)
     {
         const float4 previous = g_AccumColor[pixel];

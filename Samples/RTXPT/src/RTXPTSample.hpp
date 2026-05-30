@@ -55,30 +55,30 @@ struct RTXPTFeatureCaps
     bool SPIRVCompiler               = false;
 };
 
-struct RTXPTPathTracerSettings
+struct PathTracerConstants
 {
-    Uint32 MaxBounces        = 4;
-    Uint32 AccumulationFrame = 0;
-    Uint32 ResetAccumulation = 1;
-    Uint32 MinBounces        = 0;
+    Uint32 bounceCount             = 4;
+    Uint32 sampleIndex             = 0;
+    Uint32 resetAccumulation       = 1;
+    Uint32 minBounceCount          = 0;
 
-    Uint32 EnableNEE           = 1;    // Non-zero enables next-event estimation (direct light sampling).
-    Uint32 EnableEnvNEE        = 1;    // Non-zero adds environment (sky) NEE with MIS alongside analytic lights.
-    float  EnvIntensity        = 1.0f; // Scales the procedural-sky environment radiance.
-    float  LightIntensityScale = 1.0f; // Scales analytic (punctual) light radiance.
+    Uint32 NEEEnabled              = 1;    // Non-zero enables next-event estimation (direct light sampling).
+    Uint32 environmentNEEEnabled   = 1;    // Non-zero adds environment (sky) NEE with MIS alongside analytic lights.
+    float  environmentIntensity    = 1.0f; // Scales the procedural-sky environment radiance.
+    float  lightIntensityScale     = 1.0f; // Scales analytic (punctual) light radiance.
 
-    Uint32 MaxNEEBounces     = 1; // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
-    Uint32 AnalyticLightCount = 0; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
-    Uint32 Padding1           = 0;
-    Uint32 Padding2           = 0;
+    Uint32 maxNEEBounceCount       = 1; // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
+    Uint32 analyticLightCount      = 0; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
+    Uint32 _padding0               = 0;
+    Uint32 _padding1               = 0;
 };
-static_assert(sizeof(RTXPTPathTracerSettings) == 48, "RTXPTPathTracerSettings layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(PathTracerConstants) == 48, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
 // (D:/RTXPT-fork/Rtxpt/SampleUI.h). These fields back the present-but-disabled placeholder
 // controls in UpdateUI(): each one is implemented in a later phase (R1/R3/R4/R5/R6 or the
 // separate tone-mapping Phase 6) and is intentionally NOT yet wired into
-// RTXPTPathTracerSettings / the GPU frame constants. Wiring a field in is part of the phase
+// PathTracerConstants / the GPU frame constants. Wiring a field in is part of the phase
 // that enables its control, at which point the matching BeginDisabled() guard is removed.
 struct RTXPTReferenceUIState
 {
@@ -97,15 +97,15 @@ struct RTXPTReferenceUIState
     bool  EnvironmentMapEnabled           = false; // Phase R4 (G7): HDR env-map loading (procedural sky is always active).
 };
 
-struct RTXPTFrameConstants
+struct SampleConstants
 {
-    float4x4                ViewProj              = float4x4::Identity();
-    float4x4                ViewProjInv           = float4x4::Identity();
-    float4                  CameraPosition_Time   = float4{0, 0, 0, 0};
-    float4                  ViewportSize_FrameIdx = float4{0, 0, 0, 0};
-    RTXPTPathTracerSettings PathTracer            = {};
+    float4x4            viewProj                  = float4x4::Identity();
+    float4x4            viewProjInv               = float4x4::Identity();
+    float4              cameraPositionAndTime     = float4{0, 0, 0, 0};
+    float4              viewportSizeAndFrameIndex = float4{0, 0, 0, 0};
+    PathTracerConstants ptConsts                  = {};
 };
-static_assert(sizeof(RTXPTFrameConstants) == 208, "RTXPTFrameConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(SampleConstants) == 208, "SampleConstants layout must match PathTracer/PathTracerShared.h");
 
 class RTXPTSample final : public SampleBase
 {
@@ -143,7 +143,7 @@ private:
     RTXPTBlitPass               m_BlitPass;
     FirstPersonCamera           m_Camera;
     RefCntAutoPtr<IBuffer>      m_FrameConstantsCB;
-    RTXPTFrameConstants         m_LastFrameConstants;
+    SampleConstants             m_LastFrameConstants;
     RTXPTReferenceUIState       m_ReferenceUI;
     float4x4                    m_LastCameraView           = float4x4::Identity();
     float4x4                    m_LastCameraProj           = float4x4::Identity();

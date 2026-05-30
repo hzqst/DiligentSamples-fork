@@ -3,12 +3,12 @@
 #include "Rendering/Materials/MaterialBridge.hlsli"
 
 [shader("closesthit")]
-void main(inout RTXPTPathTracerPayload Payload,
+void main(inout PathPayload Payload,
           in BuiltInTriangleIntersectionAttributes Attributes)
 {
-    Payload.HitFlag     = 1u;
-    Payload.HitDistance = RayTCurrent();
-    Payload.Emission    = float3(0.0, 0.0, 0.0);
+    Payload.hitFlag     = 1u;
+    Payload.hitDistance = RayTCurrent();
+    Payload.emission    = float3(0.0, 0.0, 0.0);
 
     // Default to a barycentric debug color so we still see something if the bridge tables are unbound.
     float3 BaseColor   = float3(Attributes.barycentrics.x,
@@ -21,12 +21,12 @@ void main(inout RTXPTPathTracerPayload Payload,
 
     if (Bridge::hasSubInstanceTable() && Bridge::hasMaterialTable())
     {
-        const RTXPTSubInstanceData subInstance = Bridge::getSubInstanceData();
-        const RTXPTMaterialData    material    = Bridge::getMaterial(subInstance.MaterialID);
+        const SubInstanceData subInstance = Bridge::getSubInstanceData();
+        const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
 
-        RTXPTVertex V0;
-        RTXPTVertex V1;
-        RTXPTVertex V2;
+        GeometryVertexData V0;
+        GeometryVertexData V1;
+        GeometryVertexData V2;
         Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
 
         const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
@@ -65,14 +65,14 @@ void main(inout RTXPTPathTracerPayload Payload,
         Roughness               = metalRough.y;
 
         BaseColor        = Bridge::getBaseColor(material, texCoord).rgb;
-        Payload.Emission = Bridge::getEmission(material, texCoord);
+        Payload.emission = Bridge::getEmission(material, texCoord);
     }
 
-    Payload.WorldPos    = WorldPos;
-    Payload.WorldNormal = normalize(WorldNormal);
-    Payload.BaseColor   = BaseColor;
-    Payload.Metallic    = Metallic;
-    Payload.Roughness   = Roughness;
+    Payload.worldPos    = WorldPos;
+    Payload.worldNormal = normalize(WorldNormal);
+    Payload.baseColor   = BaseColor;
+    Payload.metallic    = Metallic;
+    Payload.roughness   = Roughness;
 }
 
 // TODO(RTXPT-Port Phase 5.4): Emissive surfaces are gathered by BSDF sampling only; add emissive-triangle area-light NEE + MIS once an emissive light list exists.

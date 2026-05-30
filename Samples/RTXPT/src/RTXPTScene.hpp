@@ -69,7 +69,7 @@ public:
     const RTXPTSceneCamera*      GetCamera(Uint32 CameraIndex) const;
 
     // Buffer 0 packs POSITION + NORMAL + TEXCOORD_0 (the Diligent GLTF default layout).
-    // VertexStride0 is the per-vertex stride for buffer 0 and must equal sizeof(RTXPTVertex) on the shader side.
+    // VertexStride0 is the per-vertex stride for buffer 0 and must equal sizeof(GeometryVertexData) on the shader side.
     IBuffer* GetVertexBuffer0(IRenderDevice* pDevice = nullptr, IDeviceContext* pContext = nullptr) const;
     IBuffer* GetIndexBuffer(IRenderDevice* pDevice = nullptr, IDeviceContext* pContext = nullptr) const;
     Uint32   GetVertexStride0() const { return m_VertexStride0; }

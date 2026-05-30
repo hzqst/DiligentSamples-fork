@@ -45,13 +45,13 @@ float LightTypeToShaderValue(GLTF::Light::TYPE Type)
     }
 }
 
-RTXPTLightData MakeLightData(const GLTF::Light& Light, const float4x4& NodeTransform)
+PolymorphicLightInfo MakeLightData(const GLTF::Light& Light, const float4x4& NodeTransform)
 {
-    RTXPTLightData Data;
-    Data.ColorIntensity = float4{Light.Color.x, Light.Color.y, Light.Color.z, Light.Intensity};
-    Data.PositionRange  = float4{NodeTransform._41, NodeTransform._42, NodeTransform._43, Light.Range};
-    Data.DirectionType  = float4{-NodeTransform._31, -NodeTransform._32, -NodeTransform._33, LightTypeToShaderValue(Light.Type)};
-    Data.SpotAngles     = float4{Light.InnerConeAngle, Light.OuterConeAngle, 0.0f, 0.0f};
+    PolymorphicLightInfo Data;
+    Data.colorIntensity = float4{Light.Color.x, Light.Color.y, Light.Color.z, Light.Intensity};
+    Data.positionRange  = float4{NodeTransform._41, NodeTransform._42, NodeTransform._43, Light.Range};
+    Data.directionType  = float4{-NodeTransform._31, -NodeTransform._32, -NodeTransform._33, LightTypeToShaderValue(Light.Type)};
+    Data.spotAngles     = float4{Light.InnerConeAngle, Light.OuterConeAngle, 0.0f, 0.0f};
     return Data;
 }
 
@@ -67,7 +67,7 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const
 {
     Reset();
 
-    std::vector<RTXPTLightData> Lights;
+    std::vector<PolymorphicLightInfo> Lights;
     for (const GLTF::Node* pNode : Scene.LinearNodes)
     {
         if (pNode == nullptr || pNode->pLight == nullptr)
@@ -83,9 +83,9 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const
     if (Lights.empty())
     {
         // Always upload at least one default (disabled) light so the shader-side bridge SRV is never null.
-        RTXPTLightData Default;
-        Default.ColorIntensity = float4{0, 0, 0, 0};
-        Default.DirectionType  = float4{0, -1, 0, -1.0f}; // Type < 0 means unused.
+        PolymorphicLightInfo Default;
+        Default.colorIntensity = float4{0, 0, 0, 0};
+        Default.directionType  = float4{0, -1, 0, -1.0f}; // Type < 0 means unused.
         Lights.emplace_back(Default);
     }
 
@@ -94,8 +94,8 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const
     Desc.Usage             = USAGE_IMMUTABLE;
     Desc.BindFlags         = BIND_SHADER_RESOURCE;
     Desc.Mode              = BUFFER_MODE_STRUCTURED;
-    Desc.ElementByteStride = sizeof(RTXPTLightData);
-    Desc.Size              = sizeof(RTXPTLightData) * Lights.size();
+    Desc.ElementByteStride = sizeof(PolymorphicLightInfo);
+    Desc.Size              = sizeof(PolymorphicLightInfo) * Lights.size();
 
     BufferData Data{Lights.data(), Desc.Size};
     pDevice->CreateBuffer(Desc, &Data, &m_LightBuffer);

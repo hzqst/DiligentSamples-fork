@@ -4,6 +4,6 @@
 // Phase 5.1: RTXPTCommon.fxh is now a thin compatibility wrapper around the bridge headers.
 #include "PathTracer/PathTracerShared.h"
 
-ConstantBuffer<RTXPTFrameConstants> g_FrameConstants;
+ConstantBuffer<SampleConstants> g_FrameConstants;
 
 #endif

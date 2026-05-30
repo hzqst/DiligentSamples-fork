@@ -90,55 +90,55 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
 
     const Uint32 ValidTextureCount = m_Stats.TextureCount;
 
-    std::vector<RTXPTMaterialData> MaterialData;
+    std::vector<MaterialPTData> MaterialData;
     MaterialData.reserve(std::max<size_t>(Model.Materials.size(), 1));
     for (const GLTF::Material& Material : Model.Materials)
     {
         const GLTF::Material::ShaderAttribs& Attribs = Material.Attribs;
 
-        RTXPTMaterialData Data;
-        Data.BaseColorFactor = Attribs.BaseColorFactor;
-        Data.EmissiveFactor  = Attribs.EmissiveFactor;
-        Data.AlphaCutoff     = Attribs.AlphaCutoff;
-        Data.MetallicFactor  = Attribs.MetallicFactor;
-        Data.RoughnessFactor = Attribs.RoughnessFactor;
+        MaterialPTData Data;
+        Data.baseColorFactor = Attribs.BaseColorFactor;
+        Data.emissiveFactor  = Attribs.EmissiveFactor;
+        Data.alphaCutoff     = Attribs.AlphaCutoff;
+        Data.metallicFactor  = Attribs.MetallicFactor;
+        Data.roughnessFactor = Attribs.RoughnessFactor;
 
         const int BaseColorTextureId = Material.GetTextureId(GLTF::DefaultBaseColorTextureAttribId);
         if (BaseColorTextureId >= 0 && static_cast<Uint32>(BaseColorTextureId) < ValidTextureCount)
         {
-            Data.Flags |= kRTXPTMaterialFlag_HasBaseColorTexture;
-            Data.BaseColorTextureIndex = static_cast<Uint32>(BaseColorTextureId);
-            Data.BaseColorTextureSlice = Material.GetTextureAttrib(GLTF::DefaultBaseColorTextureAttribId).TextureSlice;
+            Data.flags |= kMaterialFlag_HasBaseColorTexture;
+            Data.baseColorTextureIndex = static_cast<Uint32>(BaseColorTextureId);
+            Data.baseColorTextureSlice = Material.GetTextureAttrib(GLTF::DefaultBaseColorTextureAttribId).TextureSlice;
         }
 
         const int EmissiveTextureId = Material.GetTextureId(GLTF::DefaultEmissiveTextureAttribId);
         if (EmissiveTextureId >= 0 && static_cast<Uint32>(EmissiveTextureId) < ValidTextureCount)
         {
-            Data.Flags |= kRTXPTMaterialFlag_HasEmissiveTexture;
-            Data.EmissiveTextureIndex = static_cast<Uint32>(EmissiveTextureId);
-            Data.EmissiveTextureSlice = Material.GetTextureAttrib(GLTF::DefaultEmissiveTextureAttribId).TextureSlice;
+            Data.flags |= kMaterialFlag_HasEmissiveTexture;
+            Data.emissiveTextureIndex = static_cast<Uint32>(EmissiveTextureId);
+            Data.emissiveTextureSlice = Material.GetTextureAttrib(GLTF::DefaultEmissiveTextureAttribId).TextureSlice;
         }
 
         const int MetallicRoughnessTextureId = Material.GetTextureId(GLTF::DefaultMetallicRoughnessTextureAttribId);
         if (MetallicRoughnessTextureId >= 0 && static_cast<Uint32>(MetallicRoughnessTextureId) < ValidTextureCount)
         {
-            Data.Flags |= kRTXPTMaterialFlag_HasMetallicRoughnessTexture;
-            Data.MetallicRoughnessTextureIndex = static_cast<Uint32>(MetallicRoughnessTextureId);
-            Data.MetallicRoughnessTextureSlice = Material.GetTextureAttrib(GLTF::DefaultMetallicRoughnessTextureAttribId).TextureSlice;
+            Data.flags |= kMaterialFlag_HasMetallicRoughnessTexture;
+            Data.metallicRoughnessTextureIndex = static_cast<Uint32>(MetallicRoughnessTextureId);
+            Data.metallicRoughnessTextureSlice = Material.GetTextureAttrib(GLTF::DefaultMetallicRoughnessTextureAttribId).TextureSlice;
         }
 
         const int NormalTextureId = Material.GetTextureId(GLTF::DefaultNormalTextureAttribId);
         if (NormalTextureId >= 0 && static_cast<Uint32>(NormalTextureId) < ValidTextureCount)
         {
-            Data.Flags |= kRTXPTMaterialFlag_HasNormalTexture;
-            Data.NormalTextureIndex = static_cast<Uint32>(NormalTextureId);
-            Data.NormalTextureSlice = Material.GetTextureAttrib(GLTF::DefaultNormalTextureAttribId).TextureSlice;
+            Data.flags |= kMaterialFlag_HasNormalTexture;
+            Data.normalTextureIndex = static_cast<Uint32>(NormalTextureId);
+            Data.normalTextureSlice = Material.GetTextureAttrib(GLTF::DefaultNormalTextureAttribId).TextureSlice;
         }
-        Data.NormalScale = Attribs.NormalScale;
+        Data.normalScale = Attribs.NormalScale;
 
         // Alpha test requires the base-color texture (its .a channel). Only set the flag when both agree.
-        if (RTXPTMaterialIsAlphaTested(Material) && (Data.Flags & kRTXPTMaterialFlag_HasBaseColorTexture) != 0u)
-            Data.Flags |= kRTXPTMaterialFlag_AlphaTested;
+        if (RTXPTMaterialIsAlphaTested(Material) && (Data.flags & kMaterialFlag_HasBaseColorTexture) != 0u)
+            Data.flags |= kMaterialFlag_AlphaTested;
 
         MaterialData.emplace_back(Data);
     }
@@ -154,8 +154,8 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
     Desc.Usage             = USAGE_IMMUTABLE;
     Desc.BindFlags         = BIND_SHADER_RESOURCE;
     Desc.Mode              = BUFFER_MODE_STRUCTURED;
-    Desc.ElementByteStride = sizeof(RTXPTMaterialData);
-    Desc.Size              = sizeof(RTXPTMaterialData) * MaterialData.size();
+    Desc.ElementByteStride = sizeof(MaterialPTData);
+    Desc.Size              = sizeof(MaterialPTData) * MaterialData.size();
 
     BufferData Data{MaterialData.data(), Desc.Size};
     pDevice->CreateBuffer(Desc, &Data, &m_MaterialBuffer);

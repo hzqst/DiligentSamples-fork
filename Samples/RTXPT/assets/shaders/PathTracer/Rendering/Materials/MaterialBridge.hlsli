@@ -3,7 +3,7 @@
 
 #include "PathTracerShared.h"
 
-StructuredBuffer<RTXPTMaterialData> g_Materials;
+StructuredBuffer<MaterialPTData> g_Materials;
 
 #ifdef RTXPT_ENABLE_MATERIAL_TEXTURES
 // One Texture2DArray per loaded GLTF texture (the Diligent loader creates RESOURCE_DIM_TEX_2D_ARRAY textures).
@@ -31,7 +31,7 @@ namespace Bridge
     }
 
     // Out-of-range indices clamp to the last material so a bad materialID never UB-reads.
-    RTXPTMaterialData getMaterial(uint materialID)
+    MaterialPTData getMaterial(uint materialID)
     {
         const uint lastIndex = max(getMaterialCount(), 1u) - 1u;
         const uint index     = min(materialID, lastIndex);
@@ -46,38 +46,38 @@ namespace Bridge
         return g_MaterialTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(g_MaterialSampler, float3(uv, slice), 0.0);
     }
 
-    float4 getBaseColor(RTXPTMaterialData material, float2 uv)
+    float4 getBaseColor(MaterialPTData material, float2 uv)
     {
-        float4 color = material.BaseColorFactor;
-        if ((material.Flags & kRTXPTMaterialFlagHasBaseColorTexture) != 0u)
-            color *= sampleMaterialTexture(material.BaseColorTextureIndex, material.BaseColorTextureSlice, uv);
+        float4 color = material.baseColorFactor;
+        if ((material.flags & kMaterialFlagHasBaseColorTexture) != 0u)
+            color *= sampleMaterialTexture(material.baseColorTextureIndex, material.baseColorTextureSlice, uv);
         return color;
     }
 
-    float3 getEmission(RTXPTMaterialData material, float2 uv)
+    float3 getEmission(MaterialPTData material, float2 uv)
     {
-        float3 emission = material.EmissiveFactor;
-        if ((material.Flags & kRTXPTMaterialFlagHasEmissiveTexture) != 0u)
-            emission *= sampleMaterialTexture(material.EmissiveTextureIndex, material.EmissiveTextureSlice, uv).rgb;
+        float3 emission = material.emissiveFactor;
+        if ((material.flags & kMaterialFlagHasEmissiveTexture) != 0u)
+            emission *= sampleMaterialTexture(material.emissiveTextureIndex, material.emissiveTextureSlice, uv).rgb;
         return emission;
     }
 
     // True when the hit passes the alpha test (or is not alpha tested).
-    bool alphaTestPasses(RTXPTMaterialData material, float2 uv)
+    bool alphaTestPasses(MaterialPTData material, float2 uv)
     {
-        if ((material.Flags & kRTXPTMaterialFlagAlphaTested) == 0u)
+        if ((material.flags & kMaterialFlagAlphaTested) == 0u)
             return true;
-        return getBaseColor(material, uv).a >= material.AlphaCutoff;
+        return getBaseColor(material, uv).a >= material.alphaCutoff;
     }
 
     // glTF metallic-roughness packing: roughness in .g, metallic in .b, each scaled by the material factor.
-    float2 getMetallicRoughness(RTXPTMaterialData material, float2 uv)
+    float2 getMetallicRoughness(MaterialPTData material, float2 uv)
     {
-        float metallic  = material.MetallicFactor;
-        float roughness = material.RoughnessFactor;
-        if ((material.Flags & kRTXPTMaterialFlagHasMetallicRoughnessTexture) != 0u)
+        float metallic  = material.metallicFactor;
+        float roughness = material.roughnessFactor;
+        if ((material.flags & kMaterialFlagHasMetallicRoughnessTexture) != 0u)
         {
-            const float4 mr = sampleMaterialTexture(material.MetallicRoughnessTextureIndex, material.MetallicRoughnessTextureSlice, uv);
+            const float4 mr = sampleMaterialTexture(material.metallicRoughnessTextureIndex, material.metallicRoughnessTextureSlice, uv);
             roughness *= mr.g;
             metallic  *= mr.b;
         }
@@ -86,22 +86,22 @@ namespace Bridge
 
     // Tangent-space normal unpacked to [-1, 1] with NormalScale applied to xy. Returns (0,0,1) when there is no
     // normal map, which the caller treats as "no perturbation".
-    float3 getTangentNormal(RTXPTMaterialData material, float2 uv)
+    float3 getTangentNormal(MaterialPTData material, float2 uv)
     {
-        if ((material.Flags & kRTXPTMaterialFlagHasNormalTexture) == 0u)
+        if ((material.flags & kMaterialFlagHasNormalTexture) == 0u)
             return float3(0.0, 0.0, 1.0);
 
-        float3 n = sampleMaterialTexture(material.NormalTextureIndex, material.NormalTextureSlice, uv).xyz * 2.0 - 1.0;
-        n.xy *= material.NormalScale;
+        float3 n = sampleMaterialTexture(material.normalTextureIndex, material.normalTextureSlice, uv).xyz * 2.0 - 1.0;
+        n.xy *= material.normalScale;
         return normalize(n);
     }
 #else
     // Factor-only fallback (bindless material textures unavailable): no texture sampling, never alpha tested.
-    float4 getBaseColor(RTXPTMaterialData material, float2 uv) { return material.BaseColorFactor; }
-    float3 getEmission(RTXPTMaterialData material, float2 uv) { return material.EmissiveFactor; }
-    bool   alphaTestPasses(RTXPTMaterialData material, float2 uv) { return true; }
-    float2 getMetallicRoughness(RTXPTMaterialData material, float2 uv) { return float2(material.MetallicFactor, material.RoughnessFactor); }
-    float3 getTangentNormal(RTXPTMaterialData material, float2 uv) { return float3(0.0, 0.0, 1.0); }
+    float4 getBaseColor(MaterialPTData material, float2 uv) { return material.baseColorFactor; }
+    float3 getEmission(MaterialPTData material, float2 uv) { return material.emissiveFactor; }
+    bool   alphaTestPasses(MaterialPTData material, float2 uv) { return true; }
+    float2 getMetallicRoughness(MaterialPTData material, float2 uv) { return float2(material.metallicFactor, material.roughnessFactor); }
+    float3 getTangentNormal(MaterialPTData material, float2 uv) { return float3(0.0, 0.0, 1.0); }
 #endif
 } // namespace Bridge
 

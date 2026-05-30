@@ -6,21 +6,21 @@
 // (set for ALPHA_MODE_MASK materials in RTXPTAccelerationStructures::BuildStaticScene). Opaque geometry never
 // reaches this shader. Compiled into the hit group only when RTXPT_ENABLE_MATERIAL_TEXTURES is defined.
 [shader("anyhit")]
-void main(inout RTXPTPathTracerPayload Payload,
+void main(inout PathPayload Payload,
           in BuiltInTriangleIntersectionAttributes Attributes)
 {
     if (!Bridge::hasSubInstanceTable() || !Bridge::hasMaterialTable())
         return; // No material data - accept the hit.
 
-    const RTXPTSubInstanceData subInstance = Bridge::getSubInstanceData();
-    const RTXPTMaterialData    material    = Bridge::getMaterial(subInstance.MaterialID);
+    const SubInstanceData subInstance = Bridge::getSubInstanceData();
+    const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
 
-    if ((material.Flags & kRTXPTMaterialFlagAlphaTested) == 0u)
+    if ((material.flags & kMaterialFlagAlphaTested) == 0u)
         return; // Not alpha tested - accept.
 
-    RTXPTVertex V0;
-    RTXPTVertex V1;
-    RTXPTVertex V2;
+    GeometryVertexData V0;
+    GeometryVertexData V1;
+    GeometryVertexData V2;
     Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
     const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
 

@@ -61,7 +61,7 @@ bool RTXPTTraceVisibility(float3 Origin, float3 Direction, float TMax)
     return Payload.HitFlag == 0u;
 }
 
-float3 RTXPTSampleAnalyticNEE(RTXPTSurface Surface, float3 HitPos, float3 VisibilityOrigin,
+float3 RTXPTSampleAnalyticNEE(StandardBSDFData Surface, float3 HitPos, float3 VisibilityOrigin,
                               float3 Wo, inout SampleGenerator Rng)
 {
     const uint LightCount = Bridge::GetLightCount();
@@ -74,10 +74,10 @@ float3 RTXPTSampleAnalyticNEE(RTXPTSurface Surface, float3 HitPos, float3 Visibi
     if (!Light.Valid)
         return float3(0.0, 0.0, 0.0);
 
-    const float SpecProb = RTXPTSpecularProbability(Surface, Wo);
+    const float SpecProb = getSpecularProbability(Surface, Wo);
     float3      FTimesNoL;
     float       BsdfPdf;
-    RTXPTEvalBSDF(Surface, Wo, Light.Wi, SpecProb, FTimesNoL, BsdfPdf);
+    EvalBSDF(Surface, Wo, Light.Wi, SpecProb, FTimesNoL, BsdfPdf);
     if (BsdfPdf <= 0.0)
         return float3(0.0, 0.0, 0.0);
 
@@ -87,7 +87,7 @@ float3 RTXPTSampleAnalyticNEE(RTXPTSurface Surface, float3 HitPos, float3 Visibi
     return FTimesNoL * Light.Radiance * g_FrameConstants.PathTracer.LightIntensityScale * float(LightCount);
 }
 
-float3 RTXPTSampleEnvNEE(RTXPTSurface Surface, float3 VisibilityOrigin,
+float3 RTXPTSampleEnvNEE(StandardBSDFData Surface, float3 VisibilityOrigin,
                          float3 Wo, inout SampleGenerator Rng)
 {
     if (g_FrameConstants.PathTracer.EnvIntensity <= 0.0)
@@ -98,10 +98,10 @@ float3 RTXPTSampleEnvNEE(RTXPTSurface Surface, float3 VisibilityOrigin,
     if (EnvPdf <= 0.0)
         return float3(0.0, 0.0, 0.0);
 
-    const float SpecProb = RTXPTSpecularProbability(Surface, Wo);
+    const float SpecProb = getSpecularProbability(Surface, Wo);
     float3      FTimesNoL;
     float       BsdfPdf;
-    RTXPTEvalBSDF(Surface, Wo, Wi, SpecProb, FTimesNoL, BsdfPdf);
+    EvalBSDF(Surface, Wo, Wi, SpecProb, FTimesNoL, BsdfPdf);
     if (BsdfPdf <= 0.0)
         return float3(0.0, 0.0, 0.0);
 
@@ -109,7 +109,7 @@ float3 RTXPTSampleEnvNEE(RTXPTSurface Surface, float3 VisibilityOrigin,
         return float3(0.0, 0.0, 0.0);
 
     const float3 EnvRadiance = RTXPTEvalSky(Wi) * g_FrameConstants.PathTracer.EnvIntensity;
-    const float  MISWeight   = RTXPTPowerHeuristic(EnvPdf, BsdfPdf);
+    const float  MISWeight   = PowerHeuristic(1.0, EnvPdf, 1.0, BsdfPdf);
     return FTimesNoL * EnvRadiance * (MISWeight / EnvPdf);
 }
 
@@ -118,8 +118,8 @@ float RTXPTBSDFSampledEnvMISWeight(bool DidEnvNEE, float PrevBsdfPdf, float3 Pre
     if (!DidEnvNEE || PrevBsdfPdf <= 0.0)
         return 1.0;
 
-    const float EnvPdf = max(dot(PrevNormal, RayDir), 0.0) * RTXPT_INV_PI;
-    return RTXPTPowerHeuristic(PrevBsdfPdf, EnvPdf);
+    const float EnvPdf = max(dot(PrevNormal, RayDir), 0.0) * K_1_PI;
+    return PowerHeuristic(1.0, PrevBsdfPdf, 1.0, EnvPdf);
 }
 
 [shader("raygeneration")]
@@ -188,7 +188,7 @@ void main()
         // Build the glTF metallic-roughness surface the closest-hit filled in, then add explicit direct lighting
         // before importance-sampling the GGX BSDF for the next direction.
         const float3 Wo       = -RayDir;
-        RTXPTSurface  Surface = RTXPTMakeSurface(Payload.WorldNormal, Payload.BaseColor, Payload.Metallic, Payload.Roughness);
+        StandardBSDFData Surface = MakeStandardBSDFData(Payload.WorldNormal, Payload.BaseColor, Payload.Metallic, Payload.Roughness);
 
         const float  Bias             = max(1e-4, 1e-3 * Payload.HitDistance);
         const float3 VisibilityOrigin = Payload.WorldPos + Surface.N * Bias;
@@ -204,7 +204,7 @@ void main()
         float3 NextDir;
         float3 Weight;
         float  Pdf;
-        if (!RTXPTSampleBSDF(Surface, Wo, Rng, NextDir, Weight, Pdf))
+        if (!SampleBSDF(Surface, Wo, Rng, NextDir, Weight, Pdf))
             break;
 
         Throughput *= Weight;

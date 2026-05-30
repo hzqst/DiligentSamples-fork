@@ -1,5 +1,5 @@
-#ifndef RTXPT_BSDF_HLSLI
-#define RTXPT_BSDF_HLSLI
+#ifndef __BXDF_HLSLI__
+#define __BXDF_HLSLI__
 
 // glTF 2.0 metallic-roughness Cook-Torrance BSDF for the reference path tracer.
 // Two lobes: Lambertian diffuse + GGX specular. Evaluation and importance sampling live here so
@@ -7,159 +7,159 @@
 
 #include "Utils/SampleGenerators.hlsli"
 
-static const float RTXPT_PI            = 3.14159265358979323846;
-static const float RTXPT_INV_PI        = 0.31830988618379067154;
+static const float K_PI                = 3.14159265358979323846;
+static const float K_1_PI              = 0.31830988618379067154;
 // Clamp roughness away from a perfect mirror: a zero-roughness GGX lobe is a delta we cannot importance sample.
-static const float RTXPT_MIN_ROUGHNESS = 0.045;
+static const float kMinRoughness       = 0.045;
 
 // Shading inputs resolved into the form the lobes consume.
-struct RTXPTSurface
+struct StandardBSDFData
 {
-    float3 N;             // shading normal (world space, unit)
-    float3 DiffuseAlbedo; // Lambertian albedo (base color scaled by (1 - metallic))
-    float3 F0;            // specular reflectance at normal incidence
-    float  Alpha;         // GGX alpha = roughness^2
+    float3 N;        // shading normal (world space, unit)
+    float3 diffuse;  // Lambertian albedo (base color scaled by (1 - metallic))
+    float3 specular; // specular reflectance at normal incidence
+    float  alpha;    // GGX alpha = roughness^2
 };
 
-RTXPTSurface RTXPTMakeSurface(float3 N, float3 BaseColor, float Metallic, float Roughness)
+StandardBSDFData MakeStandardBSDFData(float3 N, float3 BaseColor, float Metallic, float Roughness)
 {
-    const float R = clamp(Roughness, RTXPT_MIN_ROUGHNESS, 1.0);
+    const float R = clamp(Roughness, kMinRoughness, 1.0);
 
-    RTXPTSurface S;
-    S.N             = N;
-    S.Alpha         = R * R;
-    S.DiffuseAlbedo = BaseColor * (1.0 - Metallic);
-    S.F0            = lerp(float3(0.04, 0.04, 0.04), BaseColor, Metallic);
-    return S;
+    StandardBSDFData bsdfData;
+    bsdfData.N        = N;
+    bsdfData.alpha    = R * R;
+    bsdfData.diffuse  = BaseColor * (1.0 - Metallic);
+    bsdfData.specular = lerp(float3(0.04, 0.04, 0.04), BaseColor, Metallic);
+    return bsdfData;
 }
 
-float3 RTXPTFresnelSchlick(float3 F0, float VoH)
+float3 evalFresnelSchlick(float3 f0, float3 f90, float cosTheta)
 {
-    const float F = pow(saturate(1.0 - VoH), 5.0);
-    return F0 + (1.0 - F0) * F;
+    const float f = pow(saturate(1.0 - cosTheta), 5.0);
+    return f0 + (f90 - f0) * f;
 }
 
 // Trowbridge-Reitz (GGX) normal distribution function.
-float RTXPTDistributionGGX(float NoH, float Alpha)
+float evalNdfGGX(float alpha, float cosTheta)
 {
-    const float A2 = Alpha * Alpha;
-    const float D  = (NoH * NoH) * (A2 - 1.0) + 1.0;
-    return A2 / max(RTXPT_PI * D * D, 1e-7);
+    const float A2 = alpha * alpha;
+    const float D  = (cosTheta * cosTheta) * (A2 - 1.0) + 1.0;
+    return A2 / max(K_PI * D * D, 1e-7);
 }
 
 // Smith height-correlated visibility term = G / (4 * NoV * NoL).
-float RTXPTVisibilitySmithGGX(float NoV, float NoL, float Alpha)
+float evalVisibilitySmithGGXCorrelated(float alpha, float cosThetaO, float cosThetaI)
 {
-    const float A2 = Alpha * Alpha;
-    const float V  = NoL * sqrt(NoV * NoV * (1.0 - A2) + A2);
-    const float L  = NoV * sqrt(NoL * NoL * (1.0 - A2) + A2);
+    const float A2 = alpha * alpha;
+    const float V  = cosThetaI * sqrt(cosThetaO * cosThetaO * (1.0 - A2) + A2);
+    const float L  = cosThetaO * sqrt(cosThetaI * cosThetaI * (1.0 - A2) + A2);
     return 0.5 / max(V + L, 1e-7);
 }
 
-float RTXPTLuminance(float3 C)
+float luminance(float3 C)
 {
     return dot(C, float3(0.2126, 0.7152, 0.0722));
 }
 
-float RTXPTPowerHeuristic(float PdfA, float PdfB)
+float PowerHeuristic(float nf, float fPdf, float ng, float gPdf)
 {
-    const float A2 = PdfA * PdfA;
-    const float B2 = PdfB * PdfB;
-    return A2 / max(A2 + B2, 1e-7);
+    const float f = nf * fPdf;
+    const float g = ng * gPdf;
+    return (f * f) / max((f * f) + (g * g), 1e-7);
 }
 
-float RTXPTSpecularProbability(RTXPTSurface S, float3 Wo)
+float getSpecularProbability(StandardBSDFData bsdfData, float3 wo)
 {
-    const float  NoV     = saturate(dot(S.N, Wo));
-    const float3 Fapprox = RTXPTFresnelSchlick(S.F0, NoV);
-    const float  SpecLum = RTXPTLuminance(Fapprox);
-    const float  DiffLum = RTXPTLuminance(S.DiffuseAlbedo * (1.0 - Fapprox));
-    return clamp(SpecLum / max(SpecLum + DiffLum, 1e-4), 0.1, 0.9);
+    const float  NdotV   = saturate(dot(bsdfData.N, wo));
+    const float3 fApprox = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), NdotV);
+    const float  specLum = luminance(fApprox);
+    const float  diffLum = luminance(bsdfData.diffuse * (1.0 - fApprox));
+    return clamp(specLum / max(specLum + diffLum, 1e-4), 0.1, 0.9);
 }
 
 // Evaluate f(Wo,Wi) * NoL and the single-sample MIS pdf for the given (unit, away-from-surface) directions.
-// SpecProb is the probability the sampler used to pick the specular lobe.
-void RTXPTEvalBSDF(RTXPTSurface S, float3 Wo, float3 Wi, float SpecProb, out float3 FTimesNoL, out float Pdf)
+// specProb is the probability the sampler used to pick the specular lobe.
+void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, out float3 f, out float pdf)
 {
-    FTimesNoL = float3(0.0, 0.0, 0.0);
-    Pdf       = 0.0;
+    f   = float3(0.0, 0.0, 0.0);
+    pdf = 0.0;
 
-    const float NoL = dot(S.N, Wi);
-    const float NoV = dot(S.N, Wo);
-    if (NoL <= 0.0 || NoV <= 0.0)
+    const float NdotL = dot(bsdfData.N, wi);
+    const float NdotV = dot(bsdfData.N, wo);
+    if (NdotL <= 0.0 || NdotV <= 0.0)
         return;
 
-    const float3 H   = normalize(Wo + Wi);
-    const float  NoH = saturate(dot(S.N, H));
-    const float  VoH = saturate(dot(Wo, H));
+    const float3 h     = normalize(wo + wi);
+    const float  NdotH = saturate(dot(bsdfData.N, h));
+    const float  VdotH = saturate(dot(wo, h));
 
-    const float  D    = RTXPTDistributionGGX(NoH, S.Alpha);
-    const float  Vis  = RTXPTVisibilitySmithGGX(NoV, NoL, S.Alpha);
-    const float3 F    = RTXPTFresnelSchlick(S.F0, VoH);
-    const float3 Spec = D * Vis * F; // Vis already carries 1 / (4 NoV NoL)
+    const float  d       = evalNdfGGX(bsdfData.alpha, NdotH);
+    const float  vis     = evalVisibilitySmithGGXCorrelated(bsdfData.alpha, NdotV, NdotL);
+    const float3 fresnel = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), VdotH);
+    const float3 spec    = d * vis * fresnel; // vis already carries 1 / (4 NdotV NdotL)
 
-    const float3 Diff = S.DiffuseAlbedo * RTXPT_INV_PI * (1.0 - F);
+    const float3 diff = bsdfData.diffuse * K_1_PI * (1.0 - fresnel);
 
-    FTimesNoL = (Diff + Spec) * NoL;
+    f = (diff + spec) * NdotL;
 
-    const float PdfDiffuse  = NoL * RTXPT_INV_PI;
-    const float PdfSpecular = D * NoH / max(4.0 * VoH, 1e-7);
-    Pdf = SpecProb * PdfSpecular + (1.0 - SpecProb) * PdfDiffuse;
+    const float pdfDiffuse  = NdotL * K_1_PI;
+    const float pdfSpecular = d * NdotH / max(4.0 * VdotH, 1e-7);
+    pdf = specProb * pdfSpecular + (1.0 - specProb) * pdfDiffuse;
 }
 
 // Importance-sample an incident direction Wi. Returns false for invalid samples.
 // Weight = f(Wo,Wi) * NoL / pdf is the throughput multiplier the path tracer applies.
-bool RTXPTSampleBSDF(RTXPTSurface S, float3 Wo, inout SampleGenerator sg,
-                     out float3 Wi, out float3 Weight, out float Pdf)
+bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, inout SampleGenerator sg,
+                out float3 wi, out float3 weight, out float pdf)
 {
-    Wi     = float3(0.0, 0.0, 0.0);
-    Weight = float3(0.0, 0.0, 0.0);
-    Pdf    = 0.0;
+    wi     = float3(0.0, 0.0, 0.0);
+    weight = float3(0.0, 0.0, 0.0);
+    pdf    = 0.0;
 
-    const float NoV = dot(S.N, Wo);
-    if (NoV <= 0.0)
+    const float NdotV = dot(bsdfData.N, wo);
+    if (NdotV <= 0.0)
         return false;
 
     // Pick the lobe from the Fresnel-weighted specular vs diffuse luminance, clamped so neither lobe starves.
-    const float SpecProb = RTXPTSpecularProbability(S, Wo);
+    const float specProb = getSpecularProbability(bsdfData, wo);
 
-    float3 Tangent;
-    float3 Bitangent;
-    BranchlessONB(S.N, Tangent, Bitangent);
+    float3 tangent;
+    float3 bitangent;
+    BranchlessONB(bsdfData.N, tangent, bitangent);
 
-    const float2 Rand2 = sampleNext2D(sg);
-    const float  Lobe  = sampleNext1D(sg);
+    const float2 rand2 = sampleNext2D(sg);
+    const float  lobe  = sampleNext1D(sg);
 
-    if (Lobe < SpecProb)
+    if (lobe < specProb)
     {
         // GGX half-vector (NDF) sampling in the local frame, then reflect Wo about H.
-        const float A    = S.Alpha;
-        const float Phi  = 2.0 * RTXPT_PI * Rand2.x;
-        const float CosT = sqrt((1.0 - Rand2.y) / max(1.0 + (A * A - 1.0) * Rand2.y, 1e-7));
-        const float SinT = sqrt(max(0.0, 1.0 - CosT * CosT));
+        const float a    = bsdfData.alpha;
+        const float phi  = 2.0 * K_PI * rand2.x;
+        const float cosT = sqrt((1.0 - rand2.y) / max(1.0 + (a * a - 1.0) * rand2.y, 1e-7));
+        const float sinT = sqrt(max(0.0, 1.0 - cosT * cosT));
 
-        const float3 HLocal = float3(SinT * cos(Phi), SinT * sin(Phi), CosT);
-        const float3 H      = normalize(Tangent * HLocal.x + Bitangent * HLocal.y + S.N * HLocal.z);
-        Wi                  = reflect(-Wo, H);
-        if (dot(S.N, Wi) <= 0.0)
+        const float3 hLocal = float3(sinT * cos(phi), sinT * sin(phi), cosT);
+        const float3 h      = normalize(tangent * hLocal.x + bitangent * hLocal.y + bsdfData.N * hLocal.z);
+        wi                  = reflect(-wo, h);
+        if (dot(bsdfData.N, wi) <= 0.0)
             return false;
     }
     else
     {
         // Cosine-weighted diffuse hemisphere sample.
-        float PdfUnused;
-        Wi = sampleCosineHemisphere(Rand2, S.N, PdfUnused);
-        if (dot(S.N, Wi) <= 0.0)
+        float pdfUnused;
+        wi = sampleCosineHemisphere(rand2, bsdfData.N, pdfUnused);
+        if (dot(bsdfData.N, wi) <= 0.0)
             return false;
     }
 
-    float3 FTimesNoL;
-    RTXPTEvalBSDF(S, Wo, Wi, SpecProb, FTimesNoL, Pdf);
-    if (Pdf <= 0.0)
+    float3 f;
+    EvalBSDF(bsdfData, wo, wi, specProb, f, pdf);
+    if (pdf <= 0.0)
         return false;
 
-    Weight = FTimesNoL / Pdf;
+    weight = f / pdf;
     return true;
 }
 
-#endif // RTXPT_BSDF_HLSLI
+#endif // __BXDF_HLSLI__

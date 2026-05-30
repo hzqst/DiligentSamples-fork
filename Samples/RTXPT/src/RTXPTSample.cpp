@@ -281,6 +281,10 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.ptConsts.lightIntensityScale   = m_LightIntensityScale;
     m_LastFrameConstants.ptConsts.maxNEEBounceCount     = m_MaxNEEBounces;
     m_LastFrameConstants.ptConsts.analyticLightCount    = m_Lights.GetStats().LightCount;
+    // G1: a disabled firefly filter uploads a zero threshold, so the soft cap is a no-op and the
+    // converged image is identical to the filter-on image (only per-sample variance differs).
+    m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
+        m_ReferenceUI.ReferenceFireflyFilterEnabled ? m_ReferenceUI.ReferenceFireflyFilterThreshold : 0.0f;
 
     if (m_FrameConstantsCB)
     {

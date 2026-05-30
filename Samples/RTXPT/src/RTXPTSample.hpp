@@ -67,10 +67,10 @@ struct PathTracerConstants
     float  environmentIntensity  = 1.0f; // Scales the procedural-sky environment radiance.
     float  lightIntensityScale   = 1.0f; // Scales analytic (punctual) light radiance.
 
-    Uint32 maxNEEBounceCount  = 1; // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
-    Uint32 analyticLightCount = 0; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
-    Uint32 _padding0          = 0;
-    Uint32 _padding1          = 0;
+    Uint32 maxNEEBounceCount      = 1;    // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
+    Uint32 analyticLightCount     = 0;    // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
+    float  fireflyFilterThreshold = 0.0f; // G1 adaptive firefly filter: soft-cap level; 0 disables the filter (set from UI each frame).
+    Uint32 _padding1              = 0;
 };
 static_assert(sizeof(PathTracerConstants) == 48, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 

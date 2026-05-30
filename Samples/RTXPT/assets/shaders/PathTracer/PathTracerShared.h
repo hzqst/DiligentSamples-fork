@@ -17,10 +17,10 @@ struct PathTracerConstants
     float environmentIntensity;  // Scales the procedural-sky environment radiance.
     float lightIntensityScale;   // Scales analytic (punctual) light radiance.
 
-    uint maxNEEBounceCount;  // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
-    uint analyticLightCount; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
-    uint _padding0;
-    uint _padding1;
+    uint  maxNEEBounceCount;      // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
+    uint  analyticLightCount;     // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
+    float fireflyFilterThreshold; // G1 adaptive firefly filter: soft-cap level; 0 disables the filter entirely.
+    uint  _padding1;
 };
 
 // Mirrors Diligent::SampleConstants in RTXPTSample.hpp (must keep order and layout in sync).

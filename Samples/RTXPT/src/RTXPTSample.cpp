@@ -533,20 +533,15 @@ void RTXPTSample::UpdateUI()
             ImGui::EndDisabled();
             PlaceholderTooltip("Russian roulette is always enabled; its start bounce is 'Min bounces (RR start)'.");
 
-            // Adaptive firefly filter: Phase R1 (G1). Each control gets its own
-            // BeginDisabled/EndDisabled scope so IsItemHovered() in PlaceholderTooltip()
-            // attaches a tooltip to that specific item rather than only the last one.
-            ImGui::BeginDisabled(true);
-            ImGui::Checkbox("FireflyFilter (reference *)", &m_ReferenceUI.ReferenceFireflyFilterEnabled);
-            ImGui::EndDisabled();
-            PlaceholderTooltip("Adaptive firefly filter lands in Phase R1.");
+            // Adaptive firefly filter (G1, live). Disabling it uploads a zero threshold so the soft
+            // cap is a no-op and the converged image is identical to the filter-on image.
+            ResetOnChange(ImGui::Checkbox("FireflyFilter (reference *)", &m_ReferenceUI.ReferenceFireflyFilterEnabled),
+                          "Firefly filter toggled");
             if (m_ReferenceUI.ReferenceFireflyFilterEnabled)
             {
                 ImGui::Indent(Indent);
-                ImGui::BeginDisabled(true);
-                ImGui::InputFloat("FF Threshold", &m_ReferenceUI.ReferenceFireflyFilterThreshold, 0.1f, 0.2f, "%.5f");
-                ImGui::EndDisabled();
-                PlaceholderTooltip("Adaptive firefly filter threshold lands in Phase R1.");
+                ResetOnChange(ImGui::InputFloat("FF Threshold", &m_ReferenceUI.ReferenceFireflyFilterThreshold, 0.1f, 0.2f, "%.5f"),
+                              "Firefly threshold changed");
                 ImGui::Unindent(Indent);
             }
         }

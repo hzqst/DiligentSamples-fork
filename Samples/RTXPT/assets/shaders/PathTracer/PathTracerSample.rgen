@@ -23,13 +23,15 @@ void main()
     const uint2 pixel      = DispatchRaysIndex().xy;
     const uint2 dimensions = DispatchRaysDimensions().xy;
 
-    const uint  frameSeed = asuint(g_Const.viewportSizeAndFrameIndex.w);
-    SampleGenerator sg    = SampleGenerator_make(pixel, frameSeed);
+    // G3: stateless per-(pixel, vertex, sample) seeding keyed by the accumulation sample index.
+    // Each path vertex + effect gets its own decorrelated generator (full Sobol/Owen is Phase R5).
+    const uint sampleIndex = g_Const.ptConsts.sampleIndex;
 
-    // Jitter inside the pixel - gives free anti-aliasing across accumulated samples.
-    const float2 jitter = sampleNext2D(sg);
-    const float2 uv     = (float2(pixel) + jitter) / float2(dimensions);
-    const float2 ndc    = uv * 2.0 - 1.0;
+    // Jitter inside the pixel - free anti-aliasing across accumulated samples (vertex 0 / Base effect).
+    SampleGenerator sgCamera = SampleGenerator_makeStateless(pixel, 0u, sampleIndex, kSampleEffect_Base);
+    const float2    jitter   = sampleNext2D(sgCamera);
+    const float2    uv       = (float2(pixel) + jitter) / float2(dimensions);
+    const float2    ndc      = uv * 2.0 - 1.0;
 
     const float4 worldPos4 = mul(float4(ndc, 1.0, 1.0), g_Const.viewProjInv);
     const float3 origin    = g_Const.cameraPositionAndTime.xyz;
@@ -54,6 +56,8 @@ void main()
     [loop]
     for (uint bounce = 0u; bounce < maxBounces; ++bounce)
     {
+        const uint vertexIndex = bounce + 1u;
+
         RayDesc ray;
         ray.Origin    = rayOrigin;
         ray.Direction = rayDir;
@@ -101,16 +105,21 @@ void main()
         const bool useNEE = enableNEE && bounce < maxNEEBounces;
         if (useNEE)
         {
-            pathRadiance += throughput * PathTracer::SampleAnalyticNEE(bsdfData, payload.worldPos, visibilityOrigin, wo, sg, fireflyFilterK);
+            SampleGenerator sgNEELight = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NEELightSampler);
+            pathRadiance += throughput * PathTracer::SampleAnalyticNEE(bsdfData, payload.worldPos, visibilityOrigin, wo, sgNEELight, fireflyFilterK);
             if (enableEnvNEE)
-                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData, visibilityOrigin, wo, sg, fireflyFilterK);
+            {
+                SampleGenerator sgEnvNEE = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NextEventEstimation);
+                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData, visibilityOrigin, wo, sgEnvNEE, fireflyFilterK);
+            }
         }
 
-        float3 nextDir;
-        float3 weight;
-        float  pdf;
-        float  lobeP;
-        if (!SampleBSDF(bsdfData, wo, sg, nextDir, weight, pdf, lobeP))
+        float3          nextDir;
+        float3          weight;
+        float           pdf;
+        float           lobeP;
+        SampleGenerator sgScatter = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_ScatterBSDF);
+        if (!SampleBSDF(bsdfData, wo, sgScatter, nextDir, weight, pdf, lobeP))
             break;
 
         throughput *= weight;
@@ -121,8 +130,9 @@ void main()
         // Russian roulette once we are past minBounceCount - unbiased early termination of dim paths.
         if (bounce >= g_Const.ptConsts.minBounceCount)
         {
-            const float survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 1.0);
-            if (sampleNext1D(sg) > survive)
+            SampleGenerator sgRR    = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_RussianRoulette);
+            const float     survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 1.0);
+            if (sampleNext1D(sgRR) > survive)
                 break;
             throughput /= survive;
         }

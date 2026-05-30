@@ -5,8 +5,8 @@ the RTXPT Phase R0.5 reference path tracer migration. Its purpose is to make
 future upstream RTXPT re-ports close to a mechanical diff/merge while preserving
 the current DiligentSamples rendering behavior.
 
-Reference source spec: `docs/superpowers/specs/2026-05-30-rtxpt-reference-pathtracer-completion-design.md`,
-goal G0.5.
+Reference source spec: `docs/superpowers/specs/2026-05-30-rtxpt-reference-pathtracer-completion-design.md`
+(relative to the superproject root, not the `DiligentSamples` submodule root), goal G0.5.
 
 This is a mapping document only. Later migration tasks should apply exact
 whole-word, case-sensitive renames and file relocations without changing shader
@@ -301,17 +301,43 @@ Raygen locals become camelCase:
 
 ## Divergences
 
+- Everything marked `(style)` in T-A..T-I is a lexical or casing alignment
+  only. The exceptions below are the cases where the port must keep its own
+  semantics or layout.
+- Macro and guard renames drop the port prefix or adopt RTXPT-fork casing, but
+  `kMinRoughness` remains the port's roughness floor, not RTXPT-fork's
+  `kMinGGXAlpha`.
+- `SampleGenerator`, `UintToFloat01`, and the camelCase sampling helpers keep
+  the port's concrete RNG implementation. `sampleCosineHemisphere` still
+  returns a basis-rotated world-space direction, unlike RTXPT-fork's local-frame
+  helper.
 - The Diligent port uses a raygen-flattened N-bounce loop. RTXPT-fork uses a
   packed `PathState`/`PathPayload` state machine plus stable planes.
-- The Diligent bridge is `Bridge::` over Diligent structured buffers. RTXPT-fork
-  uses the Donut/NVRHI bridge, including `PathTracerBridgeDonut.hlsli`.
-- `StandardBSDFData` carries the shading normal `N`. RTXPT-fork splits
-  `ShadingData` and `StandardBSDFData`. The Diligent port remains a two-lobe
-  Lambert+GGX subset rather than `FalcorBSDF`.
-- `evalVisibilitySmithGGXCorrelated` returns `G/(4*NoV*NoL)`, not
-  RTXPT-fork's bare masking `G`.
-- `PathTracerConstants`, `MaterialPTData`, `PolymorphicLightInfo`, and
-  `PathPayload` reuse the upstream names but remain unpacked, reference-only
-  layouts. They are not field-compatible with upstream.
-- `BxDF.hlsli` also contains the Fresnel/Microfacet helpers that RTXPT-fork
-  separates into `Fresnel.hlsli` and `Microfacet.hlsli`.
+- `PathTracer::` helpers and raygen locals follow RTXPT-fork style, but they
+  remain wrappers around the flattened reference-mode loop.
+- `Bridge::` runs over Diligent structured buffers, not Donut/NVRHI. There is
+  no `PathTracerBridgeDonut.hlsli` equivalent here.
+- `StandardBSDFData` carries the shading normal `N`, and the port remains a
+  two-lobe Lambert+GGX subset rather than RTXPT-fork's split
+  `ShadingData`/`StandardBSDFData` model.
+- `evalVisibilitySmithGGXCorrelated` returns `G/(4*NoV*NoL)`, not RTXPT-fork's
+  bare masking `G`.
+- Resource/global names follow the RTXPT-fork `t_/u_/s_/g_` prefix scheme, but
+  the set here is the reference-mode subset only. `t_PTMaterialData` is the
+  material-buffer resource/global name backed by the local `MaterialPTData`
+  type.
+- `MaterialPTData`, `PolymorphicLightInfo`, `GeometryVertexData`,
+  `PathPayload`, `PathTracerConstants`, and `SampleConstants` reuse RTXPT-fork
+  names or style as local backing layouts. `MaterialPTData` remains
+  port-specific and is not field-compatible with upstream `PTMaterialData`; the
+  other backing layouts also remain port-specific and unpacked.
+- Shared struct fields follow T-H's upstream-style casing/alignment where
+  applicable. Fields kept identical in T-H, such as `MaterialID`, `Flags`,
+  `IndexCount`, and `VertexCount`, remain intentionally unchanged, and every
+  `static_assert(sizeof(...) == N)` byte-layout contract stays unchanged.
+- `EnvMap::Eval` returns a procedural gradient for now; HDR map sampling is
+  deferred to Phase R4.
+- `BxDF.hlsli` keeps the Fresnel/Microfacet helpers together in one file, while
+  RTXPT-fork splits them into separate helper headers.
+- `RTXPTCommon.fxh`, `RTXPTDebugCompute.csh`, and `RTXPTBlit.vsh` / `psh` keep
+  their `RTXPT`-prefixed names because they sit outside the algorithm layer.

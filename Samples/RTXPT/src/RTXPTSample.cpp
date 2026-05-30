@@ -782,6 +782,30 @@ void RTXPTSample::UpdateUI()
     {
         ImGui::Indent(Indent);
 
+        const char* ScenePreview = "none";
+        if (!m_CurrentSceneName.empty())
+            ScenePreview = m_CurrentSceneName.c_str();
+        else if (m_AvailableScenes.empty())
+            ScenePreview = "no scenes found";
+
+        ImGui::BeginDisabled(m_AvailableScenes.empty());
+        if (ImGui::BeginCombo("Scene", ScenePreview))
+        {
+            for (const std::string& SceneName : m_AvailableScenes)
+            {
+                const bool IsSelected = SceneName == m_CurrentSceneName;
+                if (ImGui::Selectable(SceneName.c_str(), IsSelected))
+                    SetCurrentScene(SceneName);
+                if (IsSelected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+
+        if (m_AvailableScenes.empty())
+            ImGui::TextWrapped("No RTXPT scene files found under assets root: %s", m_AssetsRoot.c_str());
+
         ImGui::Text("Scene: %s", m_Scene.HasValidContent() ? "loaded" : "missing");
         ImGui::Text("Scene file: %s", m_Scene.GetLoadedSceneName().empty() ? "none" : m_Scene.GetLoadedSceneName().c_str());
         ImGui::Text("Model path: %s", m_Scene.GetModelPath().empty() ? "none" : m_Scene.GetModelPath().c_str());

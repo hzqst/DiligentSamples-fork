@@ -99,8 +99,9 @@ public:
                           nullptr, RayTracingSupported);
     }
 
-    bool UpdateDynamicBLAS(IDeviceContext*             pContext,
-                           const RTXPTSkinnedGeometry& SkinnedGeometry);
+    bool UpdateDynamicBLAS(IDeviceContext*              pContext,
+                           const RTXPTSkinnedGeometry&  SkinnedGeometry,
+                           const GLTF::ModelTransforms& Transforms);
 
     bool IsBuilt() const { return m_Stats.Built && m_TLAS; }
 
@@ -118,18 +119,24 @@ private:
         RefCntAutoPtr<IBuffer>             IndexBuffer;
         std::vector<std::string>           GeometryNames;
         std::vector<BLASBuildTriangleData> TriangleData;
+        const GLTF::Node*                  pNode                 = nullptr;
         Uint32                             GeometryCount = 0;
         bool                               Dynamic       = false;
         Uint32                             SkinningDispatchCount = 0;
+        Uint32                             InstanceIndex         = 0;
     };
 
-    std::vector<BLASRecord>         m_BLASRecords;
-    RefCntAutoPtr<ITopLevelAS>      m_TLAS;
-    RefCntAutoPtr<IBuffer>          m_BLASScratch;
-    RefCntAutoPtr<IBuffer>          m_TLASScratch;
-    RefCntAutoPtr<IBuffer>          m_InstanceBuffer;
-    RefCntAutoPtr<IBuffer>          m_SubInstanceBuffer;
-    RTXPTAccelerationStructureStats m_Stats;
+    bool UpdateTLAS(IDeviceContext* pContext, const GLTF::ModelTransforms& Transforms);
+
+    std::vector<BLASRecord>            m_BLASRecords;
+    std::vector<std::string>           m_InstanceNames;
+    std::vector<TLASBuildInstanceData> m_TLASInstances;
+    RefCntAutoPtr<ITopLevelAS>         m_TLAS;
+    RefCntAutoPtr<IBuffer>             m_BLASScratch;
+    RefCntAutoPtr<IBuffer>             m_TLASScratch;
+    RefCntAutoPtr<IBuffer>             m_InstanceBuffer;
+    RefCntAutoPtr<IBuffer>             m_SubInstanceBuffer;
+    RTXPTAccelerationStructureStats    m_Stats;
 };
 
 } // namespace Diligent

@@ -602,7 +602,8 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
     {
         const bool SkinningExecuted = m_SkinnedGeometry.Update(m_pImmediateContext, m_Scene.GetTransforms());
         const bool ASUpdated =
-            SkinningExecuted && m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, m_SkinnedGeometry);
+            SkinningExecuted &&
+            m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, m_SkinnedGeometry, m_Scene.GetTransforms());
         if (ASUpdated)
         {
             RequestAccumulationReset("Skinned geometry updated");

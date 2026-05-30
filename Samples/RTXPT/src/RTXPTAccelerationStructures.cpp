@@ -119,6 +119,8 @@ void RTXPTAccelerationStructures::Reset()
     m_TLASScratch.Release();
     m_InstanceBuffer.Release();
     m_SubInstanceBuffer.Release();
+    m_InstanceNames.clear();
+    m_TLASInstances.clear();
     m_Stats = {};
 }
 
@@ -210,14 +212,13 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDev
         pSkinnedGeometry->GetSkinnedVertexBuffer() :
         nullptr;
 
-    std::vector<TLASBuildInstanceData> Instances;
-    std::vector<std::string>           InstanceNames;
     std::vector<SubInstanceData>       SubInstances;
-    Instances.reserve(Scene.LinearNodes.size());
-    InstanceNames.reserve(Scene.LinearNodes.size());
+    m_TLASInstances.reserve(Scene.LinearNodes.size());
+    m_InstanceNames.reserve(Scene.LinearNodes.size());
     SubInstances.reserve(Scene.LinearNodes.size());
 
     Uint32 SubInstanceBase = 0;
+    bool   HasDynamicGeometry = false;
     for (const GLTF::Node* pNode : Scene.LinearNodes)
     {
         if (pNode == nullptr || pNode->pMesh == nullptr)
@@ -227,8 +228,14 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDev
             continue;
 
         const RTXPTSkinnedNodeGeometry* pSkinnedNode = FindSkinnedNode(pSkinnedGeometry, pNode);
-        if (pNode->pSkin != nullptr && pSkinnedGeometry != nullptr)
+        if (pNode->pSkin != nullptr)
         {
+            if (pSkinnedGeometry == nullptr)
+            {
+                m_Stats.LastError = "RTXPT skinned geometry requires current-frame skinned geometry";
+                return false;
+            }
+
             if (pSkinnedNode == nullptr)
             {
                 m_Stats.LastError = "RTXPT skinned geometry is missing a node record";
@@ -345,6 +352,8 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDev
         Record.Dynamic             = IsSkinnedNode;
         Record.VertexBuffer        = pNodeVertexBuffer;
         Record.IndexBuffer         = pIndexBuffer;
+        Record.pNode               = pNode;
+        Record.InstanceIndex       = static_cast<Uint32>(m_TLASInstances.size());
         Record.SkinningDispatchCount = IsSkinnedNode ? SkinningDispatchCount : 0;
         Record.GeometryNames       = std::move(GeometryNames);
         Record.TriangleData        = TriangleData;
@@ -404,32 +413,36 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDev
         BLASAttribs.ScratchBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
         pContext->BuildBLAS(BLASAttribs);
 
-        InstanceNames.emplace_back(Record.Name);
+        HasDynamicGeometry = HasDynamicGeometry || Record.Dynamic;
+        m_InstanceNames.emplace_back(Record.Name);
 
         TLASBuildInstanceData Instance;
-        Instance.InstanceName = InstanceNames.back().c_str();
+        Instance.InstanceName = m_InstanceNames.back().c_str();
         Instance.pBLAS        = Record.BLAS;
         Instance.Transform    = ToInstanceMatrix(Transforms.NodeGlobalMatrices[pNode->Index]);
         Instance.CustomId     = SubInstanceBase;
         Instance.Flags        = RAYTRACING_INSTANCE_NONE;
         Instance.Mask         = 0xFF;
-        Instances.emplace_back(Instance);
+        m_TLASInstances.emplace_back(Instance);
 
         SubInstanceBase += Record.GeometryCount;
         m_Stats.GeometryCount += Record.GeometryCount;
         m_BLASRecords.emplace_back(std::move(Record));
     }
 
-    if (Instances.empty())
+    if (m_TLASInstances.empty())
     {
         m_Stats.LastError = "No RTXPT mesh instances were available for TLAS build";
         return false;
     }
 
+    for (size_t i = 0; i < m_TLASInstances.size(); ++i)
+        m_TLASInstances[i].InstanceName = m_InstanceNames[i].c_str();
+
     TopLevelASDesc TLASDesc;
     TLASDesc.Name             = "RTXPT TLAS";
-    TLASDesc.MaxInstanceCount = static_cast<Uint32>(Instances.size());
-    TLASDesc.Flags            = RAYTRACING_BUILD_AS_NONE;
+    TLASDesc.MaxInstanceCount = static_cast<Uint32>(m_TLASInstances.size());
+    TLASDesc.Flags            = HasDynamicGeometry ? RAYTRACING_BUILD_AS_ALLOW_UPDATE : RAYTRACING_BUILD_AS_NONE;
     pDevice->CreateTLAS(TLASDesc, &m_TLAS);
 
     if (!m_TLAS)
@@ -438,13 +451,17 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDev
         return false;
     }
 
-    m_Stats.TLASScratchSize = m_TLAS->GetScratchBufferSizes().Build;
+    const Uint64 TLASBuildScratchSize  = m_TLAS->GetScratchBufferSizes().Build;
+    const Uint64 TLASUpdateScratchSize = m_TLAS->GetScratchBufferSizes().Update;
+    m_Stats.TLASScratchSize = HasDynamicGeometry ?
+        std::max(TLASBuildScratchSize, TLASUpdateScratchSize) :
+        TLASBuildScratchSize;
 
     BufferDesc InstanceBufferDesc;
     InstanceBufferDesc.Name      = "RTXPT TLAS instance buffer";
     InstanceBufferDesc.Usage     = USAGE_DEFAULT;
     InstanceBufferDesc.BindFlags = BIND_RAY_TRACING;
-    InstanceBufferDesc.Size      = Uint64{TLAS_INSTANCE_DATA_SIZE} * Uint64{Instances.size()};
+    InstanceBufferDesc.Size      = Uint64{TLAS_INSTANCE_DATA_SIZE} * Uint64{m_TLASInstances.size()};
     pDevice->CreateBuffer(InstanceBufferDesc, nullptr, &m_InstanceBuffer);
     if (!m_InstanceBuffer)
     {
@@ -456,7 +473,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDev
     TLASScratchDesc.Name      = "RTXPT TLAS scratch buffer";
     TLASScratchDesc.Usage     = USAGE_DEFAULT;
     TLASScratchDesc.BindFlags = BIND_RAY_TRACING;
-    TLASScratchDesc.Size      = m_TLAS->GetScratchBufferSizes().Build;
+    TLASScratchDesc.Size      = m_Stats.TLASScratchSize;
     pDevice->CreateBuffer(TLASScratchDesc, nullptr, &m_TLASScratch);
     if (!m_TLASScratch)
     {
@@ -468,8 +485,8 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDev
     TLASAttribs.pTLAS                        = m_TLAS;
     TLASAttribs.TLASTransitionMode           = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
     TLASAttribs.BLASTransitionMode           = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-    TLASAttribs.pInstances                   = Instances.data();
-    TLASAttribs.InstanceCount                = static_cast<Uint32>(Instances.size());
+    TLASAttribs.pInstances                   = m_TLASInstances.data();
+    TLASAttribs.InstanceCount                = static_cast<Uint32>(m_TLASInstances.size());
     TLASAttribs.pInstanceBuffer              = m_InstanceBuffer;
     TLASAttribs.InstanceBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
     TLASAttribs.HitGroupStride               = 1;
@@ -501,13 +518,61 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                 pDev
     }
 
     m_Stats.BLASCount        = static_cast<Uint32>(m_BLASRecords.size());
-    m_Stats.InstanceCount    = static_cast<Uint32>(Instances.size());
+    m_Stats.InstanceCount    = static_cast<Uint32>(m_TLASInstances.size());
     m_Stats.SubInstanceCount = static_cast<Uint32>(SubInstances.size());
     m_Stats.Built            = true;
     return true;
 }
 
-bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext* pContext, const RTXPTSkinnedGeometry& SkinnedGeometry)
+bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const GLTF::ModelTransforms& Transforms)
+{
+    if (!m_TLAS || !m_InstanceBuffer || !m_TLASScratch || m_TLASInstances.empty())
+    {
+        m_Stats.LastError = "RTXPT dynamic TLAS update requires built TLAS resources";
+        return false;
+    }
+
+    for (const BLASRecord& Record : m_BLASRecords)
+    {
+        if (Record.pNode == nullptr || Record.pNode->Index < 0 ||
+            Record.InstanceIndex >= m_TLASInstances.size() ||
+            Record.InstanceIndex >= m_InstanceNames.size())
+        {
+            m_Stats.LastError = "RTXPT dynamic TLAS update has invalid instance data";
+            return false;
+        }
+
+        const Uint32 NodeIndex = static_cast<Uint32>(Record.pNode->Index);
+        if (NodeIndex >= Transforms.NodeGlobalMatrices.size())
+        {
+            m_Stats.LastError = "RTXPT dynamic TLAS update is missing node transforms";
+            return false;
+        }
+
+        m_TLASInstances[Record.InstanceIndex].Transform = ToInstanceMatrix(Transforms.NodeGlobalMatrices[NodeIndex]);
+        m_TLASInstances[Record.InstanceIndex].InstanceName = m_InstanceNames[Record.InstanceIndex].c_str();
+    }
+
+    BuildTLASAttribs TLASAttribs;
+    TLASAttribs.pTLAS                        = m_TLAS;
+    TLASAttribs.TLASTransitionMode           = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+    TLASAttribs.BLASTransitionMode           = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+    TLASAttribs.pInstances                   = m_TLASInstances.data();
+    TLASAttribs.InstanceCount                = static_cast<Uint32>(m_TLASInstances.size());
+    TLASAttribs.pInstanceBuffer              = m_InstanceBuffer;
+    TLASAttribs.InstanceBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+    TLASAttribs.HitGroupStride               = 1;
+    TLASAttribs.BindingMode                  = HIT_GROUP_BINDING_MODE_PER_GEOMETRY;
+    TLASAttribs.pScratchBuffer               = m_TLASScratch;
+    TLASAttribs.ScratchBufferTransitionMode  = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+    TLASAttribs.Update                       = true;
+    pContext->BuildTLAS(TLASAttribs);
+    return true;
+}
+
+bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext*              pContext,
+                                                    const RTXPTSkinnedGeometry&  SkinnedGeometry,
+                                                    const GLTF::ModelTransforms& Transforms)
 {
     if (pContext == nullptr)
     {
@@ -567,7 +632,7 @@ bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext* pContext, co
         Updated = true;
     }
 
-    return Updated;
+    return Updated && UpdateTLAS(pContext, Transforms);
 }
 
 } // namespace Diligent

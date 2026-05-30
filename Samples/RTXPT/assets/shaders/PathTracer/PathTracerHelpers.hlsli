@@ -11,4 +11,50 @@ float PowerHeuristic(float nf, float fPdf, float ng, float gPdf)
     return f2 / max(f2 + g2, 1e-7);
 }
 
+// Mean of the RGB channels. RTXPT uses Average() (not luminance) for the firefly soft cap to
+// avoid a hue shift toward blue when clamping. (Self-contained: pi literals avoid coupling to
+// BxDF.hlsli's K_PI, which is included after this header.)
+float Average(float3 v)
+{
+    return (v.x + v.y + v.z) * 0.3333333333333333;
+}
+
+// Ray-cone spread angle implied by a scatter pdf (RTXPT ComputeRayConeSpreadAngleExpansionByScatterPDF,
+// growthFactor folded to 1.0). A delta lobe (pdf==0 sentinel) has zero spread.
+float ComputeRayConeSpreadAngleExpansionByScatterPDF(float bsdfScatterPdf)
+{
+    const float twoPi = 6.28318530717958647692;
+    return 2.0 * acos(max(-1.0, 1.0 - (1.0 / bsdfScatterPdf) / twoPi));
+}
+
+// Adaptive firefly-filter K (RTXPT ComputeNewScatterFireflyFilterK): K shrinks as the path
+// spreads. currentK is the path's running K, bouncePdf the scatter pdf (0 == delta event),
+// lobeP the probability of the lobe that was sampled.
+float ComputeNewScatterFireflyFilterK(float currentK, float bouncePdf, float lobeP)
+{
+    const float minK  = 0.00001;
+    const float angle = (bouncePdf == 0.0) ? 0.0 : ComputeRayConeSpreadAngleExpansionByScatterPDF(bouncePdf);
+    const float k     = 32.0; // empirical
+    float       p     = k / (k + angle * angle);
+    p *= sqrt(lobeP); // sqrt behaves better empirically
+    return max(minK, currentK * p);
+}
+
+// Soft-cap a vector signal to threshold*K of its own average (RTXPT FireflyFilter).
+float3 FireflyFilter(float3 signalIn, float threshold, float fireflyFilterK)
+{
+    const float fft  = threshold * fireflyFilterK;
+    const float maxR = Average(signalIn);
+    if (maxR > fft)
+        signalIn = signalIn / maxR * fft;
+    return signalIn;
+}
+
+// Scalar dampening factor for the same soft cap (RTXPT FireflyFilterShort); multiply a radiance by it.
+float FireflyFilterShort(float signalAverage, float threshold, float fireflyFilterK)
+{
+    const float fft = threshold * fireflyFilterK;
+    return (signalAverage > fft) ? (fft / signalAverage) : 1.0;
+}
+
 #endif // __PATH_TRACER_HELPERS_HLSLI__

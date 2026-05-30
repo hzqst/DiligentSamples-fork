@@ -101,9 +101,9 @@ void main()
         const bool useNEE = enableNEE && bounce < maxNEEBounces;
         if (useNEE)
         {
-            pathRadiance += throughput * PathTracer::SampleAnalyticNEE(bsdfData, payload.worldPos, visibilityOrigin, wo, sg);
+            pathRadiance += throughput * PathTracer::SampleAnalyticNEE(bsdfData, payload.worldPos, visibilityOrigin, wo, sg, fireflyFilterK);
             if (enableEnvNEE)
-                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData, visibilityOrigin, wo, sg);
+                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData, visibilityOrigin, wo, sg, fireflyFilterK);
         }
 
         float3 nextDir;

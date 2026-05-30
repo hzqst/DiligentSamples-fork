@@ -70,9 +70,9 @@ private:
     RefCntAutoPtr<ITexture> m_ComputeColor;
     RefCntAutoPtr<ITexture> m_AccumColor;
     bool                    m_AccumulationUnavailable = false;
-    Uint32                  m_Width  = 0;
-    Uint32                  m_Height = 0;
-    TEXTURE_FORMAT          m_Format = TEX_FORMAT_UNKNOWN;
+    Uint32                  m_Width                   = 0;
+    Uint32                  m_Height                  = 0;
+    TEXTURE_FORMAT          m_Format                  = TEX_FORMAT_UNKNOWN;
     std::string             m_LastError;
 };
 

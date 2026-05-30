@@ -57,20 +57,20 @@ struct RTXPTFeatureCaps
 
 struct PathTracerConstants
 {
-    Uint32 bounceCount             = 4;
-    Uint32 sampleIndex             = 0;
-    Uint32 resetAccumulation       = 1;
-    Uint32 minBounceCount          = 0;
+    Uint32 bounceCount       = 4;
+    Uint32 sampleIndex       = 0;
+    Uint32 resetAccumulation = 1;
+    Uint32 minBounceCount    = 0;
 
-    Uint32 NEEEnabled              = 1;    // Non-zero enables next-event estimation (direct light sampling).
-    Uint32 environmentNEEEnabled   = 1;    // Non-zero adds environment (sky) NEE with MIS alongside analytic lights.
-    float  environmentIntensity    = 1.0f; // Scales the procedural-sky environment radiance.
-    float  lightIntensityScale     = 1.0f; // Scales analytic (punctual) light radiance.
+    Uint32 NEEEnabled            = 1;    // Non-zero enables next-event estimation (direct light sampling).
+    Uint32 environmentNEEEnabled = 1;    // Non-zero adds environment (sky) NEE with MIS alongside analytic lights.
+    float  environmentIntensity  = 1.0f; // Scales the procedural-sky environment radiance.
+    float  lightIntensityScale   = 1.0f; // Scales analytic (punctual) light radiance.
 
-    Uint32 maxNEEBounceCount       = 1; // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
-    Uint32 analyticLightCount      = 0; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
-    Uint32 _padding0               = 0;
-    Uint32 _padding1               = 0;
+    Uint32 maxNEEBounceCount  = 1; // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
+    Uint32 analyticLightCount = 0; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
+    Uint32 _padding0          = 0;
+    Uint32 _padding1          = 0;
 };
 static_assert(sizeof(PathTracerConstants) == 48, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 
@@ -150,20 +150,20 @@ private:
     float                       m_CameraVerticalFov        = PI_F / 4.0f;
     float                       m_CameraNearPlane          = 0.1f;
     float                       m_CameraFarPlane           = 10000.0f;
-    Uint32                      m_FrameIndex                = 0;
-    Uint32                      m_AccumulationFrame         = 0;
-    Uint32                      m_MaxBounces                = 4;
-    Uint32                      m_MinBounces                = 3;
-    Uint32                      m_MaxNEEBounces             = 1;
-    bool                        m_EnableNEE                 = true;
-    bool                        m_EnableEnvNEE              = true;
-    float                       m_EnvIntensity              = 1.0f;
-    float                       m_LightIntensityScale       = 1.0f;
-    int                         m_SelectedSceneCamera       = -1;
-    bool                        m_EnableDebugComputePass    = false;
-    bool                        m_ResetAccumulationPending  = true;
-    bool                        m_AccumulationActive        = false;
-    bool                        m_HasLastCameraMatrices     = false;
+    Uint32                      m_FrameIndex               = 0;
+    Uint32                      m_AccumulationFrame        = 0;
+    Uint32                      m_MaxBounces               = 4;
+    Uint32                      m_MinBounces               = 3;
+    Uint32                      m_MaxNEEBounces            = 1;
+    bool                        m_EnableNEE                = true;
+    bool                        m_EnableEnvNEE             = true;
+    float                       m_EnvIntensity             = 1.0f;
+    float                       m_LightIntensityScale      = 1.0f;
+    int                         m_SelectedSceneCamera      = -1;
+    bool                        m_EnableDebugComputePass   = false;
+    bool                        m_ResetAccumulationPending = true;
+    bool                        m_AccumulationActive       = false;
+    bool                        m_HasLastCameraMatrices    = false;
 };
 
 } // namespace Diligent

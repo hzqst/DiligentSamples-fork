@@ -35,9 +35,9 @@ void RTXPTRenderTargets::Reset()
     m_ComputeColor.Release();
     m_AccumColor.Release();
     m_AccumulationUnavailable = false;
-    m_Width  = 0;
-    m_Height = 0;
-    m_Format = TEX_FORMAT_UNKNOWN;
+    m_Width                   = 0;
+    m_Height                  = 0;
+    m_Format                  = TEX_FORMAT_UNKNOWN;
     m_LastError.clear();
 }
 
@@ -108,8 +108,8 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice,
         const bool           SupportsUAV = (FmtInfo.BindFlags & BIND_UNORDERED_ACCESS) != 0;
         if (!SupportsUAV)
         {
-            m_LastError                 = "RGBA32F UAV is not supported; reference path tracer accumulation is disabled";
-            m_AccumulationUnavailable  = true;
+            m_LastError               = "RGBA32F UAV is not supported; reference path tracer accumulation is disabled";
+            m_AccumulationUnavailable = true;
             return true;
         }
 

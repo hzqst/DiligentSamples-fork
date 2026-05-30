@@ -79,20 +79,20 @@ private:
     void CacheSceneData();
     bool LoadSceneCameras(const std::string& ScenePath);
 
-    std::unique_ptr<GLTF::Model> m_Model;
-    GLTF::ModelTransforms        m_Transforms;
+    std::unique_ptr<GLTF::Model>  m_Model;
+    GLTF::ModelTransforms         m_Transforms;
     std::vector<RTXPTSceneCamera> m_Cameras;
-    std::string                  m_LoadedSceneName;
-    std::string                  m_AssetsRoot;
-    std::string                  m_ModelPath;
-    std::string                  m_LastError;
-    VALUE_TYPE                   m_IndexType      = VT_UINT32;
-    Uint32                       m_SceneIndex     = 0;
-    Uint32                       m_MeshNodeCount  = 0;
-    Uint32                       m_PrimitiveCount = 0;
-    Uint32                       m_MaterialCount  = 0;
-    Uint32                       m_LightCount     = 0;
-    Uint32                       m_VertexStride0  = 0;
+    std::string                   m_LoadedSceneName;
+    std::string                   m_AssetsRoot;
+    std::string                   m_ModelPath;
+    std::string                   m_LastError;
+    VALUE_TYPE                    m_IndexType      = VT_UINT32;
+    Uint32                        m_SceneIndex     = 0;
+    Uint32                        m_MeshNodeCount  = 0;
+    Uint32                        m_PrimitiveCount = 0;
+    Uint32                        m_MaterialCount  = 0;
+    Uint32                        m_LightCount     = 0;
+    Uint32                        m_VertexStride0  = 0;
 };
 
 } // namespace Diligent

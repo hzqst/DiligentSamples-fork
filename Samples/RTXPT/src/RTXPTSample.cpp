@@ -187,14 +187,14 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
     if (pCamera == nullptr)
         return false;
 
-    float3 Forward = pCamera->Rotation.RotateVector(float3{0.0f, 0.0f, -1.0f});
+    float3      Forward       = pCamera->Rotation.RotateVector(float3{0.0f, 0.0f, -1.0f});
     const float ForwardLength = length(Forward);
     Forward                   = ForwardLength > 1e-5f ? Forward / ForwardLength : float3{0.0f, 0.0f, -1.0f};
 
     m_SelectedSceneCamera = static_cast<int>(CameraIndex);
-    m_CameraVerticalFov  = pCamera->VerticalFov;
-    m_CameraNearPlane    = pCamera->NearPlane;
-    m_CameraFarPlane     = pCamera->FarPlane;
+    m_CameraVerticalFov   = pCamera->VerticalFov;
+    m_CameraNearPlane     = pCamera->NearPlane;
+    m_CameraFarPlane      = pCamera->FarPlane;
 
     m_Camera.SetPos(pCamera->Position);
     m_Camera.SetLookAt(pCamera->Position + Forward);
@@ -349,10 +349,10 @@ void RTXPTSample::CreatePhase4Passes()
 
 bool RTXPTSample::EnsureRenderTargets()
 {
-    const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
-    const bool           WasValid = m_RenderTargets.IsValid();
-    const Uint32         OldWidth = m_RenderTargets.GetWidth();
-    const Uint32         OldHeight = m_RenderTargets.GetHeight();
+    const SwapChainDesc& SCDesc                = m_pSwapChain->GetDesc();
+    const bool           WasValid              = m_RenderTargets.IsValid();
+    const Uint32         OldWidth              = m_RenderTargets.GetWidth();
+    const Uint32         OldHeight             = m_RenderTargets.GetHeight();
     const bool           WasAccumulationActive = m_RenderTargets.IsAccumulationActive();
 
     const bool Ok = m_RenderTargets.Resize(m_pDevice,

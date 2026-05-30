@@ -7,18 +7,18 @@ static const uint kSubInstanceFlagIndexed = 0x1u;
 // Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 48 bytes).
 struct PathTracerConstants
 {
-    uint bounceCount;             // Maximum number of secondary bounces; 0 means primary-ray only.
-    uint sampleIndex;             // 0-based index of the sample being added this frame.
-    uint resetAccumulation;       // Non-zero means raygen should overwrite the accumulation buffer instead of blending.
-    uint minBounceCount;          // Russian-roulette start bounce.
+    uint bounceCount;       // Maximum number of secondary bounces; 0 means primary-ray only.
+    uint sampleIndex;       // 0-based index of the sample being added this frame.
+    uint resetAccumulation; // Non-zero means raygen should overwrite the accumulation buffer instead of blending.
+    uint minBounceCount;    // Russian-roulette start bounce.
 
-    uint  NEEEnabled;             // Non-zero enables next-event estimation (direct light sampling) at each hit.
-    uint  environmentNEEEnabled;  // Non-zero adds environment (sky) NEE with MIS in addition to analytic lights.
-    float environmentIntensity;   // Scales the procedural-sky environment radiance.
-    float lightIntensityScale;     // Scales analytic (punctual) light radiance.
+    uint  NEEEnabled;            // Non-zero enables next-event estimation (direct light sampling) at each hit.
+    uint  environmentNEEEnabled; // Non-zero adds environment (sky) NEE with MIS in addition to analytic lights.
+    float environmentIntensity;  // Scales the procedural-sky environment radiance.
+    float lightIntensityScale;   // Scales analytic (punctual) light radiance.
 
-    uint maxNEEBounceCount;       // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
-    uint analyticLightCount;      // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
+    uint maxNEEBounceCount;  // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
+    uint analyticLightCount; // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
     uint _padding0;
     uint _padding1;
 };
@@ -26,10 +26,10 @@ struct PathTracerConstants
 // Mirrors Diligent::SampleConstants in RTXPTSample.hpp (must keep order and layout in sync).
 struct SampleConstants
 {
-    float4x4           viewProj;
-    float4x4           viewProjInv;
-    float4             cameraPositionAndTime;
-    float4             viewportSizeAndFrameIndex;
+    float4x4            viewProj;
+    float4x4            viewProjInv;
+    float4              cameraPositionAndTime;
+    float4              viewportSizeAndFrameIndex;
     PathTracerConstants ptConsts;
 };
 

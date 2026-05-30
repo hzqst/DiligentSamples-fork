@@ -141,7 +141,7 @@ void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera
             Camera.Rotation = QuaternionF{Rotation[0], Rotation[1], Rotation[2], Rotation[3]};
 
             const float RotationLength = length(Camera.Rotation.q);
-            Camera.Rotation           = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
+            Camera.Rotation            = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
 
             Camera.VerticalFov = ReadOptionalFloat(Node, "verticalFov", Camera.VerticalFov);
             Camera.NearPlane   = ReadOptionalFloat(Node, "zNear", Camera.NearPlane);
@@ -179,7 +179,7 @@ struct AnimatedCameraChannels
     const nlohmann::json* pRotation    = nullptr;
 };
 
-void CollectAnimatedCameraChannels(const nlohmann::json& Channels,
+void CollectAnimatedCameraChannels(const nlohmann::json&                                    Channels,
                                    std::unordered_map<std::string, AnimatedCameraChannels>& ChannelsByTarget)
 {
     for (const auto& Channel : Channels)
@@ -202,10 +202,10 @@ void CollectAnimatedCameraChannels(const nlohmann::json& Channels,
     }
 }
 
-bool ReadAnimatedCameraKey(const nlohmann::json& TranslationKey,
-                           const nlohmann::json& RotationKey,
+bool ReadAnimatedCameraKey(const nlohmann::json&   TranslationKey,
+                           const nlohmann::json&   RotationKey,
                            const RTXPTSceneCamera& Defaults,
-                           RTXPTSceneCamera& Camera)
+                           RTXPTSceneCamera&       Camera)
 {
     if (!TranslationKey.is_object() || !RotationKey.is_object())
         return false;
@@ -221,14 +221,14 @@ bool ReadAnimatedCameraKey(const nlohmann::json& TranslationKey,
     Camera.Rotation = QuaternionF{Rotation[0], Rotation[1], Rotation[2], Rotation[3]};
 
     const float RotationLength = length(Camera.Rotation.q);
-    Camera.Rotation = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
+    Camera.Rotation            = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
     return true;
 }
 
-void AppendAnimatedCameraKeys(const std::string& AnimationName,
-                              const std::string& Target,
-                              const AnimatedCameraChannels& Channels,
-                              const RTXPTSceneCamera& Defaults,
+void AppendAnimatedCameraKeys(const std::string&             AnimationName,
+                              const std::string&             Target,
+                              const AnimatedCameraChannels&  Channels,
+                              const RTXPTSceneCamera&        Defaults,
                               std::vector<RTXPTSceneCamera>& Cameras)
 {
     if (Channels.pTranslation == nullptr || Channels.pRotation == nullptr)
@@ -257,8 +257,8 @@ void AppendAnimatedCameraKeys(const std::string& AnimationName,
     }
 }
 
-void AppendAnimatedCameras(const nlohmann::json& SceneJson,
-                           const RTXPTSceneCamera& Defaults,
+void AppendAnimatedCameras(const nlohmann::json&          SceneJson,
+                           const RTXPTSceneCamera&        Defaults,
                            std::vector<RTXPTSceneCamera>& Cameras)
 {
     const auto AnimationsIt = SceneJson.find("animations");

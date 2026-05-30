@@ -218,9 +218,9 @@ bool RTXPTAccelerationStructures::BuildStaticScene(IRenderDevice*               
             GeometryNames.emplace_back((pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name) + "_" + std::to_string(PrimitiveIndex));
 
             SubInstanceData SubEntry;
-            SubEntry.MaterialID     = Primitive.MaterialId;
-            SubEntry.VertexOffset   = BaseVertex + Primitive.FirstVertex;
-            SubEntry.VertexCount    = Primitive.VertexCount;
+            SubEntry.MaterialID   = Primitive.MaterialId;
+            SubEntry.VertexOffset = BaseVertex + Primitive.FirstVertex;
+            SubEntry.VertexCount  = Primitive.VertexCount;
             if (Primitive.HasIndices())
             {
                 SubEntry.Flags |= kSubInstanceFlag_Indexed;

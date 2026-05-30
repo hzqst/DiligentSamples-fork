@@ -51,25 +51,25 @@ struct MaterialPTData
     float3 emissiveFactor = float3{0, 0, 0};
     float  alphaCutoff    = 0.5f;
 
-    Uint32 flags                  = 0;
-    Uint32 baseColorTextureIndex  = 0;
-    Uint32 emissiveTextureIndex   = 0;
-    float  metallicFactor         = 1.0f;
+    Uint32 flags                 = 0;
+    Uint32 baseColorTextureIndex = 0;
+    Uint32 emissiveTextureIndex  = 0;
+    float  metallicFactor        = 1.0f;
 
-    float  roughnessFactor                = 1.0f;
-    float  baseColorTextureSlice          = 0.0f;
-    float  emissiveTextureSlice           = 0.0f;
-    Uint32 metallicRoughnessTextureIndex  = 0;
+    float  roughnessFactor               = 1.0f;
+    float  baseColorTextureSlice         = 0.0f;
+    float  emissiveTextureSlice          = 0.0f;
+    Uint32 metallicRoughnessTextureIndex = 0;
 
-    float  metallicRoughnessTextureSlice  = 0.0f;
-    Uint32 normalTextureIndex             = 0;
-    float  normalTextureSlice             = 0.0f;
-    float  normalScale                    = 1.0f;
+    float  metallicRoughnessTextureSlice = 0.0f;
+    Uint32 normalTextureIndex            = 0;
+    float  normalTextureSlice            = 0.0f;
+    float  normalScale                   = 1.0f;
 
-    float  _padding0 = 0.0f;
-    float  _padding1 = 0.0f;
-    float  _padding2 = 0.0f;
-    float  _padding3 = 0.0f;
+    float _padding0 = 0.0f;
+    float _padding1 = 0.0f;
+    float _padding2 = 0.0f;
+    float _padding3 = 0.0f;
 };
 static_assert(sizeof(MaterialPTData) == 96, "MaterialPTData layout must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, metallicRoughnessTextureIndex) == 60,

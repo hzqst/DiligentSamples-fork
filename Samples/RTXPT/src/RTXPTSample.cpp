@@ -31,6 +31,9 @@
 #include "MapHelper.hpp"
 #include "imgui.h"
 
+#include <algorithm>
+#include <filesystem>
+
 namespace Diligent
 {
 
@@ -39,6 +42,8 @@ namespace
 
 constexpr float kDefaultCameraNearPlane      = 1.0f;
 constexpr float kMinClipPlaneSeparation      = 1e-3f;
+constexpr const char* kPreferredSceneName    = "bistro-programmer-art.scene.json";
+constexpr const char* kSceneFileSuffix       = ".scene.json";
 
 RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
 {
@@ -78,11 +83,44 @@ std::string JoinPath(const std::string& Root, const char* RelativePath)
     return FileSystem::SimplifyPath(Path.c_str());
 }
 
+bool EndsWith(const std::string& Text, const char* Suffix)
+{
+    const std::string SuffixString{Suffix};
+    return Text.size() >= SuffixString.size() &&
+        Text.compare(Text.size() - SuffixString.size(), SuffixString.size(), SuffixString) == 0;
+}
+
+std::vector<std::string> EnumerateSceneFiles(const std::string& AssetsRoot)
+{
+    std::vector<std::string> SceneFiles;
+
+    std::error_code Error;
+    const std::filesystem::path RootPath{AssetsRoot};
+    if (!std::filesystem::is_directory(RootPath, Error))
+        return SceneFiles;
+
+    std::filesystem::directory_iterator It{RootPath, Error};
+    const std::filesystem::directory_iterator End;
+    while (!Error && It != End)
+    {
+        const std::filesystem::directory_entry& Entry = *It;
+        std::error_code                         StatusError;
+        if (Entry.is_regular_file(StatusError))
+        {
+            const std::string FileName = Entry.path().filename().string();
+            if (EndsWith(FileName, kSceneFileSuffix))
+                SceneFiles.push_back(FileName);
+        }
+        It.increment(Error);
+    }
+
+    std::sort(SceneFiles.begin(), SceneFiles.end());
+    return SceneFiles;
+}
+
 bool IsRTXPTAssetsRoot(const std::string& Path)
 {
-    const std::string ScenePath = JoinPath(Path, "bistro-programmer-art.scene.json");
-    const std::string ModelPath = JoinPath(Path, "Models/Bistro/bistro.gltf");
-    return FileSystem::FileExists(ScenePath.c_str()) && FileSystem::FileExists(ModelPath.c_str());
+    return !EnumerateSceneFiles(Path).empty();
 }
 
 std::string ResolveRTXPTAssetsRoot()
@@ -162,6 +200,85 @@ void RTXPTSample::CreateFrameResources()
     CreateUniformBuffer(m_pDevice, sizeof(SampleConstants), "RTXPT frame constants", &m_FrameConstantsCB);
 }
 
+void RTXPTSample::EnumerateAvailableScenes()
+{
+    m_AvailableScenes = EnumerateSceneFiles(m_AssetsRoot);
+}
+
+void RTXPTSample::ResetSceneDependentResources()
+{
+    m_Materials.Reset();
+    m_Lights.Reset();
+    m_AccelerationStructures.Reset();
+    m_RayTracingPass.Reset();
+
+    m_SelectedSceneCamera   = -1;
+    m_AccumulationFrame     = 0;
+    m_AccumulationActive    = false;
+    m_HasLastCameraMatrices = false;
+}
+
+bool RTXPTSample::RebuildSceneDependentResources()
+{
+    const GLTF::Model* pModel = m_Scene.GetModel();
+    if (pModel == nullptr)
+    {
+        ResetSceneDependentResources();
+        CreatePhase4Passes();
+        return false;
+    }
+
+    bool ResourcesReady = true;
+    ResourcesReady &= m_Materials.Upload(m_pDevice, *pModel);
+    if (m_Scene.GetSceneIndex() < pModel->Scenes.size())
+        ResourcesReady &= m_Lights.Upload(m_pDevice, pModel->Scenes[m_Scene.GetSceneIndex()], m_Scene.GetTransforms());
+    else
+        m_Lights.Reset();
+
+    ResourcesReady &=
+        m_AccelerationStructures.BuildStaticScene(m_pDevice,
+                                                  m_pImmediateContext,
+                                                  *pModel,
+                                                  m_Scene.GetSceneIndex(),
+                                                  m_Scene.GetIndexType(),
+                                                  m_Scene.GetTransforms(),
+                                                  m_FeatureCaps.RayTracing);
+
+    CreatePhase4Passes();
+    return ResourcesReady;
+}
+
+bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload)
+{
+    if (SceneName.empty())
+        return false;
+
+    if (!ForceReload && SceneName == m_CurrentSceneName)
+        return m_Scene.HasValidContent();
+
+    m_CurrentSceneName = SceneName;
+    ResetSceneDependentResources();
+
+    const bool SceneLoaded = m_Scene.LoadScene(m_pDevice, m_pImmediateContext, m_AssetsRoot, SceneName);
+    const bool ResourcesReady = SceneLoaded && RebuildSceneDependentResources();
+    if (!SceneLoaded)
+        CreatePhase4Passes();
+
+    if (SceneLoaded && m_Scene.GetCameraCount() > 0)
+    {
+        ApplySceneCamera(0);
+    }
+    else
+    {
+        InitializeCamera();
+        m_SelectedSceneCamera = -1;
+    }
+
+    m_HasLastCameraMatrices = false;
+    RequestAccumulationReset("Scene changed");
+    return SceneLoaded && ResourcesReady;
+}
+
 void RTXPTSample::InitializeCamera()
 {
     m_Camera.SetPos(float3{0.0f, 1.5f, -6.0f});
@@ -231,30 +348,25 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
     CreateFrameResources();
 
     m_AssetsRoot = ResolveRTXPTAssetsRoot();
-    m_Scene.LoadDefaultScene(m_pDevice, m_pImmediateContext, m_AssetsRoot);
-    if (const GLTF::Model* pModel = m_Scene.GetModel())
-    {
-        m_Materials.Upload(m_pDevice, *pModel);
-        if (m_Scene.GetSceneIndex() < pModel->Scenes.size())
-            m_Lights.Upload(m_pDevice, pModel->Scenes[m_Scene.GetSceneIndex()], m_Scene.GetTransforms());
+    EnumerateAvailableScenes();
 
-        m_AccelerationStructures.BuildStaticScene(m_pDevice,
-                                                  m_pImmediateContext,
-                                                  *pModel,
-                                                  m_Scene.GetSceneIndex(),
-                                                  m_Scene.GetIndexType(),
-                                                  m_Scene.GetTransforms(),
-                                                  m_FeatureCaps.RayTracing);
+    std::string InitialScene;
+    auto        PreferredIt = std::find(m_AvailableScenes.begin(), m_AvailableScenes.end(), kPreferredSceneName);
+    if (PreferredIt != m_AvailableScenes.end())
+        InitialScene = *PreferredIt;
+    else if (!m_AvailableScenes.empty())
+        InitialScene = m_AvailableScenes.front();
+
+    if (!InitialScene.empty())
+    {
+        SetCurrentScene(InitialScene, true);
     }
     else
     {
-        m_AccelerationStructures.Reset();
+        ResetSceneDependentResources();
+        CreatePhase4Passes();
     }
 
-    if (m_Scene.GetCameraCount() > 0)
-        ApplySceneCamera(0);
-
-    CreatePhase4Passes();
     EnsureRenderTargets();
 }
 

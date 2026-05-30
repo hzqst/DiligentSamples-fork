@@ -122,6 +122,10 @@ protected:
 
 private:
     void CreateFrameResources();
+    void EnumerateAvailableScenes();
+    bool SetCurrentScene(const std::string& SceneName, bool ForceReload = false);
+    void ResetSceneDependentResources();
+    bool RebuildSceneDependentResources();
     void InitializeCamera();
     bool ApplySceneCamera(Uint32 CameraIndex);
     void UpdateCameraProjection(Uint32 Width, Uint32 Height);
@@ -133,6 +137,8 @@ private:
 
     RTXPTFeatureCaps            m_FeatureCaps;
     std::string                 m_AssetsRoot;
+    std::vector<std::string>    m_AvailableScenes;
+    std::string                 m_CurrentSceneName;
     RTXPTScene                  m_Scene;
     RTXPTMaterials              m_Materials;
     RTXPTLights                 m_Lights;

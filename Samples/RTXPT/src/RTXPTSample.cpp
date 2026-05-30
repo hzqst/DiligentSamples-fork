@@ -758,7 +758,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
         ImGui::Separator();
         ImGui::TextColored(CategoryColor, "Roadmap (open work):");
-        ImGui::TextWrapped("TODO(RTXPT-Port Phase R1): adaptive firefly filter, NEE at all bounces, decorrelated seeding.");
+        ImGui::TextWrapped("TODO(RTXPT-Port Phase R2): emissive-triangle area-light NEE + MIS.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R3): light importance sampling (RIS/WRS) + photometric units.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R4): HDR environment map with importance sampling + MIS.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R5): VNDF/Frostbite/multi-scatter BSDF + low-discrepancy sampler.");

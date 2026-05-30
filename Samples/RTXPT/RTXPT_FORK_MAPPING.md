@@ -105,6 +105,8 @@ Hard constraints:
 | `NextFloat2` | `sampleNext2D` = RTXPT-fork | |
 | `BuildOrthonormalBasis` | `BranchlessONB` = RTXPT-fork | params `normal, out tangent, out bitangent` |
 | `SampleCosineHemisphere` | `sampleCosineHemisphere` (style) | RTXPT-fork's local-frame helper differs; keep ours and record divergence |
+| (R1/G3 new) | `SampleGenerator_makeStateless` | stateless per-(pixel,vertex,sample) seed; mirrors RTXPT `UniformSampleSequenceGenerator::make`. Full Sobol/Owen deferred to R5 (G9) |
+| (R1/G3 new) | `kSampleEffect_*` | mirrors RTXPT `SampleGeneratorEffectSeed` (Base/ScatterBSDF/NextEventEstimation/NEELightSampler/RussianRoulette) |
 
 ### T-C. Materials Layer (`Rendering/Materials/BxDF.hlsli`)
 
@@ -122,7 +124,7 @@ Hard constraints:
 | `RTXPTLuminance` | `luminance` = RTXPT-fork | |
 | `RTXPTSpecularProbability` | `getSpecularProbability` (style) | |
 | `RTXPTEvalBSDF(S, Wo, Wi, SpecProb, out FTimesNoL, out Pdf)` | `EvalBSDF(bsdfData, wo, wi, specProb, out f, out pdf)` (style) | combined helper |
-| `RTXPTSampleBSDF(S, Wo, ..., out Wi, out Weight, out Pdf)` | `SampleBSDF(bsdfData, wo, inout sg, out wi, out weight, out pdf)` (style) | |
+| `RTXPTSampleBSDF(S, Wo, ..., out Wi, out Weight, out Pdf)` | `SampleBSDF(bsdfData, wo, inout sg, out wi, out weight, out pdf, out lobeP)` (style) | R1/G1 returns sampled-lobe probability for firefly K updates |
 
 ### T-D. Lighting Layer (`Lighting/PolymorphicLight.hlsli`, `Lighting/EnvMap.hlsli`)
 
@@ -140,6 +142,7 @@ Hard constraints:
 | Current | New | Notes |
 |---|---|---|
 | `RTXPTPowerHeuristic(PdfA, PdfB)` | `PowerHeuristic(nf, fPdf, ng, gPdf)` = RTXPT-fork | call with `(1, pdfA, 1, pdfB)` |
+| (R1/G1 new) | `ComputeNewScatterFireflyFilterK` / `FireflyFilter` / `FireflyFilterShort` / `Average` = RTXPT-fork | runtime-gated by `fireflyFilterThreshold==0` instead of RTXPT's compile-time `RTXPT_FIREFLY_FILTER`; uses `acos`/`sqrt` not `FastACos`/`FastSqrt` |
 | `RTXPTMakeDefaultPayload(HitFlag)` | `PathTracer::MakeEmptyPayload(hitFlag)` (style) | |
 | `RTXPTTraceVisibility(Origin, Dir, TMax)` | `PathTracer::TraceVisibilityRay(origin, dir, tMax)` (style) | |
 | `RTXPTSampleAnalyticNEE(...)` | `PathTracer::SampleAnalyticNEE(...)` (style) | |
@@ -167,8 +170,11 @@ Raygen locals become camelCase:
 | `Bounce` | `bounce` |
 | `Pixel` | `pixel` |
 | `Dimensions` | `dimensions` |
-| `FrameSeed` | `frameSeed` |
-| `Rng` | `sg` |
+| `SampleIndex` | `sampleIndex` |
+| (R1/G1 new) | `fireflyFilterK` |
+| (R1/G1 new) | `ffThreshold` |
+| (R1/G3 new) | `vertexIndex` |
+| (R1/G3 new) | `sgCamera` / `sgNEELight` / `sgEnvNEE` / `sgScatter` / `sgRR` |
 | `Jitter` | `jitter` |
 | `UV` | `uv` |
 | `NDC` | `ndc` |
@@ -188,6 +194,9 @@ Raygen locals become camelCase:
 | `Previous` | `previous` |
 | `MISWeight` | `misWeight` |
 | `EnvRadiance` | `envRadiance` |
+| (R1/G1 new) | `environmentEmission` |
+| (R1/G1 new) | `surfaceEmission` |
+| (R1/G1 new) | `lobeP` |
 
 ### T-F. Bridge Namespace (`PathTracerBridge.hlsli`, `MaterialBridge.hlsli`)
 

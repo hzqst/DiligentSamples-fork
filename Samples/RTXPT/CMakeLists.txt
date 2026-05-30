@@ -24,6 +24,7 @@ set(INCLUDE
     src/RTXPTRayTracingPass.hpp
     src/RTXPTComputePass.hpp
     src/RTXPTBlitPass.hpp
+    RTXPT_FORK_MAPPING.md
 )
 
 set(SHADERS

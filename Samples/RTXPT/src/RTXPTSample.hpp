@@ -82,10 +82,10 @@ struct PathTracerConstants
 static_assert(sizeof(PathTracerConstants) == 64, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
-// (D:/RTXPT-fork/Rtxpt/SampleUI.h). These fields back the present-but-disabled placeholder
-// controls in UpdateUI(): most are implemented in later phases (R1/R3/R4/R5/R6 or the
-// separate tone-mapping Phase 6). Scene camera exposure metadata is applied through
-// PathTracerConstants::exposureScale while the full tone-mapping pass remains Phase 6 work.
+// (D:/RTXPT-fork/Rtxpt/SampleUI.h). Some fields back live controls now, while the rest
+// remain placeholders for later phases (R4/R5/R6 or the separate tone-mapping Phase 6).
+// Scene camera exposure metadata is applied through PathTracerConstants::exposureScale while
+// the full tone-mapping pass remains Phase 6 work.
 struct RTXPTReferenceUIState
 {
     bool  AccumulationAA                  = true;  // Jitter AA: always on in our port (no toggle yet).
@@ -99,10 +99,10 @@ struct RTXPTReferenceUIState
     float ToneMappingExposureValue        = 0.0f;  // Phase 6.
     float ToneMappingExposureValueMin     = -16.0f; // Phase 6.
     float ToneMappingExposureValueMax     = 16.0f;  // Phase 6.
-    int   NEEType                         = 1;     // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
+    int   NEEType                         = 1;     // Phase R3 (G5): 0=Uniform, 1=Power+; 2=NEE-AT remains deferred.
     int   NEECandidateSamples             = 5;     // Phase R3 (G5): RIS candidate count.
     int   NEEFullSamples                  = 1;     // Phase R3 (G5): visibility-tested full samples.
-    int   NEEMISType                      = 0;     // Phase R3 (G5): 0=Full, 1=ApproxInRealtime, 2=Approximate.
+    int   NEEMISType                      = 0;     // Phase R3 (G5): 0=Full, 1=ApproxInRealtime, 2=Approximate (deferred).
     int   NestedDielectricsQuality        = 1;     // Phase R6 (G10): 0=Off, 1=Fast, 2=Quality.
     bool  EnableLDSamplerForBSDF          = true;  // Phase R5 (G9): low-discrepancy (Sobol/Owen) sampler.
     bool  EnvironmentMapEnabled           = false; // Phase R4 (G7): HDR env-map loading (procedural sky is always active).

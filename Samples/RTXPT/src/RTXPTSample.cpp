@@ -501,6 +501,10 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.ptConsts.lightIntensityScale   = m_LightIntensityScale;
     m_LastFrameConstants.ptConsts.maxNEEBounceCount     = m_MaxNEEBounces;
     m_LastFrameConstants.ptConsts.analyticLightCount    = m_Lights.GetStats().LightCount;
+    m_LastFrameConstants.ptConsts.NEEType                = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 1));
+    m_LastFrameConstants.ptConsts.NEECandidateSamples    = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEECandidateSamples, 1, 32));
+    m_LastFrameConstants.ptConsts.NEEFullSamples         = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEFullSamples, 0, 32));
+    m_LastFrameConstants.ptConsts.NEEMISType             = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 0));
     // G1: a disabled firefly filter uploads a zero threshold, so the soft cap is a no-op and the
     // converged image is identical to the filter-on image (only per-sample variance differs).
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
@@ -861,26 +865,28 @@ void RTXPTSample::UpdateUI()
                 ImGui::TextColored(CategoryColor, "NEE settings:");
                 ImGui::Indent(Indent);
                 {
-                    // Light importance sampling (RIS/WRS) + MIS type: Phase R3 (G5).
+                    // Light importance sampling (RIS/WRS) + MIS type: G5.
+                    const char* SamplingTechniqueItems = "Uniform\0Power+\0\0";
+                    if (ResetOnChange(ImGui::Combo("Sampling technique", &m_ReferenceUI.NEEType, SamplingTechniqueItems),
+                                      "NEE sampling technique changed"))
+                        m_ReferenceUI.NEEType = std::clamp(m_ReferenceUI.NEEType, 0, 1);
                     ImGui::BeginDisabled(true);
-                    ImGui::Combo("Sampling technique", &m_ReferenceUI.NEEType, "Uniform\0Power+\0NEE-AT\0\0");
+                    ImGui::TextUnformatted("NEE-AT");
                     ImGui::EndDisabled();
-                    PlaceholderTooltip("Light importance sampling (RIS/WRS) lands in Phase R3.");
+                    PlaceholderTooltip("NEE-AT requires RTXPT-fork's feedback/local sampling path and remains deferred.");
 
-                    ImGui::BeginDisabled(true);
-                    ImGui::InputInt("Candidate samples", &m_ReferenceUI.NEECandidateSamples, 1);
-                    ImGui::EndDisabled();
-                    PlaceholderTooltip("RIS candidate count lands in Phase R3.");
+                    if (ResetOnChange(ImGui::InputInt("Candidate samples", &m_ReferenceUI.NEECandidateSamples, 1),
+                                      "NEE candidate count changed"))
+                        m_ReferenceUI.NEECandidateSamples = std::clamp(m_ReferenceUI.NEECandidateSamples, 1, 32);
 
-                    ImGui::BeginDisabled(true);
-                    ImGui::InputInt("Full samples", &m_ReferenceUI.NEEFullSamples, 1);
-                    ImGui::EndDisabled();
-                    PlaceholderTooltip("Visibility-tested full-sample count lands in Phase R3.");
+                    if (ResetOnChange(ImGui::InputInt("Full samples", &m_ReferenceUI.NEEFullSamples, 1),
+                                      "NEE full sample count changed"))
+                        m_ReferenceUI.NEEFullSamples = std::clamp(m_ReferenceUI.NEEFullSamples, 0, 32);
 
                     ImGui::BeginDisabled(true);
                     ImGui::Combo("MIS Type", &m_ReferenceUI.NEEMISType, "Full\0ApproxInRealtime\0Approximate\0\0");
                     ImGui::EndDisabled();
-                    PlaceholderTooltip("Selectable MIS type lands in Phase R3.");
+                    PlaceholderTooltip("G5 uses the full light-vs-BSDF MIS path; approximate MIS modes remain deferred.");
                 }
                 ImGui::Unindent(Indent);
             }
@@ -1065,6 +1071,9 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
         ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
         ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
+        ImGui::Text("Light proxies: %u", m_Lights.GetStats().LightProxyCount);
+        ImGui::Text("Light proxy weight: %.3f", m_Lights.GetStats().LightProxyTotalWeight);
+        ImGui::Text("Light proxy bridge: %s", RTPassStats.LightProxyBridgeBound ? "bound" : "missing");
         ImGui::Text("Emissive triangle pass: %s", m_EmissiveTrianglePass.IsReady() ? "ready" : "not ready");
         ImGui::Text("Emissive triangle dispatch count: %u", m_EmissiveTrianglePass.GetStats().DispatchCount);
         if (!m_EmissiveTrianglePass.GetStats().DisabledReason.empty())
@@ -1094,7 +1103,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
         ImGui::Separator();
         ImGui::TextColored(CategoryColor, "Roadmap (open work):");
-        ImGui::TextWrapped("TODO(RTXPT-Port Phase R3): light importance sampling (RIS/WRS) + photometric units.");
+        ImGui::TextWrapped("TODO(RTXPT-Port Phase R3.G6): photometric / shaped punctual-light units.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R4): HDR environment map with importance sampling + MIS.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R5): VNDF/Frostbite/multi-scatter BSDF + low-discrepancy sampler.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R6): transmission / nested dielectrics / ALPHA_MODE_BLEND.");

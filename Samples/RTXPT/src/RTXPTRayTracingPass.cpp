@@ -266,8 +266,10 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     if (!m_PSO)
         return false;
 
-    auto SetStaticForStages = [&](SHADER_TYPE Stages, const char* Name, IDeviceObject* pObject, const char* ObjectName) {
-        bool Ok = true;
+    auto SetStaticForStages = [&](SHADER_TYPE Stages, const char* Name, IDeviceObject* pObject, const char* ObjectName,
+                                  bool Required = true, bool* pFoundAny = nullptr) {
+        bool Ok       = true;
+        bool FoundAny = false;
         for (SHADER_TYPE Stage : {SHADER_TYPE_RAY_GEN, SHADER_TYPE_RAY_MISS, SHADER_TYPE_RAY_CLOSEST_HIT, SHADER_TYPE_RAY_ANY_HIT})
         {
             if ((Stages & Stage) == 0)
@@ -276,6 +278,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             IShaderResourceVariable* pVar = m_PSO->GetStaticVariableByName(Stage, Name);
             if (pVar == nullptr)
                 continue;
+            FoundAny = true;
 
             if (pObject == nullptr)
             {
@@ -285,6 +288,13 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             }
 
             pVar->Set(pObject);
+        }
+        if (pFoundAny != nullptr)
+            *pFoundAny = FoundAny;
+        if (!FoundAny && Required)
+        {
+            UNEXPECTED("RTXPT static shader variable is missing: ", Name);
+            return false;
         }
         return Ok;
     };
@@ -369,12 +379,21 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer") &&
             SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight") &&
             SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates");
-        m_Stats.EnvironmentBridgeBound =
-            SetStaticForStages(EnvStages, "t_EnvironmentMap", pEnvironmentMapView, "environment map") &&
-            SetStaticForStages(EnvStages, "t_EnvironmentImportanceMap", pEnvironmentImportanceMapView, "environment importance map") &&
-            SetStaticForStages(EnvStages, "t_EnvironmentRadianceMap", pEnvironmentRadianceMapView, "environment radiance map") &&
-            SetStaticForStages(EnvStages, "s_EnvironmentMapSampler", pEnvironmentSamplerView, "environment map sampler") &&
-            SetStaticForStages(EnvStages, "s_EnvironmentImportanceSampler", pEnvironmentImportanceSamplerView, "environment importance sampler");
+        bool EnvironmentMapFound               = false;
+        bool EnvironmentImportanceMapFound     = false;
+        bool EnvironmentRadianceMapFound       = false;
+        bool EnvironmentSamplerFound           = false;
+        bool EnvironmentImportanceSamplerFound = false;
+        const bool EnvironmentBridgeOk =
+            SetStaticForStages(EnvStages, "t_EnvironmentMap", pEnvironmentMapView, "environment map", false, &EnvironmentMapFound) &&
+            SetStaticForStages(EnvStages, "t_EnvironmentImportanceMap", pEnvironmentImportanceMapView, "environment importance map", false, &EnvironmentImportanceMapFound) &&
+            SetStaticForStages(EnvStages, "t_EnvironmentRadianceMap", pEnvironmentRadianceMapView, "environment radiance map", false, &EnvironmentRadianceMapFound) &&
+            SetStaticForStages(EnvStages, "s_EnvironmentMapSampler", pEnvironmentSamplerView, "environment map sampler", false, &EnvironmentSamplerFound) &&
+            SetStaticForStages(EnvStages, "s_EnvironmentImportanceSampler", pEnvironmentImportanceSamplerView, "environment importance sampler", false, &EnvironmentImportanceSamplerFound);
+        const bool EnvironmentBridgeReflected =
+            EnvironmentMapFound || EnvironmentImportanceMapFound || EnvironmentRadianceMapFound ||
+            EnvironmentSamplerFound || EnvironmentImportanceSamplerFound;
+        m_Stats.EnvironmentBridgeBound = EnvironmentBridgeReflected && EnvironmentBridgeOk;
         m_Stats.EmissiveLightBridgeBound =
             SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer");
         m_Stats.VertexBufferBound   = SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
@@ -397,8 +416,19 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         }
     }
 
+    const bool EnvironmentBridgeRequired = m_Stats.EnvironmentBridgeBound ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_GEN, "t_EnvironmentMap") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_MISS, "t_EnvironmentMap") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_GEN, "t_EnvironmentImportanceMap") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_MISS, "t_EnvironmentImportanceMap") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_GEN, "t_EnvironmentRadianceMap") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_MISS, "t_EnvironmentRadianceMap") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_GEN, "s_EnvironmentMapSampler") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_MISS, "s_EnvironmentMapSampler") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_GEN, "s_EnvironmentImportanceSampler") != nullptr ||
+        m_PSO->GetStaticVariableByName(SHADER_TYPE_RAY_MISS, "s_EnvironmentImportanceSampler") != nullptr;
     if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound ||
-        !m_Stats.LightsBakerBridgeBound || !m_Stats.EnvironmentBridgeBound || !m_Stats.EmissiveLightBridgeBound ||
+        !m_Stats.LightsBakerBridgeBound || (EnvironmentBridgeRequired && !m_Stats.EnvironmentBridgeBound) || !m_Stats.EmissiveLightBridgeBound ||
         !m_Stats.VertexBufferBound || !m_Stats.SkinnedVertexBufferBound || !m_Stats.IndexBufferBound)
         return false;
 

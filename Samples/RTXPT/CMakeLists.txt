@@ -12,6 +12,7 @@ set(SOURCE
     src/RTXPTLightsBaker.cpp
     src/RTXPTLightsBakerPass.cpp
     src/RTXPTEnvMapBaker.cpp
+    src/RTXPTEnvMapBakerPass.cpp
     src/RTXPTAccelerationStructures.cpp
     src/RTXPTSkinnedGeometry.cpp
     src/RTXPTRenderTargets.cpp
@@ -32,6 +33,7 @@ set(INCLUDE
     src/RTXPTLightsBakerPass.hpp
     src/RTXPTFrameConstants.hpp
     src/RTXPTEnvMapBaker.hpp
+    src/RTXPTEnvMapBakerPass.hpp
     src/RTXPTAccelerationStructures.hpp
     src/RTXPTSkinnedGeometry.hpp
     src/RTXPTRenderTargets.hpp
@@ -56,6 +58,7 @@ set(SHADERS
     assets/shaders/PathTracer/Lighting/PolymorphicLight.hlsli
     assets/shaders/PathTracer/Lighting/LightSampler.hlsli
     assets/shaders/PathTracer/Lighting/LightsBaker.hlsl
+    assets/shaders/PathTracer/Lighting/EnvMapImportanceBaker.hlsl
     assets/shaders/PathTracer/Utils/SampleGenerators.hlsli
     assets/shaders/PathTracer/Rendering/Materials/BxDF.hlsli
     assets/shaders/PathTracer/PathTracerSample.rgen

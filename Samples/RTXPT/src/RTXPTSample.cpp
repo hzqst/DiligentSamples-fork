@@ -32,6 +32,7 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 
 namespace Diligent
@@ -41,7 +42,14 @@ namespace
 {
 
 constexpr float       kDefaultCameraNearPlane = 1.0f;
+constexpr float       kDefaultCameraFarPlane   = 10000.0f;
 constexpr float       kMinClipPlaneSeparation = 1e-3f;
+constexpr int         kMaxBounceSliderValue   = 48;
+constexpr bool        kDefaultToneMappingAutoExposure         = false;
+constexpr float       kDefaultToneMappingExposureCompensation = 0.0f;
+constexpr float       kDefaultToneMappingExposureValue        = 0.0f;
+constexpr float       kDefaultToneMappingExposureValueMin     = -16.0f;
+constexpr float       kDefaultToneMappingExposureValueMax     = 16.0f;
 constexpr const char* kPreferredSceneName     = "bistro-programmer-art.scene.json";
 constexpr const char* kSceneFileSuffix        = ".scene.json";
 
@@ -178,6 +186,21 @@ void SanitizeCameraClipPlanes(float& NearPlane, float& FarPlane)
         FarPlane = NearPlane + kMinClipPlaneSeparation;
 }
 
+void ResetToneMappingSettings(RTXPTReferenceUIState& UI)
+{
+    UI.ToneMappingAutoExposure         = kDefaultToneMappingAutoExposure;
+    UI.ToneMappingExposureCompensation = kDefaultToneMappingExposureCompensation;
+    UI.ToneMappingExposureValue        = kDefaultToneMappingExposureValue;
+    UI.ToneMappingExposureValueMin     = kDefaultToneMappingExposureValueMin;
+    UI.ToneMappingExposureValueMax     = kDefaultToneMappingExposureValueMax;
+}
+
+float ComputeToneMappingExposureScale(const RTXPTReferenceUIState& UI)
+{
+    const float ExposureValue = UI.ToneMappingAutoExposure ? 0.0f : UI.ToneMappingExposureValue;
+    return std::pow(2.0f, UI.ToneMappingExposureCompensation - ExposureValue);
+}
+
 } // namespace
 
 SampleBase* CreateSample()
@@ -214,6 +237,11 @@ void RTXPTSample::ResetSceneDependentResources()
     m_RayTracingPass.Reset();
 
     m_SelectedSceneCamera   = -1;
+    m_EnableSceneAnimations = true;
+    m_CameraVerticalFov     = PI_F / 4.0f;
+    m_CameraNearPlane       = kDefaultCameraNearPlane;
+    m_CameraFarPlane        = kDefaultCameraFarPlane;
+    ResetToneMappingSettings(m_ReferenceUI);
     m_AccumulationFrame     = 0;
     m_AccumulationActive    = false;
     m_HasLastCameraMatrices = false;
@@ -230,7 +258,7 @@ bool RTXPTSample::RebuildSceneDependentResources()
     }
 
     bool ResourcesReady = true;
-    if (m_Scene.HasSkinnedGeometry() && m_Scene.HasAnimation())
+    if (m_EnableSceneAnimations && m_Scene.HasSkinnedGeometry() && m_Scene.HasAnimation())
     {
         // Seed the initial animated pose before scene-dependent resources snapshot transforms.
         m_Scene.Update(0.0, 0.0);
@@ -255,6 +283,8 @@ bool RTXPTSample::RebuildSceneDependentResources()
                                             &m_SkinnedGeometry,
                                             m_FeatureCaps.RayTracing);
 
+    if (ResourcesReady)
+        m_Scene.ClearGeometryDirty();
     CreatePhase4Passes();
     return ResourcesReady;
 }
@@ -270,19 +300,45 @@ bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload
     m_CurrentSceneName = SceneName;
     ResetSceneDependentResources();
 
-    const bool SceneLoaded    = m_Scene.LoadScene(m_pDevice, m_pImmediateContext, m_AssetsRoot, SceneName);
+    const bool SceneLoaded = m_Scene.LoadScene(m_pDevice, m_pImmediateContext, m_AssetsRoot, SceneName);
+    if (SceneLoaded)
+    {
+        const RTXPTSceneSettings& SceneSettings = m_Scene.GetSceneGraphData().Settings;
+        if (SceneSettings.EnableAnimations.has_value())
+            m_EnableSceneAnimations = SceneSettings.EnableAnimations.value();
+        if (SceneSettings.MaxBounces.has_value())
+            m_MaxBounces = SceneSettings.MaxBounces.value();
+    }
+
     const bool ResourcesReady = SceneLoaded && RebuildSceneDependentResources();
     if (!SceneLoaded)
         CreatePhase4Passes();
 
-    if (SceneLoaded && m_Scene.GetCameraCount() > 0)
+    auto InitializeFreeFlightCamera = [this]() {
+        m_CameraVerticalFov = PI_F / 4.0f;
+        m_CameraNearPlane   = kDefaultCameraNearPlane;
+        m_CameraFarPlane    = kDefaultCameraFarPlane;
+        InitializeCamera();
+        m_SelectedSceneCamera = -1;
+    };
+
+    if (SceneLoaded)
     {
-        ApplySceneCamera(0);
+        const RTXPTSceneSettings& SceneSettings = m_Scene.GetSceneGraphData().Settings;
+        if (SceneSettings.StartingCamera.has_value())
+        {
+            const int StartingCamera = SceneSettings.StartingCamera.value();
+            if (StartingCamera < 0 || !ApplySceneCamera(static_cast<Uint32>(StartingCamera)))
+                InitializeFreeFlightCamera();
+        }
+        else if (m_Scene.GetCameraCount() == 0 || !ApplySceneCamera(0))
+        {
+            InitializeFreeFlightCamera();
+        }
     }
     else
     {
-        InitializeCamera();
-        m_SelectedSceneCamera = -1;
+        InitializeFreeFlightCamera();
     }
 
     m_HasLastCameraMatrices = false;
@@ -338,6 +394,12 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
         m_CameraNearPlane = pCamera->NearPlane;
         m_CameraFarPlane  = pCamera->FarPlane;
     }
+
+    m_ReferenceUI.ToneMappingAutoExposure         = pCamera->EnableAutoExposure.value_or(kDefaultToneMappingAutoExposure);
+    m_ReferenceUI.ToneMappingExposureCompensation = pCamera->ExposureCompensation.value_or(kDefaultToneMappingExposureCompensation);
+    m_ReferenceUI.ToneMappingExposureValue        = pCamera->ExposureValue.value_or(kDefaultToneMappingExposureValue);
+    m_ReferenceUI.ToneMappingExposureValueMin     = pCamera->ExposureValueMin.value_or(kDefaultToneMappingExposureValueMin);
+    m_ReferenceUI.ToneMappingExposureValueMax     = pCamera->ExposureValueMax.value_or(kDefaultToneMappingExposureValueMax);
 
     m_Camera.SetPos(pCamera->Position);
     m_Camera.SetLookAt(pCamera->Position + Forward);
@@ -423,6 +485,7 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     // converged image is identical to the filter-on image (only per-sample variance differs).
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
         m_ReferenceUI.ReferenceFireflyFilterEnabled ? m_ReferenceUI.ReferenceFireflyFilterThreshold : 0.0f;
+    m_LastFrameConstants.ptConsts.exposureScale = ComputeToneMappingExposureScale(m_ReferenceUI);
 
     if (m_FrameConstantsCB)
     {
@@ -588,18 +651,21 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
     m_LastCameraProj        = m_Camera.GetProjMatrix();
     m_HasLastCameraMatrices = true;
 
-    m_Scene.Update(CurrTime, ElapsedTime);
-    if (m_Scene.IsGeometryDirty() && m_SkinnedGeometry.HasSkinnedGeometry() && m_SkinnedGeometry.IsReady())
+    if (m_EnableSceneAnimations)
     {
-        const RTXPTSceneGraphData& SceneData = m_Scene.GetSceneGraphData();
-        const bool SkinningExecuted = m_SkinnedGeometry.Update(m_pImmediateContext, SceneData);
-        const bool ASUpdated =
-            SkinningExecuted &&
-            m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, SceneData, m_SkinnedGeometry);
-        if (ASUpdated)
+        m_Scene.Update(CurrTime, ElapsedTime);
+        if (m_Scene.IsGeometryDirty() && m_SkinnedGeometry.HasSkinnedGeometry() && m_SkinnedGeometry.IsReady())
         {
-            RequestAccumulationReset("Skinned geometry updated");
-            m_Scene.ClearGeometryDirty();
+            const RTXPTSceneGraphData& SceneData        = m_Scene.GetSceneGraphData();
+            const bool                 SkinningExecuted = m_SkinnedGeometry.Update(m_pImmediateContext, SceneData);
+            const bool ASUpdated =
+                SkinningExecuted &&
+                m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, SceneData, m_SkinnedGeometry);
+            if (ASUpdated)
+            {
+                RequestAccumulationReset("Skinned geometry updated");
+                m_Scene.ClearGeometryDirty();
+            }
         }
     }
     UpdateFrameConstants(CurrTime);
@@ -676,7 +742,7 @@ void RTXPTSample::UpdateUI()
             PlaceholderTooltip("Per-sample pixel jitter is always enabled in the reference path tracer.");
 
             int MaxBouncesUI = static_cast<int>(m_MaxBounces);
-            if (ResetOnChange(ImGui::SliderInt("Max bounces", &MaxBouncesUI, 1, 16), "Max bounces changed"))
+            if (ResetOnChange(ImGui::SliderInt("Max bounces", &MaxBouncesUI, 1, kMaxBounceSliderValue), "Max bounces changed"))
                 m_MaxBounces = static_cast<Uint32>(MaxBouncesUI);
 
             // Max diffuse bounces: placeholder until the BSDF/sampler work (Phase R5).

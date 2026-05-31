@@ -368,50 +368,68 @@ std::vector<std::string> LoadRTXPTMaterialNames(const std::string& ModelPath, si
     return MaterialNames;
 }
 
-void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera>& Cameras)
+void AppendSceneCameras(const nlohmann::json& Node, const float4x4& ParentTransform, std::vector<RTXPTSceneCamera>& Cameras)
 {
     if (!Node.is_object())
         return;
 
+    const float4x4 LocalTransform  = MakeRTXPTNodeTransform(Node);
+    const float4x4 GlobalTransform = LocalTransform * ParentTransform;
+
     const auto TypeIt = Node.find("type");
-    const bool IsPerspectiveCamera =
-        TypeIt != Node.end() && TypeIt->is_string() &&
-        (TypeIt->get<std::string>() == "PerspectiveCamera" ||
-         TypeIt->get<std::string>() == "PerspectiveCameraEx");
+    const std::string TypeName =
+        TypeIt != Node.end() && TypeIt->is_string() ? TypeIt->get<std::string>() : std::string{};
+    const bool IsPerspectiveCamera = TypeName == "PerspectiveCamera" || TypeName == "PerspectiveCameraEx";
     if (IsPerspectiveCamera)
     {
-        float Translation[3] = {};
-        float Rotation[4]    = {0.0f, 0.0f, 0.0f, 1.0f};
-        if (ReadRTXPTFloatArray(Node, "translation", Translation, sizeof(Translation) / sizeof(Translation[0])) &&
-            ReadRTXPTFloatArray(Node, "rotation", Rotation, sizeof(Rotation) / sizeof(Rotation[0])))
+        RTXPTSceneCamera Camera;
+
+        Camera.Name = ReadRTXPTOptionalString(Node, "name");
+        if (Camera.Name.empty())
+            Camera.Name = std::string{"Camera "} + std::to_string(Cameras.size());
+
+        float3      Position;
+        QuaternionF Rotation;
+        float3      Scale;
+        if (!GlobalTransform.Decompose(Position, Rotation, Scale))
         {
-            RTXPTSceneCamera Camera;
-
-            Camera.Name = ReadRTXPTOptionalString(Node, "name");
-            if (Camera.Name.empty())
-                Camera.Name = std::string{"Camera "} + std::to_string(Cameras.size());
-
-            Camera.Position = float3{Translation[0], Translation[1], Translation[2]};
-            Camera.Rotation = QuaternionF{Rotation[0], Rotation[1], Rotation[2], Rotation[3]};
-
-            const float RotationLength = length(Camera.Rotation.q);
-            Camera.Rotation            = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
-
-            Camera.VerticalFov = ReadRTXPTOptionalFloat(Node, "verticalFov", Camera.VerticalFov);
-
-            const auto NearPlaneIt = Node.find("zNear");
-            const auto FarPlaneIt  = Node.find("zFar");
-            const bool HasZNear    = NearPlaneIt != Node.end() && NearPlaneIt->is_number();
-            const bool HasZFar     = FarPlaneIt != Node.end() && FarPlaneIt->is_number();
-            if (HasZNear)
-                Camera.NearPlane = NearPlaneIt->get<float>();
-            if (HasZFar)
-                Camera.FarPlane = FarPlaneIt->get<float>();
-            Camera.HasExplicitClipPlanes = HasZNear && HasZFar;
-
-            if (Camera.VerticalFov > 0.0f && Camera.NearPlane > 0.0f && Camera.FarPlane > Camera.NearPlane)
-                Cameras.emplace_back(std::move(Camera));
+            Position = float3{GlobalTransform._41, GlobalTransform._42, GlobalTransform._43};
+            Rotation = QuaternionF{};
         }
+        Camera.Position = Position;
+        Camera.Rotation = Rotation;
+
+        Camera.VerticalFov = ReadRTXPTOptionalFloat(Node, "verticalFov", Camera.VerticalFov);
+
+        const auto NearPlaneIt = Node.find("zNear");
+        const auto FarPlaneIt  = Node.find("zFar");
+        const bool HasZNear    = NearPlaneIt != Node.end() && NearPlaneIt->is_number();
+        const bool HasZFar     = FarPlaneIt != Node.end() && FarPlaneIt->is_number();
+        if (HasZNear)
+            Camera.NearPlane = NearPlaneIt->get<float>();
+        if (HasZFar)
+            Camera.FarPlane = FarPlaneIt->get<float>();
+        Camera.HasExplicitClipPlanes = HasZNear && HasZFar;
+
+        const auto EnableAutoExposureIt = Node.find("enableAutoExposure");
+        const auto ExposureCompIt       = Node.find("exposureCompensation");
+        const auto ExposureValueIt      = Node.find("exposureValue");
+        const auto ExposureValueMinIt   = Node.find("exposureValueMin");
+        const auto ExposureValueMaxIt   = Node.find("exposureValueMax");
+
+        if (EnableAutoExposureIt != Node.end() && EnableAutoExposureIt->is_boolean())
+            Camera.EnableAutoExposure = EnableAutoExposureIt->get<bool>();
+        if (ExposureCompIt != Node.end() && ExposureCompIt->is_number())
+            Camera.ExposureCompensation = ExposureCompIt->get<float>();
+        if (ExposureValueIt != Node.end() && ExposureValueIt->is_number())
+            Camera.ExposureValue = ExposureValueIt->get<float>();
+        if (ExposureValueMinIt != Node.end() && ExposureValueMinIt->is_number())
+            Camera.ExposureValueMin = ExposureValueMinIt->get<float>();
+        if (ExposureValueMaxIt != Node.end() && ExposureValueMaxIt->is_number())
+            Camera.ExposureValueMax = ExposureValueMaxIt->get<float>();
+
+        if (Camera.VerticalFov > 0.0f && Camera.NearPlane > 0.0f && Camera.FarPlane > Camera.NearPlane)
+            Cameras.emplace_back(std::move(Camera));
     }
 
     const auto ChildrenIt = Node.find("children");
@@ -419,7 +437,7 @@ void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera
         return;
 
     for (const auto& Child : *ChildrenIt)
-        AppendSceneCameras(Child, Cameras);
+        AppendSceneCameras(Child, GlobalTransform, Cameras);
 }
 
 std::string GetCameraNameFromTarget(const std::string& Target)
@@ -604,6 +622,26 @@ bool AppendRTXPTGraphNode(RTXPTSceneGraphData& Data,
     {
         Data.Settings.HasSampleSettings  = true;
         Data.Settings.SampleSettingsJson = NodeJson;
+
+        const auto StartingCameraIt = NodeJson.find("startingCamera");
+        if (StartingCameraIt != NodeJson.end() && StartingCameraIt->is_number_integer())
+            Data.Settings.StartingCamera = StartingCameraIt->get<int>();
+
+        const auto EnableAnimationsIt = NodeJson.find("enableAnimations");
+        if (EnableAnimationsIt != NodeJson.end() && EnableAnimationsIt->is_boolean())
+            Data.Settings.EnableAnimations = EnableAnimationsIt->get<bool>();
+
+        const auto MaxBouncesIt = NodeJson.find("maxBounces");
+        if (MaxBouncesIt != NodeJson.end() && MaxBouncesIt->is_number_integer())
+        {
+            const int MaxBounces = MaxBouncesIt->get<int>();
+            if (MaxBounces >= 0)
+                Data.Settings.MaxBounces = static_cast<Uint32>(MaxBounces);
+        }
+        else if (MaxBouncesIt != NodeJson.end() && MaxBouncesIt->is_number_unsigned())
+        {
+            Data.Settings.MaxBounces = MaxBouncesIt->get<Uint32>();
+        }
     }
     else if (StoredNode.Type == "GameSettings")
     {
@@ -767,16 +805,11 @@ bool RTXPTScene::LoadSceneCameras(const std::string& ScenePath)
         return false;
 
     for (const auto& Node : *GraphIt)
-        AppendSceneCameras(Node, m_Cameras);
+        AppendSceneCameras(Node, float4x4::Identity(), m_Cameras);
 
     RTXPTSceneCamera CameraDefaults;
     if (!m_Cameras.empty())
-    {
-        CameraDefaults.VerticalFov           = m_Cameras.front().VerticalFov;
-        CameraDefaults.NearPlane             = m_Cameras.front().NearPlane;
-        CameraDefaults.FarPlane              = m_Cameras.front().FarPlane;
-        CameraDefaults.HasExplicitClipPlanes = m_Cameras.front().HasExplicitClipPlanes;
-    }
+        CameraDefaults = m_Cameras.front();
     AppendAnimatedCameras(SceneJsonResult.Json, CameraDefaults, m_Cameras);
 
     return !m_Cameras.empty();

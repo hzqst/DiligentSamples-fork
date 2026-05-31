@@ -27,6 +27,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,11 @@ struct RTXPTSceneCamera
     float       NearPlane             = 0.1f;
     float       FarPlane              = 10000.0f;
     bool        HasExplicitClipPlanes = false;
+    std::optional<bool>  EnableAutoExposure;
+    std::optional<float> ExposureCompensation;
+    std::optional<float> ExposureValue;
+    std::optional<float> ExposureValueMin;
+    std::optional<float> ExposureValueMax;
 };
 
 struct RTXPTSceneGeometryStats

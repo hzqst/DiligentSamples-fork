@@ -21,7 +21,7 @@ struct PathTracerConstants
     uint  maxNEEBounceCount;      // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
     uint  analyticLightCount;     // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
     float fireflyFilterThreshold; // G1 adaptive firefly filter: soft-cap level; 0 disables the filter entirely.
-    uint  _padding1;
+    float exposureScale;          // Scene camera exposure multiplier applied before the in-raygen ACES curve.
 };
 
 // Mirrors Diligent::SampleConstants in RTXPTSample.hpp (must keep order and layout in sync).

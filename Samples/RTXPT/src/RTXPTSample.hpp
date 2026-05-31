@@ -71,16 +71,15 @@ struct PathTracerConstants
     Uint32 maxNEEBounceCount      = 16;   // Default covers the full bounce budget (NEE at every vertex); a lower value is an optional perf/TDR clamp.
     Uint32 analyticLightCount     = 0;    // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
     float  fireflyFilterThreshold = 0.0f; // G1 adaptive firefly filter: soft-cap level; 0 disables the filter (set from UI each frame).
-    Uint32 _padding1              = 0;
+    float  exposureScale          = 1.0f; // Scene camera exposure multiplier applied before the in-raygen ACES curve.
 };
 static_assert(sizeof(PathTracerConstants) == 48, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
 // (D:/RTXPT-fork/Rtxpt/SampleUI.h). These fields back the present-but-disabled placeholder
-// controls in UpdateUI(): each one is implemented in a later phase (R1/R3/R4/R5/R6 or the
-// separate tone-mapping Phase 6) and is intentionally NOT yet wired into
-// PathTracerConstants / the GPU frame constants. Wiring a field in is part of the phase
-// that enables its control, at which point the matching BeginDisabled() guard is removed.
+// controls in UpdateUI(): most are implemented in later phases (R1/R3/R4/R5/R6 or the
+// separate tone-mapping Phase 6). Scene camera exposure metadata is applied through
+// PathTracerConstants::exposureScale while the full tone-mapping pass remains Phase 6 work.
 struct RTXPTReferenceUIState
 {
     bool  AccumulationAA                  = true;  // Jitter AA: always on in our port (no toggle yet).
@@ -89,6 +88,11 @@ struct RTXPTReferenceUIState
     float ReferenceFireflyFilterThreshold = 5.0f;  // Phase R1 (G1).
     int   DiffuseBounceCount              = 2;     // Phase R5 (G9): separate diffuse-bounce limit.
     bool  EnableToneMapping               = true;  // Phase 6: configurable tone-map pass (ACES is always applied now).
+    bool  ToneMappingAutoExposure         = false; // Phase 6: scene camera exposure metadata.
+    float ToneMappingExposureCompensation = 0.0f;  // Phase 6.
+    float ToneMappingExposureValue        = 0.0f;  // Phase 6.
+    float ToneMappingExposureValueMin     = -16.0f; // Phase 6.
+    float ToneMappingExposureValueMax     = 16.0f;  // Phase 6.
     int   NEEType                         = 1;     // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
     int   NEECandidateSamples             = 5;     // Phase R3 (G5): RIS candidate count.
     int   NEEFullSamples                  = 1;     // Phase R3 (G5): visibility-tested full samples.
@@ -168,6 +172,7 @@ private:
     float                       m_EnvIntensity             = 1.0f;
     float                       m_LightIntensityScale      = 1.0f;
     int                         m_SelectedSceneCamera      = -1;
+    bool                        m_EnableSceneAnimations    = true;
     bool                        m_EnableDebugComputePass   = false;
     bool                        m_ResetAccumulationPending = true;
     bool                        m_AccumulationActive       = false;

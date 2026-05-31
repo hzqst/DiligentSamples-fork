@@ -317,7 +317,7 @@ void main()
     u_AccumulationBuffer[pixel] = float4(accumulated, 1.0);
 
     // OutputColor is the rgba8 image consumed by the existing blit/compute chain.
-    u_Output[pixel] = float4(ToneMapACES(accumulated), 1.0);
+    u_Output[pixel] = float4(ToneMapACES(accumulated * g_Const.ptConsts.exposureScale), 1.0);
 }
 
 // TODO(RTXPT-Port Phase R6): Add transmission / nested dielectrics to the BSDF (currently opaque diffuse + GGX specular).

@@ -252,7 +252,7 @@ Raygen locals become camelCase:
 | `PathTracerConstants` | `LightIntensityScale` | `lightIntensityScale` |
 | `PathTracerConstants` | `MaxNEEBounces` | `maxNEEBounceCount` |
 | `PathTracerConstants` | `AnalyticLightCount` | `analyticLightCount` |
-| `PathTracerConstants` | `Padding1` / `Padding2` | `_padding0` / `_padding1` |
+| `PathTracerConstants` | `Padding1` / `Padding2` | `_padding0` / `exposureScale` |
 | `SampleConstants` | `ViewProj` | `viewProj` |
 | `SampleConstants` | `ViewProjInv` | `viewProjInv` |
 | `SampleConstants` | `CameraPosition_Time` | `cameraPositionAndTime` |

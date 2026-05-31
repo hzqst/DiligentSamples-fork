@@ -7,6 +7,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -103,10 +104,13 @@ struct RTXPTSceneLightMetadata
 
 struct RTXPTSceneSettings
 {
-    bool           HasSampleSettings = false;
-    bool           HasGameSettings   = false;
-    nlohmann::json SampleSettingsJson;
-    nlohmann::json GameSettingsJson;
+    bool                  HasSampleSettings = false;
+    bool                  HasGameSettings   = false;
+    std::optional<int>    StartingCamera;
+    std::optional<bool>   EnableAnimations;
+    std::optional<Uint32> MaxBounces;
+    nlohmann::json        SampleSettingsJson;
+    nlohmann::json        GameSettingsJson;
 };
 
 struct RTXPTSceneAdapterStats

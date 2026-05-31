@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "BasicMath.hpp"
+#include "Buffer.h"
 #include "DeviceContext.h"
 #include "EngineFactory.h"
 #include "RefCntAutoPtr.hpp"
@@ -41,6 +42,7 @@
 
 #include "RTXPTLightsBaker.hpp"
 #include "RTXPTFrameConstants.hpp"
+#include "RTXPTEnvMapBakerPass.hpp"
 #include "RTXPTSceneGraph.hpp"
 
 namespace Diligent
@@ -125,6 +127,9 @@ private:
     bool PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext* pContext, const RTXPTEnvMapSettings& Settings);
     bool CreateImportanceMaps(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory,
                               const RTXPTEnvMapSettings& Settings, bool ComputeSupported);
+    bool CreateImportanceTextures(IRenderDevice* pDevice, Uint32 Resolution);
+    bool DispatchImportanceBuild(IDeviceContext* pContext, Uint32 Resolution);
+    bool DispatchImportanceReduce(IDeviceContext* pContext, Uint32 Resolution, Uint32 MipLevels);
     bool CreateFallbackTextures(IRenderDevice* pDevice);
     bool CreateSamplers(IRenderDevice* pDevice);
     void UpdateConstants(const RTXPTEnvMapSettings& Settings);
@@ -136,6 +141,9 @@ private:
     RefCntAutoPtr<ITexture>     m_FallbackImportanceMap;
     RefCntAutoPtr<ITexture>     m_FallbackRadianceMap;
     RefCntAutoPtr<ITexture>     m_FallbackBRDFLUT;
+    RefCntAutoPtr<IBuffer>      m_ImportanceConstants;
+    RefCntAutoPtr<ITexture>     m_ImportanceMap;
+    RefCntAutoPtr<ITexture>     m_RadianceMap;
     RefCntAutoPtr<ITextureView> m_EnvironmentMapSRV;
     RefCntAutoPtr<ITextureView> m_DiffuseIrradianceSRV;
     RefCntAutoPtr<ITextureView> m_ImportanceMapSRV;
@@ -144,6 +152,8 @@ private:
     RefCntAutoPtr<ISampler>     m_EnvironmentSampler;
     RefCntAutoPtr<ISampler>     m_ImportanceSampler;
     std::unique_ptr<class PBR_Renderer> m_IBLPrecompute;
+    RTXPTEnvMapBakerPass               m_BuildImportanceBasePass;
+    RTXPTEnvMapBakerPass               m_ReduceImportanceMipPass;
 
     RTXPTEnvMapConstants       m_Constants;
     LightsBakerEnvMapParamsCPU m_LightsBakerParams;

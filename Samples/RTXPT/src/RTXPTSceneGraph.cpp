@@ -93,7 +93,8 @@ float4x4 MakeRTXPTNodeTransform(const nlohmann::json& Node)
             QuaternionF       Qx{std::sin(Euler[0] * 0.5f), 0.0f, 0.0f, std::cos(Euler[0] * 0.5f)};
             QuaternionF       Qy{0.0f, std::sin(Euler[1] * 0.5f), 0.0f, std::cos(Euler[1] * 0.5f)};
             QuaternionF       Qz{0.0f, 0.0f, std::sin(Euler[2] * 0.5f), std::cos(Euler[2] * 0.5f)};
-            const QuaternionF Q = Qx * Qy * Qz;
+            // Donut scene graph Euler order.
+            const QuaternionF Q = Qz * Qy * Qx;
             Rotation[0]        = Q.q.x;
             Rotation[1]        = Q.q.y;
             Rotation[2]        = Q.q.z;

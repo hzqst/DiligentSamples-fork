@@ -884,6 +884,18 @@ void RTXPTSample::UpdateUI()
             RequestAccumulationReset("Camera clip planes changed");
         }
 
+        const RTXPTSceneAdapterStats& AdapterStats = m_Scene.GetAdapterStats();
+        ImGui::Text("Graph nodes: %u", AdapterStats.GraphNodeCount);
+        ImGui::Text("Model assets: %u", AdapterStats.ModelAssetCount);
+        ImGui::Text("Model instances: %u", AdapterStats.ModelInstanceCount);
+        ImGui::Text("Material extensions: %u", AdapterStats.MaterialExtensionCount);
+        ImGui::Text("Material fallbacks: %u", AdapterStats.MaterialFallbackCount);
+        ImGui::Text("Directional lights: %u", AdapterStats.DirectionalLightCount);
+        ImGui::Text("Point lights: %u", AdapterStats.PointLightCount);
+        ImGui::Text("Spot lights: %u", AdapterStats.SpotLightCount);
+        ImGui::Text("Environment lights: %u", AdapterStats.EnvironmentLightCount);
+        ImGui::Text("Unknown typed nodes: %u", AdapterStats.UnknownTypedNodeCount);
+        ImGui::Text("Skinned instances: %u", AdapterStats.SkinnedInstanceCount);
         ImGui::Text("Mesh nodes: %u", m_Scene.GetMeshNodeCount());
         ImGui::Text("Primitives: %u", m_Scene.GetPrimitiveCount());
         ImGui::Text("Materials: %u", m_Materials.GetStats().MaterialCount);

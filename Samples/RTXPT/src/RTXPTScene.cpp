@@ -159,6 +159,35 @@ bool HasAssetSkinnedGeometry(const RTXPTModelAsset& Asset)
     return ComputeGeometryStats(Asset.Model->Scenes[Asset.SceneIndex], *Asset.Model).HasSkinnedGeometry;
 }
 
+std::vector<std::string> LoadRTXPTMaterialNames(const std::string& ModelPath, size_t MaterialCount)
+{
+    std::vector<std::string> MaterialNames(MaterialCount);
+    for (size_t MatIdx = 0; MatIdx < MaterialNames.size(); ++MatIdx)
+        MaterialNames[MatIdx] = "material_" + std::to_string(MatIdx);
+
+    RTXPTJsonLoadResult ModelJson;
+    if (!LoadRTXPTRelaxedJsonFile(ModelPath, ModelJson) || !ModelJson.Json.is_object())
+        return MaterialNames;
+
+    const auto MaterialsIt = ModelJson.Json.find("materials");
+    if (MaterialsIt == ModelJson.Json.end() || !MaterialsIt->is_array())
+        return MaterialNames;
+
+    const size_t Count = std::min(MaterialNames.size(), MaterialsIt->size());
+    for (size_t MatIdx = 0; MatIdx < Count; ++MatIdx)
+    {
+        const nlohmann::json& MaterialJson = (*MaterialsIt)[MatIdx];
+        if (!MaterialJson.is_object())
+            continue;
+
+        const std::string MaterialName = ReadRTXPTOptionalString(MaterialJson, "name");
+        if (!MaterialName.empty())
+            MaterialNames[MatIdx] = MaterialName;
+    }
+
+    return MaterialNames;
+}
+
 void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera>& Cameras)
 {
     if (!Node.is_object())
@@ -372,6 +401,42 @@ bool AppendRTXPTGraphNode(RTXPTSceneGraphData& Data,
         Data.GraphNodes[ParentId].Children.push_back(NodeId);
 
     const RTXPTGraphNode& StoredNode = Data.GraphNodes[NodeId];
+    if (StoredNode.Type == "DirectionalLight" || StoredNode.Type == "PointLight" ||
+        StoredNode.Type == "SpotLight" || StoredNode.Type == "EnvironmentLight")
+    {
+        RTXPTSceneLightMetadata Light;
+        Light.Name            = StoredNode.Name;
+        Light.Type            = StoredNode.Type;
+        Light.GlobalTransform = StoredNode.GlobalTransform;
+        Light.RawJson         = NodeJson;
+        Data.Lights.emplace_back(std::move(Light));
+
+        if (StoredNode.Type == "DirectionalLight")
+            ++Data.Stats.DirectionalLightCount;
+        else if (StoredNode.Type == "PointLight")
+            ++Data.Stats.PointLightCount;
+        else if (StoredNode.Type == "SpotLight")
+            ++Data.Stats.SpotLightCount;
+        else
+            ++Data.Stats.EnvironmentLightCount;
+    }
+    else if (StoredNode.Type == "SampleSettings")
+    {
+        Data.Settings.HasSampleSettings  = true;
+        Data.Settings.SampleSettingsJson = NodeJson;
+    }
+    else if (StoredNode.Type == "GameSettings")
+    {
+        Data.Settings.HasGameSettings  = true;
+        Data.Settings.GameSettingsJson = NodeJson;
+    }
+    else if (!StoredNode.Type.empty() &&
+             StoredNode.Type != "PerspectiveCamera" &&
+             StoredNode.Type != "PerspectiveCameraEx")
+    {
+        ++Data.Stats.UnknownTypedNodeCount;
+    }
+
     if (StoredNode.ModelAssetId != InvalidRTXPTSceneId)
     {
         const RTXPTModelAsset& Asset = Data.ModelAssets[StoredNode.ModelAssetId];
@@ -586,6 +651,7 @@ bool RTXPTScene::LoadScene(IRenderDevice*     pDevice,
         if (Asset.SceneIndex >= Asset.Model->Scenes.size())
             Asset.SceneIndex = 0;
         Asset.Model->ComputeTransforms(Asset.SceneIndex, Asset.StaticTransforms);
+        Asset.MaterialNames = LoadRTXPTMaterialNames(Asset.ResolvedPath, Asset.Model->Materials.size());
         NewData.ModelAssets.emplace_back(std::move(Asset));
     }
 
@@ -593,6 +659,40 @@ bool RTXPTScene::LoadScene(IRenderDevice*     pDevice,
     {
         if (!AppendRTXPTGraphNode(NewData, NodeJson, InvalidRTXPTSceneId, float4x4::Identity()))
             return false;
+    }
+
+    for (RTXPTModelAsset& Asset : NewData.ModelAssets)
+    {
+        if (!Asset.Model)
+            continue;
+
+        Asset.MaterialRemap.resize(Asset.Model->Materials.size(), 0);
+        for (Uint32 MatIdx = 0; MatIdx < Asset.Model->Materials.size(); ++MatIdx)
+        {
+            const std::string MaterialName = MatIdx < Asset.MaterialNames.size() && !Asset.MaterialNames[MatIdx].empty() ?
+                Asset.MaterialNames[MatIdx] :
+                ("material_" + std::to_string(MatIdx));
+
+            RTXPTMaterialExtension Ext;
+            Ext.ModelName    = Asset.ModelName;
+            Ext.MaterialName = MaterialName;
+
+            for (const std::string& Candidate : GetRTXPTMaterialCandidates(m_AssetsRoot, SceneName, Asset.ModelName, MaterialName))
+            {
+                if (!FileSystem::FileExists(Candidate.c_str()))
+                    continue;
+
+                RTXPTJsonLoadResult MaterialJson;
+                if (LoadRTXPTRelaxedJsonFile(Candidate, MaterialJson) && MaterialJson.Json.is_object())
+                {
+                    Ext = ParseRTXPTMaterialExtension(Candidate, Asset.ModelName, MaterialName, MaterialJson.Json);
+                    break;
+                }
+            }
+
+            Asset.MaterialRemap[MatIdx] = static_cast<Uint32>(NewData.MaterialExtensions.size());
+            NewData.MaterialExtensions.emplace_back(std::move(Ext));
+        }
     }
 
     for (const RTXPTModelInstance& Instance : NewData.ModelInstances)
@@ -613,6 +713,14 @@ bool RTXPTScene::LoadScene(IRenderDevice*     pDevice,
     NewData.Stats.ModelAssetCount    = static_cast<Uint32>(NewData.ModelAssets.size());
     NewData.Stats.GraphNodeCount     = static_cast<Uint32>(NewData.GraphNodes.size());
     NewData.Stats.ModelInstanceCount = static_cast<Uint32>(NewData.ModelInstances.size());
+    NewData.Stats.MaterialCount      = static_cast<Uint32>(NewData.MaterialExtensions.size());
+    for (const RTXPTMaterialExtension& Ext : NewData.MaterialExtensions)
+    {
+        if (Ext.Loaded)
+            ++NewData.Stats.MaterialExtensionCount;
+        else
+            ++NewData.Stats.MaterialFallbackCount;
+    }
     for (const RTXPTModelInstance& Instance : NewData.ModelInstances)
     {
         if (Instance.ModelAssetId < NewData.ModelAssets.size() &&

@@ -34,6 +34,50 @@ std::string GetRTXPTModelNameFromPath(const std::string& ModelPath)
     return Dot != std::string::npos && Dot > Start ? ModelPath.substr(Start, Dot - Start) : ModelPath.substr(Start);
 }
 
+RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string& FilePath,
+                                                   const std::string& ModelName,
+                                                   const std::string& MaterialName,
+                                                   const nlohmann::json& Json)
+{
+    RTXPTMaterialExtension Ext;
+    Ext.FilePath     = FilePath;
+    Ext.ModelName    = ModelName;
+    Ext.MaterialName = MaterialName;
+    Ext.Loaded       = true;
+    Ext.RawJson      = Json;
+
+    float BaseColor[3] = {1.0f, 1.0f, 1.0f};
+    if (ReadRTXPTFloatArray(Json, "BaseOrDiffuseColor", BaseColor, 3))
+        Ext.BaseColorFactor = float4{BaseColor[0], BaseColor[1], BaseColor[2], ReadRTXPTOptionalFloat(Json, "Opacity", 1.0f)};
+
+    float Emissive[3] = {0.0f, 0.0f, 0.0f};
+    if (ReadRTXPTFloatArray(Json, "EmissiveColor", Emissive, 3))
+    {
+        Ext.EmissiveIntensity = ReadRTXPTOptionalFloat(Json, "EmissiveIntensity", 1.0f);
+        Ext.EmissiveFactor    = float3{Emissive[0] * Ext.EmissiveIntensity,
+                                        Emissive[1] * Ext.EmissiveIntensity,
+                                        Emissive[2] * Ext.EmissiveIntensity};
+    }
+
+    Ext.MetallicFactor     = ReadRTXPTOptionalFloat(Json, "Metalness", Ext.MetallicFactor);
+    Ext.RoughnessFactor    = ReadRTXPTOptionalFloat(Json, "Roughness", Ext.RoughnessFactor);
+    Ext.AlphaCutoff        = ReadRTXPTOptionalFloat(Json, "AlphaCutoff", Ext.AlphaCutoff);
+    Ext.TransmissionFactor = ReadRTXPTOptionalFloat(Json, "TransmissionFactor", Ext.TransmissionFactor);
+    Ext.IoR                = ReadRTXPTOptionalFloat(Json, "IoR", Ext.IoR);
+
+    Ext.EnableAlphaTesting                      = Json.value("EnableAlphaTesting", Ext.EnableAlphaTesting);
+    Ext.EnableBaseTexture                       = Json.value("EnableBaseTexture", Ext.EnableBaseTexture);
+    Ext.EnableEmissiveTexture                   = Json.value("EnableEmissiveTexture", Ext.EnableEmissiveTexture);
+    Ext.EnableNormalTexture                     = Json.value("EnableNormalTexture", Ext.EnableNormalTexture);
+    Ext.EnableOcclusionRoughnessMetallicTexture = Json.value("EnableOcclusionRoughnessMetallicTexture",
+                                                              Ext.EnableOcclusionRoughnessMetallicTexture);
+    Ext.EnableTransmission = Json.value("EnableTransmission", Ext.EnableTransmission);
+    Ext.ThinSurface        = Json.value("ThinSurface", Ext.ThinSurface);
+    Ext.SkipRender         = Json.value("SkipRender", Ext.SkipRender);
+
+    return Ext;
+}
+
 float4x4 MakeRTXPTNodeTransform(const nlohmann::json& Node)
 {
     float Translation[3] = {0.0f, 0.0f, 0.0f};

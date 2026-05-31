@@ -1,4 +1,4 @@
-#include "LightingTypes.hlsli"
+#include "Lighting/LightingTypes.hlsli"
 
 StructuredBuffer<LightingControlData> t_LightingControl;
 Buffer<uint>                          t_LightProxyCounters;

@@ -32,7 +32,7 @@ void main(inout DiagnosticPayload Payload)
 
 #else
 
-#include "PathTracerShared.h"
+#include "PathTracerBridge.hlsli"
 #include "Lighting/EnvMap.hlsli"
 
 [shader("miss")]
@@ -43,11 +43,10 @@ void main(inout PathPayload Payload)
     Payload.worldNormal = float3(0.0, 1.0, 0.0);
     Payload.hitFlag     = 0u;
     Payload.baseColor   = float3(0.0, 0.0, 0.0);
-    Payload.emission    = EnvMap::Eval(WorldRayDirection());
-    Payload.metallic    = 0.0;
-    Payload.roughness   = 1.0;
+    EnvMapSampler EnvSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
+    Payload.emission         = EnvSampler.Eval(WorldRayDirection(), 0.0);
+    Payload.metallic         = 0.0;
+    Payload.roughness        = 1.0;
 }
-
-// TODO(RTXPT-Port Phase 5.4): Replace the procedural sky with an importance-sampled HDR environment map (EnvMapBaker) and add environment-map MIS.
 
 #endif

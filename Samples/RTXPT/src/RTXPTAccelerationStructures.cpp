@@ -184,6 +184,15 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
             return false;
         }
 
+        std::vector<Uint8> MaterialAlphaTested(Model.Materials.size(), Uint8{0});
+        for (Uint32 MatIdx = 0; MatIdx < Model.Materials.size(); ++MatIdx)
+        {
+            const GLTF::Material&          Material              = Model.Materials[MatIdx];
+            const RTXPTMaterialExtension*  pExtension            = RTXPTGetMaterialExtension(SceneData, Asset, MatIdx);
+            const bool                     HasBaseColorTexture   = RTXPTMaterialHasBaseColorTexture(Model, Material, pExtension);
+            MaterialAlphaTested[MatIdx] = RTXPTMaterialIsAlphaTested(Material, pExtension, HasBaseColorTexture) ? Uint8{1} : Uint8{0};
+        }
+
         IBuffer* pVertexBuffer = Model.GetVertexBuffer(Position.BufferId, pDevice, pContext);
         if (!HasBindFlag(pVertexBuffer, BIND_RAY_TRACING))
         {
@@ -337,9 +346,8 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
                 BuildData.PrimitiveCount       = TriangleDesc.MaxPrimitiveCount;
                 // Alpha-masked geometry must be non-opaque so the runtime invokes the alpha-test any-hit shader.
                 // Everything else stays opaque to skip any-hit entirely.
-                const bool GeometryAlphaTested =
-                    Primitive.MaterialId < Model.Materials.size() &&
-                    RTXPTMaterialIsAlphaTested(Model.Materials[Primitive.MaterialId]);
+                const bool GeometryAlphaTested = Primitive.MaterialId < MaterialAlphaTested.size() &&
+                    MaterialAlphaTested[Primitive.MaterialId] != 0;
                 BuildData.Flags = GeometryAlphaTested ? RAYTRACING_GEOMETRY_FLAG_NONE : RAYTRACING_GEOMETRY_FLAG_OPAQUE;
                 if (GeometryAlphaTested)
                     ++m_Stats.AlphaTestedGeometryCount;

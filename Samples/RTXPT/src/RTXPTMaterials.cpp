@@ -41,6 +41,20 @@ namespace
 
 constexpr Uint32 InvalidTextureIndex = ~Uint32{0};
 
+RefCntAutoPtr<ITextureView> CreateMaterialTextureView(ITexture* pTexture)
+{
+    if (pTexture == nullptr)
+        return {};
+
+    TextureViewDesc ViewDesc;
+    ViewDesc.ViewType   = TEXTURE_VIEW_SHADER_RESOURCE;
+    ViewDesc.TextureDim = RESOURCE_DIM_TEX_2D_ARRAY;
+
+    RefCntAutoPtr<ITextureView> pSRV;
+    pTexture->CreateView(ViewDesc, &pSRV);
+    return pSRV;
+}
+
 void FillMaterialPTDataFromGLTF(const GLTF::Material& Material, MaterialPTData& Data)
 {
     const GLTF::Material::ShaderAttribs& Attribs = Material.Attribs;
@@ -122,6 +136,50 @@ bool RTXPTMaterialIsAlphaTested(const GLTF::Material& Material)
         Material.GetTextureId(GLTF::DefaultBaseColorTextureAttribId) >= 0;
 }
 
+const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphData& SceneData,
+                                                        const RTXPTModelAsset&     Asset,
+                                                        Uint32                     MaterialId)
+{
+    if (MaterialId >= Asset.MaterialRemap.size())
+        return nullptr;
+
+    const Uint32 ExtensionIdx = Asset.MaterialRemap[MaterialId];
+    if (ExtensionIdx >= SceneData.MaterialExtensions.size())
+        return nullptr;
+
+    return &SceneData.MaterialExtensions[ExtensionIdx];
+}
+
+bool RTXPTMaterialHasBaseColorTexture(const GLTF::Model&             Model,
+                                      const GLTF::Material&          Material,
+                                      const RTXPTMaterialExtension*  pExtension)
+{
+    if (pExtension != nullptr && pExtension->Loaded && !pExtension->EnableBaseTexture)
+        return false;
+
+    const int BaseColorTextureId = Material.GetTextureId(GLTF::DefaultBaseColorTextureAttribId);
+    if (BaseColorTextureId < 0)
+        return false;
+
+    const Uint32 TextureId = static_cast<Uint32>(BaseColorTextureId);
+    if (TextureId >= static_cast<Uint32>(Model.GetTextureCount()))
+        return false;
+
+    RefCntAutoPtr<ITextureView> pSRV = CreateMaterialTextureView(Model.GetTexture(TextureId));
+    return pSRV != nullptr;
+}
+
+bool RTXPTMaterialIsAlphaTested(const GLTF::Material&          Material,
+                                const RTXPTMaterialExtension*  pExtension,
+                                bool                           HasBaseColorTexture)
+{
+    if (!HasBaseColorTexture)
+        return false;
+
+    const bool ExtensionAlphaTested = pExtension != nullptr && pExtension->Loaded && pExtension->EnableAlphaTesting;
+    return Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_MASK || ExtensionAlphaTested;
+}
+
 void RTXPTMaterials::Reset()
 {
     m_MaterialBuffer.Release();
@@ -139,16 +197,7 @@ void RTXPTMaterials::AppendTextureViews(const GLTF::Model& Model, std::vector<Ui
 
     for (Uint32 i = 0; i < ModelTextureCount; ++i)
     {
-        ITexture* pTexture = Model.GetTexture(i);
-        if (pTexture == nullptr)
-            continue;
-
-        TextureViewDesc ViewDesc;
-        ViewDesc.ViewType   = TEXTURE_VIEW_SHADER_RESOURCE;
-        ViewDesc.TextureDim = RESOURCE_DIM_TEX_2D_ARRAY;
-
-        RefCntAutoPtr<ITextureView> pSRV;
-        pTexture->CreateView(ViewDesc, &pSRV);
+        RefCntAutoPtr<ITextureView> pSRV = CreateMaterialTextureView(Model.GetTexture(i));
         if (!pSRV)
             continue;
 
@@ -228,28 +277,28 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
             FillMaterialPTDataFromGLTF(Material, Data);
             RemapMaterialTextureIndices(Data, TextureRemaps[AssetIdx]);
 
-            if (MatIdx < Asset.MaterialRemap.size() && Asset.MaterialRemap[MatIdx] < SceneData.MaterialExtensions.size())
+            const RTXPTMaterialExtension* pExtension = RTXPTGetMaterialExtension(SceneData, Asset, MatIdx);
+            if (pExtension != nullptr && pExtension->Loaded)
             {
-                const RTXPTMaterialExtension& Ext = SceneData.MaterialExtensions[Asset.MaterialRemap[MatIdx]];
-                if (Ext.Loaded)
-                {
-                    Data.baseColorFactor = Ext.BaseColorFactor;
-                    Data.emissiveFactor  = Ext.EmissiveFactor;
-                    Data.alphaCutoff     = Ext.AlphaCutoff;
-                    Data.metallicFactor  = Ext.MetallicFactor;
-                    Data.roughnessFactor = Ext.RoughnessFactor;
-                    if (!Ext.EnableBaseTexture)
-                        Data.flags &= ~(kMaterialFlag_HasBaseColorTexture | kMaterialFlag_AlphaTested);
-                    if (!Ext.EnableEmissiveTexture)
-                        Data.flags &= ~kMaterialFlag_HasEmissiveTexture;
-                    if (!Ext.EnableNormalTexture)
-                        Data.flags &= ~kMaterialFlag_HasNormalTexture;
-                    if (!Ext.EnableOcclusionRoughnessMetallicTexture)
-                        Data.flags &= ~kMaterialFlag_HasMetallicRoughnessTexture;
-                    if (Ext.EnableAlphaTesting)
-                        Data.flags |= kMaterialFlag_AlphaTested;
-                }
+                const RTXPTMaterialExtension& Ext = *pExtension;
+                Data.baseColorFactor             = Ext.BaseColorFactor;
+                Data.emissiveFactor              = Ext.EmissiveFactor;
+                Data.alphaCutoff                 = Ext.AlphaCutoff;
+                Data.metallicFactor              = Ext.MetallicFactor;
+                Data.roughnessFactor             = Ext.RoughnessFactor;
+                if (!Ext.EnableBaseTexture)
+                    Data.flags &= ~kMaterialFlag_HasBaseColorTexture;
+                if (!Ext.EnableEmissiveTexture)
+                    Data.flags &= ~kMaterialFlag_HasEmissiveTexture;
+                if (!Ext.EnableNormalTexture)
+                    Data.flags &= ~kMaterialFlag_HasNormalTexture;
+                if (!Ext.EnableOcclusionRoughnessMetallicTexture)
+                    Data.flags &= ~kMaterialFlag_HasMetallicRoughnessTexture;
             }
+
+            Data.flags &= ~kMaterialFlag_AlphaTested;
+            if (RTXPTMaterialIsAlphaTested(Material, pExtension, (Data.flags & kMaterialFlag_HasBaseColorTexture) != 0u))
+                Data.flags |= kMaterialFlag_AlphaTested;
 
             MaterialData.emplace_back(Data);
         }

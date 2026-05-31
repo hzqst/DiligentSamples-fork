@@ -41,6 +41,8 @@ namespace Diligent
 {
 
 struct RTXPTSceneGraphData;
+struct RTXPTModelAsset;
+struct RTXPTMaterialExtension;
 
 // GPU material record consumed by the reference path tracer (mirrors MaterialPTData in PathTracer/PathTracerShared.h).
 // One entry per GLTF material; the closest-hit / any-hit shaders index it via SubInstanceData::MaterialID.
@@ -88,9 +90,17 @@ constexpr Uint32 kMaterialFlag_HasMetallicRoughnessTexture = 0x8u;
 constexpr Uint32 kMaterialFlag_HasNormalTexture            = 0x10u;
 
 // A material is alpha tested only when it uses ALPHA_MODE_MASK and actually has a base-color texture to
-// sample the alpha from. The acceleration-structure geometry flags and the GPU material flags must agree,
-// so both sides call this single helper.
+// sample the alpha from. This compatibility overload preserves the single-GLTF path behavior.
 bool RTXPTMaterialIsAlphaTested(const GLTF::Material& Material);
+const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphData& SceneData,
+                                                        const RTXPTModelAsset&     Asset,
+                                                        Uint32                     MaterialId);
+bool RTXPTMaterialHasBaseColorTexture(const GLTF::Model&             Model,
+                                      const GLTF::Material&          Material,
+                                      const RTXPTMaterialExtension*  pExtension);
+bool RTXPTMaterialIsAlphaTested(const GLTF::Material&          Material,
+                                const RTXPTMaterialExtension*  pExtension,
+                                bool                           HasBaseColorTexture);
 
 struct RTXPTMaterialStats
 {

@@ -30,7 +30,9 @@
 #include <string>
 #include <vector>
 
+#include "Buffer.h"
 #include "GLTFLoader.hpp"
+#include "RefCntAutoPtr.hpp"
 #include "RTXPTSceneGraph.hpp"
 
 namespace Diligent
@@ -105,6 +107,8 @@ private:
     const RTXPTModelInstance* GetCompatibilityModelInstance() const;
 
     RTXPTSceneGraphData           m_SceneGraph;
+    RefCntAutoPtr<IBuffer>        m_StaticVertexBuffer;
+    RefCntAutoPtr<IBuffer>        m_StaticIndexBuffer;
     GLTF::ModelTransforms         m_Transforms;
     std::vector<RTXPTSceneCamera> m_Cameras;
     std::string                   m_LoadedSceneName;

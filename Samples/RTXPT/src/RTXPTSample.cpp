@@ -221,8 +221,8 @@ void RTXPTSample::ResetSceneDependentResources()
 
 bool RTXPTSample::RebuildSceneDependentResources()
 {
-    const GLTF::Model* pModel = m_Scene.GetModel();
-    if (pModel == nullptr)
+    const RTXPTSceneGraphData& SceneData = m_Scene.GetSceneGraphData();
+    if (SceneData.ModelAssets.empty() || SceneData.ModelInstances.empty())
     {
         ResetSceneDependentResources();
         CreatePhase4Passes();
@@ -230,7 +230,6 @@ bool RTXPTSample::RebuildSceneDependentResources()
     }
 
     bool ResourcesReady = true;
-    const RTXPTSceneGraphData& SceneData = m_Scene.GetSceneGraphData();
     if (m_Scene.HasSkinnedGeometry() && m_Scene.HasAnimation())
     {
         // Seed the initial animated pose before scene-dependent resources snapshot transforms.
@@ -251,10 +250,8 @@ bool RTXPTSample::RebuildSceneDependentResources()
     ResourcesReady &=
         m_AccelerationStructures.BuildScene(m_pDevice,
                                             m_pImmediateContext,
-                                            *pModel,
-                                            m_Scene.GetSceneIndex(),
+                                            SceneData,
                                             m_Scene.GetIndexType(),
-                                            m_Scene.GetTransforms(),
                                             &m_SkinnedGeometry,
                                             m_FeatureCaps.RayTracing);
 
@@ -598,7 +595,7 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
         const bool SkinningExecuted = m_SkinnedGeometry.Update(m_pImmediateContext, SceneData);
         const bool ASUpdated =
             SkinningExecuted &&
-            m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, m_SkinnedGeometry, m_Scene.GetTransforms());
+            m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, SceneData, m_SkinnedGeometry);
         if (ASUpdated)
         {
             RequestAccumulationReset("Skinned geometry updated");

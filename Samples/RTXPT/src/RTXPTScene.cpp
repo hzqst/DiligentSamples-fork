@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -157,6 +158,185 @@ bool HasAssetSkinnedGeometry(const RTXPTModelAsset& Asset)
         return false;
 
     return ComputeGeometryStats(Asset.Model->Scenes[Asset.SceneIndex], *Asset.Model).HasSkinnedGeometry;
+}
+
+Uint32 GetRTXPTVertexStride0(const GLTF::Model& Model)
+{
+    Uint32 Stride = 0;
+    for (Uint32 Attr = 0; Attr < Model.GetNumVertexAttributes(); ++Attr)
+    {
+        const GLTF::VertexAttributeDesc& Desc = Model.GetVertexAttribute(Attr);
+        if (Desc.BufferId == 0)
+        {
+            const Uint32 RelOffset = Desc.RelativeOffset == ~0u ? 0u : Desc.RelativeOffset;
+            Stride                 = std::max(Stride, RelOffset + GetValueSize(Desc.ValueType) * Desc.NumComponents);
+        }
+    }
+    return Stride;
+}
+
+bool BuildRTXPTStaticGeometryBuffers(IRenderDevice*          pDevice,
+                                     IDeviceContext*         pContext,
+                                     RTXPTSceneGraphData&    Data,
+                                     VALUE_TYPE              IndexType,
+                                     RefCntAutoPtr<IBuffer>& pStaticVertexBuffer,
+                                     RefCntAutoPtr<IBuffer>& pStaticIndexBuffer,
+                                     Uint32&                 VertexStride)
+{
+    pStaticVertexBuffer.Release();
+    pStaticIndexBuffer.Release();
+    VertexStride = 0;
+
+    if (pDevice == nullptr || pContext == nullptr)
+    {
+        DEV_ERROR("RTXPT static scene geometry buffer build requires a device and context");
+        return false;
+    }
+
+    const Uint32 IndexSize = GetValueSize(IndexType);
+    if (IndexSize == 0)
+    {
+        LOG_ERROR_MESSAGE("RTXPT scene uses an unsupported index type");
+        return false;
+    }
+
+    Uint64 TotalVertexCount = 0;
+    Uint64 TotalIndexCount  = 0;
+    for (RTXPTModelAsset& Asset : Data.ModelAssets)
+    {
+        if (!Asset.Model)
+            continue;
+
+        IBuffer* pVertexBuffer = Asset.Model->GetVertexBuffer(0, pDevice, pContext);
+        if (pVertexBuffer == nullptr)
+        {
+            LOG_ERROR_MESSAGE("RTXPT model asset is missing vertex buffer 0: ", Asset.ModelName);
+            return false;
+        }
+
+        const Uint32 AssetStride = GetRTXPTVertexStride0(*Asset.Model);
+        if (AssetStride == 0 || pVertexBuffer->GetDesc().Size % AssetStride != 0)
+        {
+            LOG_ERROR_MESSAGE("RTXPT model asset has an invalid vertex buffer 0 stride: ", Asset.ModelName);
+            return false;
+        }
+
+        if (VertexStride == 0)
+            VertexStride = AssetStride;
+        else if (VertexStride != AssetStride)
+        {
+            LOG_ERROR_MESSAGE("RTXPT scene model assets use incompatible vertex strides");
+            return false;
+        }
+
+        const Uint64 AssetVertexCount64 = pVertexBuffer->GetDesc().Size / AssetStride;
+        if (AssetVertexCount64 == 0 || AssetVertexCount64 > Uint64{std::numeric_limits<Uint32>::max()})
+        {
+            LOG_ERROR_MESSAGE("RTXPT model asset has an invalid vertex count: ", Asset.ModelName);
+            return false;
+        }
+
+        if (TotalVertexCount > Uint64{std::numeric_limits<Uint32>::max()})
+        {
+            LOG_ERROR_MESSAGE("RTXPT scene static vertex buffer exceeds supported size");
+            return false;
+        }
+
+        Asset.GlobalVertexBase = static_cast<Uint32>(TotalVertexCount);
+        Asset.VertexCount      = static_cast<Uint32>(AssetVertexCount64);
+        TotalVertexCount += Asset.VertexCount;
+
+        if (TotalIndexCount > Uint64{std::numeric_limits<Uint32>::max()})
+        {
+            LOG_ERROR_MESSAGE("RTXPT scene static index buffer exceeds supported size");
+            return false;
+        }
+
+        IBuffer* pIndexBuffer = Asset.Model->GetIndexBuffer(pDevice, pContext);
+        Asset.GlobalIndexBase = static_cast<Uint32>(TotalIndexCount);
+        Asset.IndexCount      = 0;
+        if (pIndexBuffer != nullptr)
+        {
+            if (pIndexBuffer->GetDesc().Size % IndexSize != 0)
+            {
+                LOG_ERROR_MESSAGE("RTXPT model asset has an invalid index buffer size: ", Asset.ModelName);
+                return false;
+            }
+
+            const Uint64 AssetIndexCount64 = pIndexBuffer->GetDesc().Size / IndexSize;
+            if (AssetIndexCount64 > Uint64{std::numeric_limits<Uint32>::max()})
+            {
+                LOG_ERROR_MESSAGE("RTXPT model asset has an invalid index count: ", Asset.ModelName);
+                return false;
+            }
+
+            Asset.IndexCount = static_cast<Uint32>(AssetIndexCount64);
+            TotalIndexCount += Asset.IndexCount;
+        }
+    }
+
+    if (TotalVertexCount == 0 || TotalVertexCount > Uint64{std::numeric_limits<Uint32>::max()} ||
+        TotalIndexCount > Uint64{std::numeric_limits<Uint32>::max()})
+    {
+        LOG_ERROR_MESSAGE("RTXPT scene static geometry buffers exceed supported size");
+        return false;
+    }
+
+    BufferDesc VertexDesc;
+    VertexDesc.Name              = "RTXPT scene static vertex buffer";
+    VertexDesc.Usage             = USAGE_DEFAULT;
+    VertexDesc.BindFlags         = BIND_VERTEX_BUFFER | BIND_SHADER_RESOURCE | BIND_RAY_TRACING;
+    VertexDesc.Mode              = BUFFER_MODE_STRUCTURED;
+    VertexDesc.ElementByteStride = VertexStride;
+    VertexDesc.Size              = TotalVertexCount * VertexStride;
+    pDevice->CreateBuffer(VertexDesc, nullptr, &pStaticVertexBuffer);
+    VERIFY(pStaticVertexBuffer, "Failed to create RTXPT scene static vertex buffer");
+    if (!pStaticVertexBuffer)
+        return false;
+
+    BufferDesc IndexDesc;
+    IndexDesc.Name              = "RTXPT scene static index buffer";
+    IndexDesc.Usage             = USAGE_DEFAULT;
+    IndexDesc.BindFlags         = BIND_INDEX_BUFFER | BIND_SHADER_RESOURCE | BIND_RAY_TRACING;
+    IndexDesc.Mode              = BUFFER_MODE_FORMATTED;
+    IndexDesc.ElementByteStride = IndexSize;
+    IndexDesc.Size              = std::max<Uint64>(TotalIndexCount, 1) * IndexSize;
+
+    Uint32     DummyIndex = 0;
+    BufferData DummyIndexData{&DummyIndex, IndexSize};
+    pDevice->CreateBuffer(IndexDesc, TotalIndexCount == 0 ? &DummyIndexData : nullptr, &pStaticIndexBuffer);
+    VERIFY(pStaticIndexBuffer, "Failed to create RTXPT scene static index buffer");
+    if (!pStaticIndexBuffer)
+        return false;
+
+    for (const RTXPTModelAsset& Asset : Data.ModelAssets)
+    {
+        if (!Asset.Model)
+            continue;
+
+        IBuffer* pVertexBuffer = Asset.Model->GetVertexBuffer(0, pDevice, pContext);
+        pContext->CopyBuffer(pVertexBuffer,
+                             0,
+                             RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+                             pStaticVertexBuffer,
+                             Uint64{Asset.GlobalVertexBase} * VertexStride,
+                             pVertexBuffer->GetDesc().Size,
+                             RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+        IBuffer* pIndexBuffer = Asset.Model->GetIndexBuffer(pDevice, pContext);
+        if (pIndexBuffer != nullptr && Asset.IndexCount != 0)
+        {
+            pContext->CopyBuffer(pIndexBuffer,
+                                 0,
+                                 RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+                                 pStaticIndexBuffer,
+                                 Uint64{Asset.GlobalIndexBase} * IndexSize,
+                                 pIndexBuffer->GetDesc().Size,
+                                 RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        }
+    }
+
+    return true;
 }
 
 std::vector<std::string> LoadRTXPTMaterialNames(const std::string& ModelPath, size_t MaterialCount)
@@ -489,6 +669,8 @@ void RTXPTScene::ResetLoadedData()
     m_AnimationTime  = 0.0f;
     m_AnimationIndex = -1;
     m_GeometryDirty  = false;
+    m_StaticVertexBuffer.Release();
+    m_StaticIndexBuffer.Release();
 }
 
 const RTXPTModelAsset* RTXPTScene::GetCompatibilityModelAsset() const
@@ -726,6 +908,17 @@ bool RTXPTScene::LoadScene(IRenderDevice*     pDevice,
         return false;
     }
 
+    if (!BuildRTXPTStaticGeometryBuffers(pDevice,
+                                         pContext,
+                                         NewData,
+                                         m_IndexType,
+                                         m_StaticVertexBuffer,
+                                         m_StaticIndexBuffer,
+                                         m_VertexStride0))
+    {
+        return false;
+    }
+
     NewData.Stats.ModelAssetCount    = static_cast<Uint32>(NewData.ModelAssets.size());
     NewData.Stats.GraphNodeCount     = static_cast<Uint32>(NewData.GraphNodes.size());
     NewData.Stats.ModelInstanceCount = static_cast<Uint32>(NewData.ModelInstances.size());
@@ -821,6 +1014,9 @@ bool RTXPTScene::HasValidContent() const
 
 IBuffer* RTXPTScene::GetVertexBuffer0(IRenderDevice* pDevice, IDeviceContext* pContext) const
 {
+    if (m_StaticVertexBuffer)
+        return m_StaticVertexBuffer;
+
     const RTXPTModelAsset* pAsset = GetCompatibilityModelAsset();
     return pAsset != nullptr && pAsset->Model ? pAsset->Model->GetVertexBuffer(0, pDevice, pContext) : nullptr;
 }
@@ -835,6 +1031,9 @@ IBuffer* RTXPTScene::GetSkinningBuffer(IRenderDevice* pDevice, IDeviceContext* p
 
 IBuffer* RTXPTScene::GetIndexBuffer(IRenderDevice* pDevice, IDeviceContext* pContext) const
 {
+    if (m_StaticIndexBuffer)
+        return m_StaticIndexBuffer;
+
     const RTXPTModelAsset* pAsset = GetCompatibilityModelAsset();
     return pAsset != nullptr && pAsset->Model ? pAsset->Model->GetIndexBuffer(pDevice, pContext) : nullptr;
 }

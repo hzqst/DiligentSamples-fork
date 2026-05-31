@@ -77,30 +77,25 @@ class RTXPTAccelerationStructures
 public:
     void Reset();
 
-    bool BuildScene(IRenderDevice*               pDevice,
-                    IDeviceContext*              pContext,
-                    const GLTF::Model&           Model,
-                    Uint32                       SceneIndex,
-                    VALUE_TYPE                   IndexType,
-                    const GLTF::ModelTransforms& Transforms,
-                    const RTXPTSkinnedGeometry*  pSkinnedGeometry,
-                    bool                         RayTracingSupported);
+    bool BuildScene(IRenderDevice*                   pDevice,
+                    IDeviceContext*                  pContext,
+                    const RTXPTSceneGraphData&       SceneData,
+                    VALUE_TYPE                       IndexType,
+                    const RTXPTSkinnedSceneGeometry* pSkinnedGeometry,
+                    bool                             RayTracingSupported);
 
-    bool BuildStaticScene(IRenderDevice*               pDevice,
-                          IDeviceContext*              pContext,
-                          const GLTF::Model&           Model,
-                          Uint32                       SceneIndex,
-                          VALUE_TYPE                   IndexType,
-                          const GLTF::ModelTransforms& Transforms,
-                          bool                         RayTracingSupported)
+    bool BuildStaticScene(IRenderDevice*             pDevice,
+                          IDeviceContext*            pContext,
+                          const RTXPTSceneGraphData& SceneData,
+                          VALUE_TYPE                 IndexType,
+                          bool                       RayTracingSupported)
     {
-        return BuildScene(pDevice, pContext, Model, SceneIndex, IndexType, Transforms,
-                          nullptr, RayTracingSupported);
+        return BuildScene(pDevice, pContext, SceneData, IndexType, nullptr, RayTracingSupported);
     }
 
-    bool UpdateDynamicBLAS(IDeviceContext*              pContext,
-                           const RTXPTSkinnedGeometry&  SkinnedGeometry,
-                           const GLTF::ModelTransforms& Transforms);
+    bool UpdateDynamicBLAS(IDeviceContext*                  pContext,
+                           const RTXPTSceneGraphData&       SceneData,
+                           const RTXPTSkinnedSceneGeometry& SkinnedGeometry);
 
     bool IsBuilt() const { return m_Stats.Built && m_TLAS; }
 
@@ -118,6 +113,8 @@ private:
         RefCntAutoPtr<IBuffer>             IndexBuffer;
         std::vector<std::string>           GeometryNames;
         std::vector<BLASBuildTriangleData> TriangleData;
+        RTXPTSceneId                       ModelAssetId          = InvalidRTXPTSceneId;
+        RTXPTSceneId                       ModelInstanceId       = InvalidRTXPTSceneId;
         const GLTF::Node*                  pNode                 = nullptr;
         Uint32                             GeometryCount         = 0;
         bool                               Dynamic               = false;
@@ -125,7 +122,7 @@ private:
         Uint32                             InstanceIndex         = 0;
     };
 
-    bool UpdateTLAS(IDeviceContext* pContext, const GLTF::ModelTransforms& Transforms);
+    bool UpdateTLAS(IDeviceContext* pContext, const RTXPTSceneGraphData& SceneData);
 
     std::vector<BLASRecord>            m_BLASRecords;
     std::vector<std::string>           m_InstanceNames;

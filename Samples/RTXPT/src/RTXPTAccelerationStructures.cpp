@@ -97,19 +97,6 @@ InstanceMatrix ToInstanceMatrix(const float4x4& Transform)
     return Matrix;
 }
 
-const RTXPTSkinnedNodeGeometry* FindSkinnedNode(const RTXPTSkinnedGeometry* pSkinnedGeometry, const GLTF::Node* pNode)
-{
-    if (pSkinnedGeometry == nullptr || pNode == nullptr)
-        return nullptr;
-
-    for (const RTXPTSkinnedNodeGeometry& Node : pSkinnedGeometry->GetNodes())
-    {
-        if (Node.pNode == pNode)
-            return &Node;
-    }
-    return nullptr;
-}
-
 } // namespace
 
 void RTXPTAccelerationStructures::Reset()
@@ -125,14 +112,12 @@ void RTXPTAccelerationStructures::Reset()
     m_Stats = {};
 }
 
-bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevice,
-                                             IDeviceContext*              pContext,
-                                             const GLTF::Model&           Model,
-                                             Uint32                       SceneIndex,
-                                             VALUE_TYPE                   IndexType,
-                                             const GLTF::ModelTransforms& Transforms,
-                                             const RTXPTSkinnedGeometry*  pSkinnedGeometry,
-                                             bool                         RayTracingSupported)
+bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pDevice,
+                                             IDeviceContext*                  pContext,
+                                             const RTXPTSceneGraphData&       SceneData,
+                                             VALUE_TYPE                       IndexType,
+                                             const RTXPTSkinnedSceneGeometry* pSkinnedGeometry,
+                                             bool                             RayTracingSupported)
 {
     Reset();
     m_Stats.RayTracingSupported = RayTracingSupported;
@@ -149,64 +134,19 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
         return false;
     }
 
-    if (SceneIndex >= Model.Scenes.size())
+    if (SceneData.ModelAssets.empty() || SceneData.ModelInstances.empty())
     {
-        LOG_ERROR_MESSAGE("Invalid RTXPT scene index for acceleration structure build");
+        LOG_ERROR_MESSAGE("RTXPT acceleration structure build requires model assets and instances");
         return false;
     }
 
-    const PositionLayout Position = FindPositionLayout(Model);
-    if (!Position.Valid || Position.ValueType != VT_FLOAT32 || Position.ComponentCount != 3)
-    {
-        LOG_ERROR_MESSAGE("RTXPT BLAS build requires float3 POSITION vertex data");
-        return false;
-    }
-
-    IBuffer* pVertexBuffer = Model.GetVertexBuffer(Position.BufferId, pDevice, pContext);
-    if (!HasBindFlag(pVertexBuffer, BIND_RAY_TRACING))
-    {
-        LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer is missing BIND_RAY_TRACING");
-        return false;
-    }
-
-    IBuffer* pIndexBuffer = Model.GetIndexBuffer(pDevice, pContext);
-    if (pIndexBuffer != nullptr && !HasBindFlag(pIndexBuffer, BIND_RAY_TRACING))
-    {
-        LOG_ERROR_MESSAGE("RTXPT index buffer is missing BIND_RAY_TRACING");
-        return false;
-    }
-
-    const GLTF::Scene& Scene        = Model.Scenes[SceneIndex];
-    const Uint32       VertexStride = GetVertexStride(Model, Position.BufferId);
-    const Uint32       BaseVertex   = Model.GetBaseVertex();
-    const Uint32       FirstIndex   = pIndexBuffer != nullptr ? Model.GetFirstIndexLocation() : 0;
-
-    if (VertexStride == 0)
-    {
-        LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer has an invalid stride");
-        return false;
-    }
-
-    const Uint64 ModelVertexOffset = Uint64{BaseVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset};
-    if (ModelVertexOffset >= pVertexBuffer->GetDesc().Size)
-    {
-        LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer is too small for the model base vertex");
-        return false;
-    }
-    const Uint64 ModelVertexCount64 = (pVertexBuffer->GetDesc().Size - ModelVertexOffset) / VertexStride;
-    if (ModelVertexCount64 == 0 || ModelVertexCount64 > Uint64{std::numeric_limits<Uint32>::max()})
-    {
-        LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer has an invalid model vertex count");
-        return false;
-    }
-    const Uint32 ModelVertexCount = static_cast<Uint32>(ModelVertexCount64);
-
-    if (pIndexBuffer != nullptr && IndexType != VT_UINT16 && IndexType != VT_UINT32)
+    if (IndexType != VT_UINT16 && IndexType != VT_UINT32)
     {
         LOG_ERROR_MESSAGE("RTXPT index buffer has an unsupported index size");
         return false;
     }
-    const Uint32   IndexSize             = GetValueSize(IndexType);
+    const Uint32 IndexSize = GetValueSize(IndexType);
+
     const bool     SkinnedGeometryReady  = pSkinnedGeometry != nullptr && pSkinnedGeometry->IsReady();
     const Uint32   SkinningDispatchCount = pSkinnedGeometry != nullptr ? pSkinnedGeometry->GetStats().DispatchCount : 0;
     IBuffer* const pSkinnedVertexBuffer  = SkinnedGeometryReady ?
@@ -214,217 +154,293 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
         nullptr;
 
     std::vector<SubInstanceData> SubInstances;
-    m_TLASInstances.reserve(Scene.LinearNodes.size());
-    m_InstanceNames.reserve(Scene.LinearNodes.size());
-    SubInstances.reserve(Scene.LinearNodes.size());
+    m_TLASInstances.reserve(SceneData.GraphNodes.size());
+    m_InstanceNames.reserve(SceneData.GraphNodes.size());
+    SubInstances.reserve(SceneData.GraphNodes.size());
 
     Uint32 SubInstanceBase    = 0;
     bool   HasDynamicGeometry = false;
-    for (const GLTF::Node* pNode : Scene.LinearNodes)
+    for (Uint32 InstanceId = 0; InstanceId < SceneData.ModelInstances.size(); ++InstanceId)
     {
-        if (pNode == nullptr || pNode->pMesh == nullptr)
-            continue;
-
-        if (pNode->Index < 0 || static_cast<size_t>(pNode->Index) >= Transforms.NodeGlobalMatrices.size())
-            continue;
-
-        const RTXPTSkinnedNodeGeometry* pSkinnedNode = FindSkinnedNode(pSkinnedGeometry, pNode);
-        if (pNode->pSkin != nullptr)
+        const RTXPTModelInstance& Instance = SceneData.ModelInstances[InstanceId];
+        if (Instance.ModelAssetId >= SceneData.ModelAssets.size())
         {
-            if (pSkinnedGeometry == nullptr)
-            {
-                LOG_ERROR_MESSAGE("RTXPT skinned geometry requires current-frame skinned geometry");
-                return false;
-            }
-
-            if (pSkinnedNode == nullptr)
-            {
-                LOG_ERROR_MESSAGE("RTXPT skinned geometry is missing a node record");
-                return false;
-            }
-
-            if (!SkinnedGeometryReady || SkinningDispatchCount == 0)
-            {
-                LOG_ERROR_MESSAGE("RTXPT skinned geometry is not ready for BLAS build");
-                return false;
-            }
+            LOG_ERROR_MESSAGE("RTXPT scene instance references an invalid model asset");
+            return false;
         }
-        const bool IsSkinnedNode =
-            SkinnedGeometryReady && pSkinnedNode != nullptr && pSkinnedVertexBuffer != nullptr;
-        IBuffer*     pNodeVertexBuffer     = IsSkinnedNode ? pSkinnedVertexBuffer : pVertexBuffer;
-        const Uint32 NodeVertexStride      = IsSkinnedNode ? static_cast<Uint32>(sizeof(RTXPTGeometryVertex)) : VertexStride;
-        const Uint64 NodeModelVertexOffset = IsSkinnedNode ?
-            Uint64{pSkinnedNode->VertexBase} * sizeof(RTXPTGeometryVertex) :
-            ModelVertexOffset;
-        const Uint32 NodeModelVertexCount = IsSkinnedNode ? pSkinnedNode->VertexCount : ModelVertexCount;
 
-        std::vector<std::string>           GeometryNames;
-        std::vector<BLASTriangleDesc>      TriangleDescs;
-        std::vector<BLASBuildTriangleData> TriangleData;
-
-        GeometryNames.reserve(pNode->pMesh->Primitives.size());
-        TriangleDescs.reserve(pNode->pMesh->Primitives.size());
-        TriangleData.reserve(pNode->pMesh->Primitives.size());
-
-        Uint32 PrimitiveIndex = 0;
-        for (const GLTF::Primitive& Primitive : pNode->pMesh->Primitives)
+        const RTXPTModelAsset& Asset = SceneData.ModelAssets[Instance.ModelAssetId];
+        if (!Asset.Model || Asset.SceneIndex >= Asset.Model->Scenes.size())
         {
-            if (Primitive.VertexCount == 0 && Primitive.IndexCount == 0)
+            LOG_ERROR_MESSAGE("RTXPT acceleration structure build found an invalid model asset");
+            return false;
+        }
+
+        const GLTF::Model& Model = *Asset.Model;
+        const PositionLayout Position = FindPositionLayout(Model);
+        if (!Position.Valid || Position.BufferId != 0 || Position.ValueType != VT_FLOAT32 || Position.ComponentCount != 3)
+        {
+            LOG_ERROR_MESSAGE("RTXPT BLAS build requires float3 POSITION vertex data in vertex buffer 0");
+            return false;
+        }
+
+        IBuffer* pVertexBuffer = Model.GetVertexBuffer(Position.BufferId, pDevice, pContext);
+        if (!HasBindFlag(pVertexBuffer, BIND_RAY_TRACING))
+        {
+            LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer is missing BIND_RAY_TRACING");
+            return false;
+        }
+
+        IBuffer* pIndexBuffer = Model.GetIndexBuffer(pDevice, pContext);
+        if (pIndexBuffer != nullptr && !HasBindFlag(pIndexBuffer, BIND_RAY_TRACING))
+        {
+            LOG_ERROR_MESSAGE("RTXPT index buffer is missing BIND_RAY_TRACING");
+            return false;
+        }
+
+        const GLTF::Scene& Scene        = Model.Scenes[Asset.SceneIndex];
+        const Uint32       VertexStride = GetVertexStride(Model, Position.BufferId);
+        const Uint32       BaseVertex   = Model.GetBaseVertex();
+        const Uint32       FirstIndex   = pIndexBuffer != nullptr ? Model.GetFirstIndexLocation() : 0;
+
+        if (VertexStride == 0)
+        {
+            LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer has an invalid stride");
+            return false;
+        }
+
+        const Uint64 ModelVertexOffset = Uint64{BaseVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset};
+        if (ModelVertexOffset >= pVertexBuffer->GetDesc().Size)
+        {
+            LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer is too small for the model base vertex");
+            return false;
+        }
+        const Uint64 ModelVertexCount64 = (pVertexBuffer->GetDesc().Size - ModelVertexOffset) / VertexStride;
+        if (ModelVertexCount64 == 0 || ModelVertexCount64 > Uint64{std::numeric_limits<Uint32>::max()})
+        {
+            LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer has an invalid model vertex count");
+            return false;
+        }
+        const Uint32 ModelVertexCount = static_cast<Uint32>(ModelVertexCount64);
+
+        const GLTF::ModelTransforms& Transforms = Instance.Transforms.NodeGlobalMatrices.empty() ?
+            Asset.StaticTransforms :
+            Instance.Transforms;
+
+        for (const GLTF::Node* pNode : Scene.LinearNodes)
+        {
+            if (pNode == nullptr || pNode->pMesh == nullptr)
                 continue;
 
-            GeometryNames.emplace_back((pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name) + "_" + std::to_string(PrimitiveIndex));
+            if (pNode->Index < 0 || static_cast<size_t>(pNode->Index) >= Transforms.NodeGlobalMatrices.size())
+                continue;
 
-            const bool IsIndexed = Primitive.HasIndices();
-
-            SubInstanceData SubEntry;
-            SubEntry.MaterialID  = Primitive.MaterialId;
-            SubEntry.VertexCount = Primitive.VertexCount;
-            if (IsSkinnedNode)
+            const RTXPTSkinnedSceneNodeGeometry* pSkinnedNode =
+                pSkinnedGeometry != nullptr ?
+                    pSkinnedGeometry->FindNode(Instance.ModelAssetId, InstanceId, pNode) :
+                    nullptr;
+            if (pNode->pSkin != nullptr)
             {
-                SubEntry.Flags |= kSubInstanceFlag_Skinned;
-                SubEntry.VertexOffset = pSkinnedNode->VertexBase + Primitive.FirstVertex;
+                if (pSkinnedGeometry == nullptr)
+                {
+                    LOG_ERROR_MESSAGE("RTXPT skinned geometry requires current-frame skinned geometry");
+                    return false;
+                }
+
+                if (pSkinnedNode == nullptr)
+                {
+                    LOG_ERROR_MESSAGE("RTXPT skinned geometry is missing a node record");
+                    return false;
+                }
+
+                if (!SkinnedGeometryReady || SkinningDispatchCount == 0)
+                {
+                    LOG_ERROR_MESSAGE("RTXPT skinned geometry is not ready for BLAS build");
+                    return false;
+                }
             }
-            else
+            const bool IsSkinnedNode =
+                SkinnedGeometryReady && pSkinnedNode != nullptr && pSkinnedVertexBuffer != nullptr;
+            IBuffer*     pNodeVertexBuffer     = IsSkinnedNode ? pSkinnedVertexBuffer : pVertexBuffer;
+            const Uint32 NodeVertexStride      = IsSkinnedNode ? static_cast<Uint32>(sizeof(RTXPTGeometryVertex)) : VertexStride;
+            const Uint64 NodeModelVertexOffset = IsSkinnedNode ?
+                Uint64{pSkinnedNode->VertexBase} * sizeof(RTXPTGeometryVertex) :
+                ModelVertexOffset;
+            const Uint32 NodeModelVertexCount = IsSkinnedNode ? pSkinnedNode->VertexCount : ModelVertexCount;
+
+            std::vector<std::string>           GeometryNames;
+            std::vector<BLASTriangleDesc>      TriangleDescs;
+            std::vector<BLASBuildTriangleData> TriangleData;
+
+            GeometryNames.reserve(pNode->pMesh->Primitives.size());
+            TriangleDescs.reserve(pNode->pMesh->Primitives.size());
+            TriangleData.reserve(pNode->pMesh->Primitives.size());
+
+            Uint32 PrimitiveIndex = 0;
+            for (const GLTF::Primitive& Primitive : pNode->pMesh->Primitives)
             {
-                SubEntry.VertexOffset = BaseVertex + Primitive.FirstVertex;
+                if (Primitive.VertexCount == 0 && Primitive.IndexCount == 0)
+                    continue;
+
+                const std::string NodeName = pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name;
+                GeometryNames.emplace_back(Instance.Name + "_" + NodeName + "_" + std::to_string(PrimitiveIndex));
+
+                const bool IsIndexed = Primitive.HasIndices();
+
+                SubInstanceData SubEntry;
+                SubEntry.MaterialID = Primitive.MaterialId < Asset.MaterialRemap.size() ?
+                    Asset.MaterialRemap[Primitive.MaterialId] :
+                    0;
+                SubEntry.VertexCount = Primitive.VertexCount;
+                if (IsSkinnedNode)
+                {
+                    SubEntry.Flags |= kSubInstanceFlag_Skinned;
+                    SubEntry.VertexOffset = pSkinnedNode->VertexBase + Primitive.FirstVertex;
+                }
+                else
+                {
+                    SubEntry.VertexOffset = Asset.GlobalVertexBase + BaseVertex + Primitive.FirstVertex;
+                }
+                if (IsIndexed)
+                {
+                    SubEntry.Flags |= kSubInstanceFlag_Indexed;
+                    SubEntry.IndexOffset = Asset.GlobalIndexBase + FirstIndex + Primitive.FirstIndex;
+                    SubEntry.IndexCount  = Primitive.IndexCount;
+                }
+                SubInstances.emplace_back(SubEntry);
+
+                // The GLTF builder bakes VertexStart into indexed primitives and resets FirstVertex to 0.
+                // BLAS indexed geometry therefore needs the whole model vertex range, not Primitive.VertexCount.
+                const Uint64 PrimitiveVertexOff = IsIndexed ?
+                    NodeModelVertexOffset :
+                    (IsSkinnedNode ?
+                         (Uint64{pSkinnedNode->VertexBase + Primitive.FirstVertex} * sizeof(RTXPTGeometryVertex)) :
+                         (Uint64{BaseVertex + Primitive.FirstVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset}));
+                const Uint32 PrimitiveVertexCnt = IsIndexed ? NodeModelVertexCount : Primitive.VertexCount;
+
+                BLASTriangleDesc TriangleDesc;
+                TriangleDesc.GeometryName         = GeometryNames.back().c_str();
+                TriangleDesc.MaxVertexCount       = PrimitiveVertexCnt;
+                TriangleDesc.VertexValueType      = Position.ValueType;
+                TriangleDesc.VertexComponentCount = Position.ComponentCount;
+                TriangleDesc.MaxPrimitiveCount    = IsIndexed ? Primitive.IndexCount / 3 : Primitive.VertexCount / 3;
+                TriangleDesc.IndexType            = IsIndexed ? IndexType : VT_UNDEFINED;
+
+                BLASBuildTriangleData BuildData;
+                BuildData.GeometryName         = TriangleDesc.GeometryName;
+                BuildData.pVertexBuffer        = pNodeVertexBuffer;
+                BuildData.VertexOffset         = PrimitiveVertexOff;
+                BuildData.VertexStride         = NodeVertexStride;
+                BuildData.VertexCount          = PrimitiveVertexCnt;
+                BuildData.VertexValueType      = Position.ValueType;
+                BuildData.VertexComponentCount = Position.ComponentCount;
+                BuildData.PrimitiveCount       = TriangleDesc.MaxPrimitiveCount;
+                // Alpha-masked geometry must be non-opaque so the runtime invokes the alpha-test any-hit shader.
+                // Everything else stays opaque to skip any-hit entirely.
+                const bool GeometryAlphaTested =
+                    Primitive.MaterialId < Model.Materials.size() &&
+                    RTXPTMaterialIsAlphaTested(Model.Materials[Primitive.MaterialId]);
+                BuildData.Flags = GeometryAlphaTested ? RAYTRACING_GEOMETRY_FLAG_NONE : RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+                if (GeometryAlphaTested)
+                    ++m_Stats.AlphaTestedGeometryCount;
+
+                if (IsIndexed)
+                {
+                    BuildData.pIndexBuffer = pIndexBuffer;
+                    BuildData.IndexOffset  = (FirstIndex + Primitive.FirstIndex) * IndexSize;
+                    BuildData.IndexType    = IndexType;
+                }
+
+                TriangleDescs.emplace_back(TriangleDesc);
+                TriangleData.emplace_back(BuildData);
+                ++PrimitiveIndex;
             }
-            if (IsIndexed)
+
+            if (TriangleDescs.empty())
+                continue;
+
+            BLASRecord        Record;
+            const std::string NodeName   = pNode->Name.empty() ? "node" : pNode->Name;
+            Record.Name                  = "RTXPT BLAS " + Instance.Name + " " + NodeName + " node_" + std::to_string(pNode->Index);
+            Record.GeometryCount         = static_cast<Uint32>(TriangleDescs.size());
+            Record.Dynamic               = IsSkinnedNode;
+            Record.VertexBuffer          = pNodeVertexBuffer;
+            Record.IndexBuffer           = pIndexBuffer;
+            Record.ModelAssetId          = Instance.ModelAssetId;
+            Record.ModelInstanceId       = InstanceId;
+            Record.pNode                 = pNode;
+            Record.InstanceIndex         = static_cast<Uint32>(m_TLASInstances.size());
+            Record.SkinningDispatchCount = IsSkinnedNode ? SkinningDispatchCount : 0;
+            Record.GeometryNames         = std::move(GeometryNames);
+            Record.TriangleData          = TriangleData;
+            for (size_t i = 0; i < Record.TriangleData.size(); ++i)
             {
-                SubEntry.Flags |= kSubInstanceFlag_Indexed;
-                SubEntry.IndexOffset = FirstIndex + Primitive.FirstIndex;
-                SubEntry.IndexCount  = Primitive.IndexCount;
+                const char* GeometryName            = Record.GeometryNames[i].c_str();
+                TriangleDescs[i].GeometryName       = GeometryName;
+                Record.TriangleData[i].GeometryName = GeometryName;
             }
-            SubInstances.emplace_back(SubEntry);
 
-            // The GLTF builder bakes VertexStart into indexed primitives and resets FirstVertex to 0.
-            // BLAS indexed geometry therefore needs the whole model vertex range, not Primitive.VertexCount.
-            const Uint64 PrimitiveVertexOff = IsIndexed ?
-                NodeModelVertexOffset :
-                (IsSkinnedNode ?
-                     (Uint64{pSkinnedNode->VertexBase + Primitive.FirstVertex} * sizeof(RTXPTGeometryVertex)) :
-                     (Uint64{BaseVertex + Primitive.FirstVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset}));
-            const Uint32 PrimitiveVertexCnt = IsIndexed ? NodeModelVertexCount : Primitive.VertexCount;
-
-            BLASTriangleDesc TriangleDesc;
-            TriangleDesc.GeometryName         = GeometryNames.back().c_str();
-            TriangleDesc.MaxVertexCount       = PrimitiveVertexCnt;
-            TriangleDesc.VertexValueType      = Position.ValueType;
-            TriangleDesc.VertexComponentCount = Position.ComponentCount;
-            TriangleDesc.MaxPrimitiveCount    = IsIndexed ? Primitive.IndexCount / 3 : Primitive.VertexCount / 3;
-            TriangleDesc.IndexType            = IsIndexed ? IndexType : VT_UNDEFINED;
-
-            BLASBuildTriangleData BuildData;
-            BuildData.GeometryName         = TriangleDesc.GeometryName;
-            BuildData.pVertexBuffer        = pNodeVertexBuffer;
-            BuildData.VertexOffset         = PrimitiveVertexOff;
-            BuildData.VertexStride         = NodeVertexStride;
-            BuildData.VertexCount          = PrimitiveVertexCnt;
-            BuildData.VertexValueType      = Position.ValueType;
-            BuildData.VertexComponentCount = Position.ComponentCount;
-            BuildData.PrimitiveCount       = TriangleDesc.MaxPrimitiveCount;
-            // Alpha-masked geometry must be non-opaque so the runtime invokes the alpha-test any-hit shader.
-            // Everything else stays opaque to skip any-hit entirely.
-            const bool GeometryAlphaTested =
-                Primitive.MaterialId < Model.Materials.size() &&
-                RTXPTMaterialIsAlphaTested(Model.Materials[Primitive.MaterialId]);
-            BuildData.Flags = GeometryAlphaTested ? RAYTRACING_GEOMETRY_FLAG_NONE : RAYTRACING_GEOMETRY_FLAG_OPAQUE;
-            if (GeometryAlphaTested)
-                ++m_Stats.AlphaTestedGeometryCount;
-
-            if (IsIndexed)
+            if (Uint64{SubInstanceBase} + Uint64{Record.GeometryCount} > Uint64{MaxSubInstanceDataCount})
             {
-                BuildData.pIndexBuffer = pIndexBuffer;
-                BuildData.IndexOffset  = (FirstIndex + Primitive.FirstIndex) * IndexSize;
-                BuildData.IndexType    = IndexType;
-            }
-
-            TriangleDescs.emplace_back(TriangleDesc);
-            TriangleData.emplace_back(BuildData);
-            ++PrimitiveIndex;
-        }
-
-        if (TriangleDescs.empty())
-            continue;
-
-        BLASRecord        Record;
-        const std::string NodeName   = pNode->Name.empty() ? "node" : pNode->Name;
-        Record.Name                  = "RTXPT BLAS " + NodeName + " node_" + std::to_string(pNode->Index);
-        Record.GeometryCount         = static_cast<Uint32>(TriangleDescs.size());
-        Record.Dynamic               = IsSkinnedNode;
-        Record.VertexBuffer          = pNodeVertexBuffer;
-        Record.IndexBuffer           = pIndexBuffer;
-        Record.pNode                 = pNode;
-        Record.InstanceIndex         = static_cast<Uint32>(m_TLASInstances.size());
-        Record.SkinningDispatchCount = IsSkinnedNode ? SkinningDispatchCount : 0;
-        Record.GeometryNames         = std::move(GeometryNames);
-        Record.TriangleData          = TriangleData;
-        for (size_t i = 0; i < Record.TriangleData.size(); ++i)
-        {
-            const char* GeometryName            = Record.GeometryNames[i].c_str();
-            TriangleDescs[i].GeometryName       = GeometryName;
-            Record.TriangleData[i].GeometryName = GeometryName;
-        }
-
-        if (Uint64{SubInstanceBase} + Uint64{Record.GeometryCount} > Uint64{MaxSubInstanceDataCount})
-        {
-            LOG_ERROR_MESSAGE("RTXPT sub-instance table exceeds the 24-bit TLAS CustomId range");
-            return false;
-        }
-
-        BottomLevelASDesc BLASDesc;
-        BLASDesc.Name          = Record.Name.c_str();
-        BLASDesc.Flags         = IsSkinnedNode ? RAYTRACING_BUILD_AS_ALLOW_UPDATE : RAYTRACING_BUILD_AS_NONE;
-        BLASDesc.pTriangles    = TriangleDescs.data();
-        BLASDesc.TriangleCount = static_cast<Uint32>(TriangleDescs.size());
-        pDevice->CreateBLAS(BLASDesc, &Record.BLAS);
-
-        VERIFY(Record.BLAS, "Failed to create RTXPT BLAS");
-        if (!Record.BLAS)
-            return false;
-
-        const Uint64 ScratchSize = std::max(Record.BLAS->GetScratchBufferSizes().Build,
-                                            Record.BLAS->GetScratchBufferSizes().Update);
-        m_Stats.BLASScratchSize  = std::max(m_Stats.BLASScratchSize, ScratchSize);
-
-        if (!m_BLASScratch || m_BLASScratch->GetDesc().Size < ScratchSize)
-        {
-            BufferDesc ScratchDesc;
-            ScratchDesc.Name      = "RTXPT BLAS scratch buffer";
-            ScratchDesc.Usage     = USAGE_DEFAULT;
-            ScratchDesc.BindFlags = BIND_RAY_TRACING;
-            ScratchDesc.Size      = ScratchSize;
-            m_BLASScratch.Release();
-            pDevice->CreateBuffer(ScratchDesc, nullptr, &m_BLASScratch);
-            VERIFY(m_BLASScratch, "Failed to create RTXPT BLAS scratch buffer");
-            if (!m_BLASScratch)
+                LOG_ERROR_MESSAGE("RTXPT sub-instance table exceeds the 24-bit TLAS CustomId range");
                 return false;
+            }
+
+            BottomLevelASDesc BLASDesc;
+            BLASDesc.Name          = Record.Name.c_str();
+            BLASDesc.Flags         = IsSkinnedNode ? RAYTRACING_BUILD_AS_ALLOW_UPDATE : RAYTRACING_BUILD_AS_NONE;
+            BLASDesc.pTriangles    = TriangleDescs.data();
+            BLASDesc.TriangleCount = static_cast<Uint32>(TriangleDescs.size());
+            pDevice->CreateBLAS(BLASDesc, &Record.BLAS);
+
+            VERIFY(Record.BLAS, "Failed to create RTXPT BLAS");
+            if (!Record.BLAS)
+                return false;
+
+            const Uint64 ScratchSize = std::max(Record.BLAS->GetScratchBufferSizes().Build,
+                                                Record.BLAS->GetScratchBufferSizes().Update);
+            m_Stats.BLASScratchSize  = std::max(m_Stats.BLASScratchSize, ScratchSize);
+
+            if (!m_BLASScratch || m_BLASScratch->GetDesc().Size < ScratchSize)
+            {
+                BufferDesc ScratchDesc;
+                ScratchDesc.Name      = "RTXPT BLAS scratch buffer";
+                ScratchDesc.Usage     = USAGE_DEFAULT;
+                ScratchDesc.BindFlags = BIND_RAY_TRACING;
+                ScratchDesc.Size      = ScratchSize;
+                m_BLASScratch.Release();
+                pDevice->CreateBuffer(ScratchDesc, nullptr, &m_BLASScratch);
+                VERIFY(m_BLASScratch, "Failed to create RTXPT BLAS scratch buffer");
+                if (!m_BLASScratch)
+                    return false;
+            }
+
+            BuildBLASAttribs BLASAttribs;
+            BLASAttribs.pBLAS                       = Record.BLAS;
+            BLASAttribs.BLASTransitionMode          = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+            BLASAttribs.GeometryTransitionMode      = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+            BLASAttribs.pTriangleData               = Record.TriangleData.data();
+            BLASAttribs.TriangleDataCount           = static_cast<Uint32>(Record.TriangleData.size());
+            BLASAttribs.pScratchBuffer              = m_BLASScratch;
+            BLASAttribs.ScratchBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+            pContext->BuildBLAS(BLASAttribs);
+
+            HasDynamicGeometry = HasDynamicGeometry || Record.Dynamic;
+            m_InstanceNames.emplace_back(Record.Name);
+
+            TLASBuildInstanceData TLASInstance;
+            TLASInstance.InstanceName = m_InstanceNames.back().c_str();
+            TLASInstance.pBLAS        = Record.BLAS;
+            TLASInstance.Transform    = ToInstanceMatrix(Transforms.NodeGlobalMatrices[pNode->Index]);
+            TLASInstance.CustomId     = SubInstanceBase;
+            TLASInstance.Flags        = RAYTRACING_INSTANCE_NONE;
+            TLASInstance.Mask         = 0xFF;
+            m_TLASInstances.emplace_back(TLASInstance);
+
+            SubInstanceBase += Record.GeometryCount;
+            m_Stats.GeometryCount += Record.GeometryCount;
+            m_BLASRecords.emplace_back(std::move(Record));
         }
-
-        BuildBLASAttribs BLASAttribs;
-        BLASAttribs.pBLAS                       = Record.BLAS;
-        BLASAttribs.BLASTransitionMode          = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-        BLASAttribs.GeometryTransitionMode      = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-        BLASAttribs.pTriangleData               = Record.TriangleData.data();
-        BLASAttribs.TriangleDataCount           = static_cast<Uint32>(Record.TriangleData.size());
-        BLASAttribs.pScratchBuffer              = m_BLASScratch;
-        BLASAttribs.ScratchBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-        pContext->BuildBLAS(BLASAttribs);
-
-        HasDynamicGeometry = HasDynamicGeometry || Record.Dynamic;
-        m_InstanceNames.emplace_back(Record.Name);
-
-        TLASBuildInstanceData Instance;
-        Instance.InstanceName = m_InstanceNames.back().c_str();
-        Instance.pBLAS        = Record.BLAS;
-        Instance.Transform    = ToInstanceMatrix(Transforms.NodeGlobalMatrices[pNode->Index]);
-        Instance.CustomId     = SubInstanceBase;
-        Instance.Flags        = RAYTRACING_INSTANCE_NONE;
-        Instance.Mask         = 0xFF;
-        m_TLASInstances.emplace_back(Instance);
-
-        SubInstanceBase += Record.GeometryCount;
-        m_Stats.GeometryCount += Record.GeometryCount;
-        m_BLASRecords.emplace_back(std::move(Record));
     }
 
     if (m_TLASInstances.empty())
@@ -513,7 +529,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
     return true;
 }
 
-bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const GLTF::ModelTransforms& Transforms)
+bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const RTXPTSceneGraphData& SceneData)
 {
     if (!m_TLAS || !m_InstanceBuffer || !m_TLASScratch || m_TLASInstances.empty())
     {
@@ -530,6 +546,24 @@ bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const GLT
             DEV_ERROR("RTXPT dynamic TLAS update has invalid instance data");
             return false;
         }
+
+        if (Record.ModelInstanceId >= SceneData.ModelInstances.size())
+        {
+            DEV_ERROR("RTXPT dynamic TLAS update has an invalid model instance id");
+            return false;
+        }
+
+        const RTXPTModelInstance& Instance = SceneData.ModelInstances[Record.ModelInstanceId];
+        if (Instance.ModelAssetId >= SceneData.ModelAssets.size())
+        {
+            DEV_ERROR("RTXPT dynamic TLAS update has an invalid model asset id");
+            return false;
+        }
+
+        const RTXPTModelAsset& Asset = SceneData.ModelAssets[Instance.ModelAssetId];
+        const GLTF::ModelTransforms& Transforms = Instance.Transforms.NodeGlobalMatrices.empty() ?
+            Asset.StaticTransforms :
+            Instance.Transforms;
 
         const Uint32 NodeIndex = static_cast<Uint32>(Record.pNode->Index);
         if (NodeIndex >= Transforms.NodeGlobalMatrices.size())
@@ -559,9 +593,9 @@ bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const GLT
     return true;
 }
 
-bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext*              pContext,
-                                                    const RTXPTSkinnedGeometry&  SkinnedGeometry,
-                                                    const GLTF::ModelTransforms& Transforms)
+bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext*                  pContext,
+                                                    const RTXPTSceneGraphData&       SceneData,
+                                                    const RTXPTSkinnedSceneGeometry& SkinnedGeometry)
 {
     if (pContext == nullptr)
     {
@@ -621,7 +655,7 @@ bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext*             
         Updated                      = true;
     }
 
-    return Updated && UpdateTLAS(pContext, Transforms);
+    return Updated && UpdateTLAS(pContext, SceneData);
 }
 
 } // namespace Diligent

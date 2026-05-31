@@ -26,6 +26,10 @@ struct RTXPTModelAsset
     std::string                  ModelName;
     std::unique_ptr<GLTF::Model> Model;
     Uint32                       SceneIndex = 0;
+    Uint32                       GlobalVertexBase = 0;
+    Uint32                       GlobalIndexBase  = 0;
+    Uint32                       VertexCount      = 0;
+    Uint32                       IndexCount       = 0;
     GLTF::ModelTransforms        StaticTransforms;
     std::vector<Uint32>          MaterialRemap;
     std::vector<Uint32>          TextureRemap;

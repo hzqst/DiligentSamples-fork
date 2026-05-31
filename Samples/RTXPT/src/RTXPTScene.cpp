@@ -25,14 +25,14 @@
  */
 
 #include "RTXPTScene.hpp"
+#include "RTXPTSceneJson.hpp"
+
 #include "DebugUtilities.hpp"
 #include "FileSystem.hpp"
 #include "GraphicsAccessories.hpp"
-#include "json.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -58,44 +58,32 @@ std::string JoinPath(const std::string& Root, const char* RelativePath)
     return FileSystem::SimplifyPath(Path.c_str());
 }
 
-bool ReadSceneModelPath(const std::string& ScenePath, std::string& ModelRelativePath)
+std::unique_ptr<GLTF::Model> LoadRTXPTModelAsset(IRenderDevice*     pDevice,
+                                                 IDeviceContext*    pContext,
+                                                 const std::string& ModelPath,
+                                                 VALUE_TYPE         IndexType)
 {
-    std::ifstream SceneFile{ScenePath};
-    if (!SceneFile)
-    {
-        LOG_ERROR_MESSAGE("Unable to open scene file: ", ScenePath);
-        return false;
-    }
+    GLTF::ModelCreateInfo ModelCI;
+    ModelCI.FileName             = ModelPath.c_str();
+    ModelCI.ComputeBoundingBoxes = true;
+    ModelCI.IndexType            = IndexType;
+    ModelCI.IndBufferBindFlags   = BIND_INDEX_BUFFER | BIND_RAY_TRACING | BIND_SHADER_RESOURCE;
+    for (BIND_FLAGS& BindFlags : ModelCI.VertBufferBindFlags)
+        BindFlags = BIND_VERTEX_BUFFER | BIND_RAY_TRACING;
+    // Buffer 0 is the path-tracer vertex stream (POSITION + NORMAL + TEXCOORD_0).
+    ModelCI.VertBufferBindFlags[0] = BIND_VERTEX_BUFFER | BIND_RAY_TRACING | BIND_SHADER_RESOURCE;
+    // Buffer 1 is the default GLTF skinning stream (JOINTS_0 + WEIGHTS_0).
+    ModelCI.VertBufferBindFlags[1] = BIND_VERTEX_BUFFER | BIND_SHADER_RESOURCE;
 
-    nlohmann::json SceneJson = nlohmann::json::parse(SceneFile, nullptr, false);
-    if (SceneJson.is_discarded() || !SceneJson.is_object())
+    try
     {
-        LOG_ERROR_MESSAGE("Invalid scene JSON: ", ScenePath);
-        return false;
+        return std::make_unique<GLTF::Model>(pDevice, pContext, ModelCI);
     }
-
-    const auto ModelsIt = SceneJson.find("models");
-    if (ModelsIt == SceneJson.end() || !ModelsIt->is_array() || ModelsIt->empty())
+    catch (const std::exception& e)
     {
-        LOG_ERROR_MESSAGE("Scene JSON does not contain a non-empty models array: ", ScenePath);
-        return false;
+        LOG_ERROR_MESSAGE("Failed to load RTXPT glTF model '", ModelPath, "': ", e.what());
+        return {};
     }
-
-    const nlohmann::json& FirstModel = (*ModelsIt)[0];
-    if (!FirstModel.is_string())
-    {
-        LOG_ERROR_MESSAGE("Scene JSON models[0] is not a string: ", ScenePath);
-        return false;
-    }
-
-    ModelRelativePath = FirstModel.get<std::string>();
-    if (ModelRelativePath.empty())
-    {
-        LOG_ERROR_MESSAGE("Scene JSON models[0] is empty: ", ScenePath);
-        return false;
-    }
-
-    return true;
 }
 
 Uint32 CountMeshNodes(const GLTF::Scene& Scene)
@@ -163,26 +151,12 @@ RTXPTSceneGeometryStats ComputeGeometryStats(const GLTF::Scene& Scene, const GLT
     return Stats;
 }
 
-bool ReadFloatArray(const nlohmann::json& Object, const char* Key, float* Values, size_t Count)
+bool HasAssetSkinnedGeometry(const RTXPTModelAsset& Asset)
 {
-    const auto It = Object.find(Key);
-    if (It == Object.end() || !It->is_array() || It->size() < Count)
+    if (!Asset.Model || Asset.SceneIndex >= Asset.Model->Scenes.size())
         return false;
 
-    for (size_t Idx = 0; Idx < Count; ++Idx)
-    {
-        if (!(*It)[Idx].is_number())
-            return false;
-        Values[Idx] = (*It)[Idx].get<float>();
-    }
-
-    return true;
-}
-
-float ReadOptionalFloat(const nlohmann::json& Object, const char* Key, float DefaultValue)
-{
-    const auto It = Object.find(Key);
-    return It != Object.end() && It->is_number() ? It->get<float>() : DefaultValue;
+    return ComputeGeometryStats(Asset.Model->Scenes[Asset.SceneIndex], *Asset.Model).HasSkinnedGeometry;
 }
 
 void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera>& Cameras)
@@ -191,17 +165,20 @@ void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera
         return;
 
     const auto TypeIt = Node.find("type");
-    if (TypeIt != Node.end() && TypeIt->is_string() && TypeIt->get<std::string>() == "PerspectiveCamera")
+    const bool IsPerspectiveCamera =
+        TypeIt != Node.end() && TypeIt->is_string() &&
+        (TypeIt->get<std::string>() == "PerspectiveCamera" ||
+         TypeIt->get<std::string>() == "PerspectiveCameraEx");
+    if (IsPerspectiveCamera)
     {
         float Translation[3] = {};
         float Rotation[4]    = {0.0f, 0.0f, 0.0f, 1.0f};
-        if (ReadFloatArray(Node, "translation", Translation, sizeof(Translation) / sizeof(Translation[0])) &&
-            ReadFloatArray(Node, "rotation", Rotation, sizeof(Rotation) / sizeof(Rotation[0])))
+        if (ReadRTXPTFloatArray(Node, "translation", Translation, sizeof(Translation) / sizeof(Translation[0])) &&
+            ReadRTXPTFloatArray(Node, "rotation", Rotation, sizeof(Rotation) / sizeof(Rotation[0])))
         {
             RTXPTSceneCamera Camera;
 
-            const auto NameIt = Node.find("name");
-            Camera.Name       = NameIt != Node.end() && NameIt->is_string() ? NameIt->get<std::string>() : std::string{};
+            Camera.Name = ReadRTXPTOptionalString(Node, "name");
             if (Camera.Name.empty())
                 Camera.Name = std::string{"Camera "} + std::to_string(Cameras.size());
 
@@ -211,7 +188,7 @@ void AppendSceneCameras(const nlohmann::json& Node, std::vector<RTXPTSceneCamera
             const float RotationLength = length(Camera.Rotation.q);
             Camera.Rotation            = RotationLength > 1e-5f ? QuaternionF{Camera.Rotation.q / RotationLength} : QuaternionF{};
 
-            Camera.VerticalFov = ReadOptionalFloat(Node, "verticalFov", Camera.VerticalFov);
+            Camera.VerticalFov = ReadRTXPTOptionalFloat(Node, "verticalFov", Camera.VerticalFov);
 
             const auto NearPlaneIt = Node.find("zNear");
             const auto FarPlaneIt  = Node.find("zFar");
@@ -288,8 +265,8 @@ bool ReadAnimatedCameraKey(const nlohmann::json&   TranslationKey,
 
     float Translation[3] = {};
     float Rotation[4]    = {0.0f, 0.0f, 0.0f, 1.0f};
-    if (!ReadFloatArray(TranslationKey, "value", Translation, sizeof(Translation) / sizeof(Translation[0])) ||
-        !ReadFloatArray(RotationKey, "value", Rotation, sizeof(Rotation) / sizeof(Rotation[0])))
+    if (!ReadRTXPTFloatArray(TranslationKey, "value", Translation, sizeof(Translation) / sizeof(Translation[0])) ||
+        !ReadRTXPTFloatArray(RotationKey, "value", Rotation, sizeof(Rotation) / sizeof(Rotation[0])))
         return false;
 
     Camera          = Defaults;
@@ -327,7 +304,7 @@ void AppendAnimatedCameraKeys(const std::string&             AnimationName,
         if (!ReadAnimatedCameraKey(TranslationKey, RotationKey, Defaults, Camera))
             continue;
 
-        const float Time = ReadOptionalFloat(TranslationKey, "time", static_cast<float>(Key));
+        const float Time = ReadRTXPTOptionalFloat(TranslationKey, "time", static_cast<float>(Key));
         Camera.Name      = FormatAnimatedCameraName(AnimationName, CameraName, Time);
         Cameras.emplace_back(std::move(Camera));
     }
@@ -359,14 +336,82 @@ void AppendAnimatedCameras(const nlohmann::json&          SceneJson,
     }
 }
 
+bool AppendRTXPTGraphNode(RTXPTSceneGraphData& Data,
+                          const nlohmann::json& NodeJson,
+                          RTXPTSceneId ParentId,
+                          const float4x4& ParentTransform)
+{
+    if (!NodeJson.is_object())
+    {
+        LOG_ERROR_MESSAGE("RTXPT scene graph node is not an object");
+        return false;
+    }
+
+    RTXPTGraphNode Node;
+    Node.Name            = ReadRTXPTOptionalString(NodeJson, "name", "Node");
+    Node.Type            = ReadRTXPTOptionalString(NodeJson, "type", "");
+    Node.ParentId        = ParentId;
+    Node.LocalTransform  = MakeRTXPTNodeTransform(NodeJson);
+    Node.GlobalTransform = Node.LocalTransform * ParentTransform;
+    Node.RawMetadata     = NodeJson;
+
+    const auto ModelIt = NodeJson.find("model");
+    if (ModelIt != NodeJson.end() && ModelIt->is_number_unsigned())
+    {
+        Node.ModelAssetId = ModelIt->get<Uint32>();
+        if (Node.ModelAssetId >= Data.ModelAssets.size())
+        {
+            LOG_ERROR_MESSAGE("Scene graph model index is out of range: ", Node.ModelAssetId);
+            return false;
+        }
+    }
+
+    const RTXPTSceneId NodeId = static_cast<RTXPTSceneId>(Data.GraphNodes.size());
+    Data.GraphNodes.emplace_back(std::move(Node));
+    if (ParentId != InvalidRTXPTSceneId)
+        Data.GraphNodes[ParentId].Children.push_back(NodeId);
+
+    const RTXPTGraphNode& StoredNode = Data.GraphNodes[NodeId];
+    if (StoredNode.ModelAssetId != InvalidRTXPTSceneId)
+    {
+        const RTXPTModelAsset& Asset = Data.ModelAssets[StoredNode.ModelAssetId];
+        if (!Asset.Model)
+        {
+            LOG_ERROR_MESSAGE("Scene graph model asset is missing loaded glTF data: ", StoredNode.ModelAssetId);
+            return false;
+        }
+
+        RTXPTModelInstance Instance;
+        Instance.GraphNodeId     = NodeId;
+        Instance.ModelAssetId    = StoredNode.ModelAssetId;
+        Instance.Name            = StoredNode.Name;
+        Instance.GlobalTransform = StoredNode.GlobalTransform;
+        Asset.Model->ComputeTransforms(Asset.SceneIndex, Instance.Transforms, Instance.GlobalTransform);
+        Data.ModelInstances.emplace_back(std::move(Instance));
+    }
+
+    const auto ChildrenIt = NodeJson.find("children");
+    if (ChildrenIt != NodeJson.end() && ChildrenIt->is_array())
+    {
+        for (const auto& Child : *ChildrenIt)
+        {
+            if (!AppendRTXPTGraphNode(Data, Child, NodeId, StoredNode.GlobalTransform))
+                return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 void RTXPTScene::ResetLoadedData()
 {
-    m_Model.reset();
+    m_SceneGraph.Clear();
     m_Transforms = {};
     m_Cameras.clear();
     m_LoadedSceneName.clear();
+    m_AssetsRoot.clear();
     m_ModelPath.clear();
     m_IndexType      = VT_UINT32;
     m_SceneIndex     = 0;
@@ -381,32 +426,46 @@ void RTXPTScene::ResetLoadedData()
     m_GeometryDirty  = false;
 }
 
+const RTXPTModelAsset* RTXPTScene::GetCompatibilityModelAsset() const
+{
+    const RTXPTModelInstance* pInstance = GetCompatibilityModelInstance();
+    if (pInstance != nullptr && pInstance->ModelAssetId < m_SceneGraph.ModelAssets.size())
+        return &m_SceneGraph.ModelAssets[pInstance->ModelAssetId];
+
+    return m_SceneGraph.ModelAssets.empty() ? nullptr : &m_SceneGraph.ModelAssets.front();
+}
+
+const RTXPTModelInstance* RTXPTScene::GetCompatibilityModelInstance() const
+{
+    return m_SceneGraph.ModelInstances.empty() ? nullptr : &m_SceneGraph.ModelInstances.front();
+}
+
 void RTXPTScene::CacheSceneData()
 {
-    if (!m_Model || m_Model->Scenes.empty())
+    const RTXPTModelAsset*    pAsset    = GetCompatibilityModelAsset();
+    const RTXPTModelInstance* pInstance = GetCompatibilityModelInstance();
+    if (pAsset == nullptr || !pAsset->Model || pAsset->SceneIndex >= pAsset->Model->Scenes.size())
         return;
 
-    m_SceneIndex = static_cast<Uint32>(m_Model->DefaultSceneId >= 0 ? m_Model->DefaultSceneId : 0);
-    if (m_SceneIndex >= m_Model->Scenes.size())
-        m_SceneIndex = 0;
+    m_SceneIndex = pAsset->SceneIndex;
+    m_ModelPath  = pAsset->ResolvedPath;
+    m_Transforms = pInstance != nullptr ? pInstance->Transforms : pAsset->StaticTransforms;
 
-    m_Model->ComputeTransforms(m_SceneIndex, m_Transforms);
-
-    const GLTF::Scene& Scene = m_Model->Scenes[m_SceneIndex];
+    const GLTF::Scene& Scene = pAsset->Model->Scenes[pAsset->SceneIndex];
     m_MeshNodeCount          = CountMeshNodes(Scene);
     m_PrimitiveCount         = CountPrimitives(Scene);
-    m_MaterialCount          = static_cast<Uint32>(m_Model->Materials.size());
+    m_MaterialCount          = static_cast<Uint32>(pAsset->Model->Materials.size());
     m_LightCount             = CountLightNodes(Scene);
-    m_GeometryStats          = ComputeGeometryStats(Scene, *m_Model);
+    m_GeometryStats          = ComputeGeometryStats(Scene, *pAsset->Model);
     m_AnimationIndex         = m_GeometryStats.HasAnimations ? 0 : -1;
     m_GeometryDirty          = m_GeometryStats.HasSkinnedGeometry;
 
     m_VertexStride0 = 0;
-    if (m_Model && m_Model->GetVertexBufferCount() > 0)
+    if (pAsset->Model->GetVertexBufferCount() > 0)
     {
-        for (Uint32 i = 0; i < m_Model->GetNumVertexAttributes(); ++i)
+        for (Uint32 i = 0; i < pAsset->Model->GetNumVertexAttributes(); ++i)
         {
-            const GLTF::VertexAttributeDesc& Desc = m_Model->GetVertexAttribute(i);
+            const GLTF::VertexAttributeDesc& Desc = pAsset->Model->GetVertexAttribute(i);
             if (Desc.BufferId == 0)
             {
                 const Uint32 RelOffset = Desc.RelativeOffset == ~0u ? 0u : Desc.RelativeOffset;
@@ -414,6 +473,17 @@ void RTXPTScene::CacheSceneData()
             }
         }
     }
+}
+
+const GLTF::Model* RTXPTScene::GetModel() const
+{
+    const RTXPTModelAsset* pAsset = GetCompatibilityModelAsset();
+    return pAsset != nullptr ? pAsset->Model.get() : nullptr;
+}
+
+const GLTF::ModelTransforms& RTXPTScene::GetTransforms() const
+{
+    return m_Transforms;
 }
 
 const RTXPTSceneCamera* RTXPTScene::GetCamera(Uint32 CameraIndex) const
@@ -425,16 +495,12 @@ bool RTXPTScene::LoadSceneCameras(const std::string& ScenePath)
 {
     m_Cameras.clear();
 
-    std::ifstream SceneFile{ScenePath};
-    if (!SceneFile)
+    RTXPTJsonLoadResult SceneJsonResult;
+    if (!LoadRTXPTRelaxedJsonFile(ScenePath, SceneJsonResult) || !SceneJsonResult.Json.is_object())
         return false;
 
-    nlohmann::json SceneJson = nlohmann::json::parse(SceneFile, nullptr, false);
-    if (SceneJson.is_discarded() || !SceneJson.is_object())
-        return false;
-
-    const auto GraphIt = SceneJson.find("graph");
-    if (GraphIt == SceneJson.end() || !GraphIt->is_array())
+    const auto GraphIt = SceneJsonResult.Json.find("graph");
+    if (GraphIt == SceneJsonResult.Json.end() || !GraphIt->is_array())
         return false;
 
     for (const auto& Node : *GraphIt)
@@ -448,7 +514,7 @@ bool RTXPTScene::LoadSceneCameras(const std::string& ScenePath)
         CameraDefaults.FarPlane              = m_Cameras.front().FarPlane;
         CameraDefaults.HasExplicitClipPlanes = m_Cameras.front().HasExplicitClipPlanes;
     }
-    AppendAnimatedCameras(SceneJson, CameraDefaults, m_Cameras);
+    AppendAnimatedCameras(SceneJsonResult.Json, CameraDefaults, m_Cameras);
 
     return !m_Cameras.empty();
 }
@@ -474,49 +540,95 @@ bool RTXPTScene::LoadScene(IRenderDevice*     pDevice,
         return false;
     }
 
-    std::string ModelRelativePath;
-    if (!ReadSceneModelPath(ScenePath, ModelRelativePath))
-        return false;
-
-    m_ModelPath = JoinPath(m_AssetsRoot, ModelRelativePath.c_str());
-    if (!FileSystem::FileExists(m_ModelPath.c_str()))
+    RTXPTJsonLoadResult SceneJsonResult;
+    if (!LoadRTXPTRelaxedJsonFile(ScenePath, SceneJsonResult) || !SceneJsonResult.Json.is_object())
     {
-        LOG_ERROR_MESSAGE("Missing glTF file: ", m_ModelPath);
+        LOG_ERROR_MESSAGE("Invalid scene JSON: ", ScenePath);
         return false;
     }
 
+    const auto ModelsIt = SceneJsonResult.Json.find("models");
+    const auto GraphIt  = SceneJsonResult.Json.find("graph");
+    if (ModelsIt == SceneJsonResult.Json.end() || !ModelsIt->is_array() ||
+        GraphIt == SceneJsonResult.Json.end() || !GraphIt->is_array())
+    {
+        LOG_ERROR_MESSAGE("Scene JSON requires models and graph arrays: ", ScenePath);
+        return false;
+    }
+
+    RTXPTSceneGraphData NewData;
+    for (const auto& ModelJson : *ModelsIt)
+    {
+        if (!ModelJson.is_string())
+        {
+            LOG_ERROR_MESSAGE("Scene JSON model entry is not a string: ", ScenePath);
+            return false;
+        }
+
+        RTXPTModelAsset Asset;
+        Asset.RelativePath = ModelJson.get<std::string>();
+        Asset.ResolvedPath = JoinPath(m_AssetsRoot, Asset.RelativePath.c_str());
+        Asset.ModelName    = GetRTXPTModelNameFromPath(Asset.RelativePath);
+        if (!FileSystem::FileExists(Asset.ResolvedPath.c_str()))
+        {
+            LOG_ERROR_MESSAGE("Missing glTF file: ", Asset.ResolvedPath);
+            return false;
+        }
+
+        Asset.Model = LoadRTXPTModelAsset(pDevice, pContext, Asset.ResolvedPath, m_IndexType);
+        if (!Asset.Model)
+        {
+            LOG_ERROR_MESSAGE("Failed to load RTXPT glTF model: ", Asset.ResolvedPath);
+            return false;
+        }
+
+        Asset.SceneIndex = static_cast<Uint32>(Asset.Model->DefaultSceneId >= 0 ? Asset.Model->DefaultSceneId : 0);
+        if (Asset.SceneIndex >= Asset.Model->Scenes.size())
+            Asset.SceneIndex = 0;
+        Asset.Model->ComputeTransforms(Asset.SceneIndex, Asset.StaticTransforms);
+        NewData.ModelAssets.emplace_back(std::move(Asset));
+    }
+
+    for (const auto& NodeJson : *GraphIt)
+    {
+        if (!AppendRTXPTGraphNode(NewData, NodeJson, InvalidRTXPTSceneId, float4x4::Identity()))
+            return false;
+    }
+
+    for (const RTXPTModelInstance& Instance : NewData.ModelInstances)
+    {
+        if (Instance.ModelAssetId >= NewData.ModelAssets.size())
+        {
+            LOG_ERROR_MESSAGE("Scene graph model index is out of range in scene: ", ScenePath);
+            return false;
+        }
+    }
+
+    if (NewData.ModelAssets.empty() || NewData.ModelInstances.empty())
+    {
+        LOG_ERROR_MESSAGE("Scene JSON did not produce model instances: ", ScenePath);
+        return false;
+    }
+
+    NewData.Stats.ModelAssetCount    = static_cast<Uint32>(NewData.ModelAssets.size());
+    NewData.Stats.GraphNodeCount     = static_cast<Uint32>(NewData.GraphNodes.size());
+    NewData.Stats.ModelInstanceCount = static_cast<Uint32>(NewData.ModelInstances.size());
+    for (const RTXPTModelInstance& Instance : NewData.ModelInstances)
+    {
+        if (Instance.ModelAssetId < NewData.ModelAssets.size() &&
+            HasAssetSkinnedGeometry(NewData.ModelAssets[Instance.ModelAssetId]))
+        {
+            ++NewData.Stats.SkinnedInstanceCount;
+        }
+    }
+    NewData.Stats.AdapterWarningCount = static_cast<Uint32>(NewData.Warnings.size());
+
+    m_SceneGraph      = std::move(NewData);
+    m_LoadedSceneName = SceneName;
     LoadSceneCameras(ScenePath);
+    CacheSceneData();
 
-    GLTF::ModelCreateInfo ModelCI;
-    ModelCI.FileName             = m_ModelPath.c_str();
-    ModelCI.ComputeBoundingBoxes = true;
-    ModelCI.IndexType            = m_IndexType;
-    ModelCI.IndBufferBindFlags   = BIND_INDEX_BUFFER | BIND_RAY_TRACING | BIND_SHADER_RESOURCE;
-    for (BIND_FLAGS& BindFlags : ModelCI.VertBufferBindFlags)
-        BindFlags = BIND_VERTEX_BUFFER | BIND_RAY_TRACING;
-    // Buffer 0 is the path-tracer vertex stream (POSITION + NORMAL + TEXCOORD_0); chit reads it as a StructuredBuffer<GeometryVertexData>.
-    ModelCI.VertBufferBindFlags[0] = BIND_VERTEX_BUFFER | BIND_RAY_TRACING | BIND_SHADER_RESOURCE;
-    // Buffer 1 is the default GLTF skinning stream (JOINTS_0 + WEIGHTS_0).
-    // RTXPTSkinnedGeometry reads it as StructuredBuffer<SkinVertexData> when skinned nodes exist.
-    ModelCI.VertBufferBindFlags[1] = BIND_VERTEX_BUFFER | BIND_SHADER_RESOURCE;
-
-    try
-    {
-        m_Model           = std::make_unique<GLTF::Model>(pDevice, pContext, ModelCI);
-        m_LoadedSceneName = SceneName;
-        CacheSceneData();
-    }
-    catch (const std::exception& e)
-    {
-        m_Model.reset();
-        m_LoadedSceneName.clear();
-        LOG_ERROR_MESSAGE("Failed to load RTXPT glTF model '", m_ModelPath, "': ", e.what());
-    }
-
-    // TODO(RTXPT-Port Phase 2): add full material parsing for RTXPT extension fields.
-    // TODO(RTXPT-Port Phase 3): add dynamic/skinned BLAS update, AS compaction, and alpha/OMM geometry flags;
-    // current path builds static opaque geometry.
-    return m_Model != nullptr;
+    return HasValidContent();
 }
 
 bool RTXPTScene::LoadDefaultScene(IRenderDevice* pDevice, IDeviceContext* pContext, const std::string& AssetsRoot)
@@ -528,39 +640,62 @@ void RTXPTScene::Update(double CurrTime, double ElapsedTime)
 {
     (void)CurrTime;
 
-    if (!m_Model || m_AnimationIndex < 0 || !m_GeometryStats.HasSkinnedGeometry)
+    if (m_SceneGraph.ModelInstances.empty())
     {
         m_GeometryDirty = false;
         return;
     }
 
-    const GLTF::Animation& Animation = m_Model->Animations[static_cast<Uint32>(m_AnimationIndex)];
+    RTXPTModelInstance& Instance = m_SceneGraph.ModelInstances.front();
+    if (Instance.ModelAssetId >= m_SceneGraph.ModelAssets.size())
+    {
+        m_GeometryDirty = false;
+        return;
+    }
+
+    RTXPTModelAsset& Asset = m_SceneGraph.ModelAssets[Instance.ModelAssetId];
+    if (!Asset.Model || m_AnimationIndex < 0 || !m_GeometryStats.HasSkinnedGeometry)
+    {
+        m_GeometryDirty = false;
+        return;
+    }
+
+    if (m_AnimationIndex >= static_cast<Int32>(Asset.Model->Animations.size()))
+        m_AnimationIndex = 0;
+
+    const GLTF::Animation& Animation = Asset.Model->Animations[static_cast<Uint32>(m_AnimationIndex)];
     const float            Duration  = std::max(Animation.End - Animation.Start, 1e-5f);
     m_AnimationTime += static_cast<float>(ElapsedTime);
     const float WrappedTime = Animation.Start + std::fmod(m_AnimationTime, Duration);
 
-    m_Model->ComputeTransforms(m_SceneIndex, m_Transforms, float4x4::Identity(), m_AnimationIndex, WrappedTime);
+    Asset.Model->ComputeTransforms(Asset.SceneIndex, Instance.Transforms, Instance.GlobalTransform, m_AnimationIndex, WrappedTime);
+    m_Transforms    = Instance.Transforms;
     m_GeometryDirty = true;
 }
 
 bool RTXPTScene::HasValidContent() const
 {
-    return m_Model != nullptr;
+    return !m_SceneGraph.ModelAssets.empty() && !m_SceneGraph.ModelInstances.empty();
 }
 
 IBuffer* RTXPTScene::GetVertexBuffer0(IRenderDevice* pDevice, IDeviceContext* pContext) const
 {
-    return m_Model ? m_Model->GetVertexBuffer(0, pDevice, pContext) : nullptr;
+    const RTXPTModelAsset* pAsset = GetCompatibilityModelAsset();
+    return pAsset != nullptr && pAsset->Model ? pAsset->Model->GetVertexBuffer(0, pDevice, pContext) : nullptr;
 }
 
 IBuffer* RTXPTScene::GetSkinningBuffer(IRenderDevice* pDevice, IDeviceContext* pContext) const
 {
-    return m_Model && m_Model->GetVertexBufferCount() > 1 ? m_Model->GetVertexBuffer(1, pDevice, pContext) : nullptr;
+    const RTXPTModelAsset* pAsset = GetCompatibilityModelAsset();
+    return pAsset != nullptr && pAsset->Model && pAsset->Model->GetVertexBufferCount() > 1 ?
+        pAsset->Model->GetVertexBuffer(1, pDevice, pContext) :
+        nullptr;
 }
 
 IBuffer* RTXPTScene::GetIndexBuffer(IRenderDevice* pDevice, IDeviceContext* pContext) const
 {
-    return m_Model ? m_Model->GetIndexBuffer(pDevice, pContext) : nullptr;
+    const RTXPTModelAsset* pAsset = GetCompatibilityModelAsset();
+    return pAsset != nullptr && pAsset->Model ? pAsset->Model->GetIndexBuffer(pDevice, pContext) : nullptr;
 }
 
 } // namespace Diligent

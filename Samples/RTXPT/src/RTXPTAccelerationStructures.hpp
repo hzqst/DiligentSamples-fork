@@ -49,7 +49,7 @@ struct SubInstanceData
     Uint32 IndexCount   = 0;
     Uint32 VertexOffset = 0;
     Uint32 VertexCount  = 0;
-    Uint32 _padding0    = 0;
+    Uint32 EmissiveTriangleOffset = 0;
     Uint32 _padding1    = 0;
 };
 static_assert(sizeof(SubInstanceData) == 32, "SubInstanceData layout must match PathTracer/PathTracerShared.h");
@@ -101,6 +101,7 @@ public:
 
     ITopLevelAS* GetTLAS() const { return m_TLAS; }
     IBuffer*     GetSubInstanceBuffer() const { return m_SubInstanceBuffer; }
+    IBuffer*     GetSubInstanceTransformBuffer() const { return m_SubInstanceTransformBuffer; }
 
     const RTXPTAccelerationStructureStats& GetStats() const { return m_Stats; }
 
@@ -120,6 +121,7 @@ private:
         bool                               Dynamic               = false;
         Uint32                             SkinningDispatchCount = 0;
         Uint32                             InstanceIndex         = 0;
+        Uint32                             SubInstanceBase       = 0;
     };
 
     bool UpdateTLAS(IDeviceContext* pContext, const RTXPTSceneGraphData& SceneData);
@@ -132,6 +134,8 @@ private:
     RefCntAutoPtr<IBuffer>             m_TLASScratch;
     RefCntAutoPtr<IBuffer>             m_InstanceBuffer;
     RefCntAutoPtr<IBuffer>             m_SubInstanceBuffer;
+    RefCntAutoPtr<IBuffer>             m_SubInstanceTransformBuffer;
+    std::vector<float4x4>              m_SubInstanceTransforms;
     RTXPTAccelerationStructureStats    m_Stats;
 };
 

@@ -52,6 +52,13 @@ constexpr float       kDefaultToneMappingExposureValueMin     = -16.0f;
 constexpr float       kDefaultToneMappingExposureValueMax     = 16.0f;
 constexpr const char* kPreferredSceneName     = "bistro-programmer-art.scene.json";
 constexpr const char* kSceneFileSuffix        = ".scene.json";
+constexpr Uint32      kMaxPackedEmissiveTriangleCount = 0x7fffffffu;
+
+Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 EmissiveTriangleCount)
+{
+    const Uint32 ClampedCount = std::min(EmissiveTriangleCount, kMaxPackedEmissiveTriangleCount);
+    return (ClampedCount << 1u) | (EnableEnvNEE ? 1u : 0u);
+}
 
 RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
 {
@@ -235,6 +242,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_AccelerationStructures.Reset();
     m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
+    m_EmissiveTrianglePass.Reset();
 
     m_SelectedSceneCamera   = -1;
     m_EnableSceneAnimations = true;
@@ -245,6 +253,8 @@ void RTXPTSample::ResetSceneDependentResources()
     m_AccumulationFrame     = 0;
     m_AccumulationActive    = false;
     m_HasLastCameraMatrices = false;
+    m_HasDynamicGeometry    = false;
+    m_EmissiveTrianglesDirty = true;
 }
 
 bool RTXPTSample::RebuildSceneDependentResources()
@@ -266,11 +276,15 @@ bool RTXPTSample::RebuildSceneDependentResources()
 
     ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData);
     ResourcesReady &= m_Lights.Upload(m_pDevice, SceneData);
+    ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData);
 
     ResourcesReady &= m_SkinnedGeometry.Initialize(m_pDevice,
-                                                   m_pEngineFactory,
-                                                   SceneData,
-                                                   m_FeatureCaps.ComputeShaders);
+                                                    m_pEngineFactory,
+                                                    SceneData,
+                                                    m_FeatureCaps.ComputeShaders);
+
+    m_HasDynamicGeometry     = m_SkinnedGeometry.HasSkinnedGeometry();
+    m_EmissiveTrianglesDirty = true;
 
     if (m_SkinnedGeometry.HasSkinnedGeometry() && m_SkinnedGeometry.IsReady())
         ResourcesReady &= m_SkinnedGeometry.Update(m_pImmediateContext, SceneData);
@@ -286,6 +300,8 @@ bool RTXPTSample::RebuildSceneDependentResources()
     if (ResourcesReady)
         m_Scene.ClearGeometryDirty();
     CreatePhase4Passes();
+    if (ResourcesReady)
+        ResourcesReady &= BuildEmissiveTriangles();
     return ResourcesReady;
 }
 
@@ -476,7 +492,11 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.ptConsts.resetAccumulation     = m_ResetAccumulationPending ? 1u : 0u;
     m_LastFrameConstants.ptConsts.minBounceCount        = m_MinBounces;
     m_LastFrameConstants.ptConsts.NEEEnabled            = m_EnableNEE ? 1u : 0u;
-    m_LastFrameConstants.ptConsts.environmentNEEEnabled = m_EnableEnvNEE ? 1u : 0u;
+    const Uint32 EmissiveTriangleCount = (m_EnableNEE && m_EnableEmissiveNEE && m_EmissiveTrianglePass.IsReady() &&
+                                          !m_EmissiveTrianglesDirty) ?
+        m_Lights.GetEmissiveTriangleCount() :
+        0u;
+    m_LastFrameConstants.ptConsts.environmentNEEEnabled = PackEnvironmentNEEAndEmissiveTriangleCount(m_EnableEnvNEE, EmissiveTriangleCount);
     m_LastFrameConstants.ptConsts.environmentIntensity  = m_EnvIntensity;
     m_LastFrameConstants.ptConsts.lightIntensityScale   = m_LightIntensityScale;
     m_LastFrameConstants.ptConsts.maxNEEBounceCount     = m_MaxNEEBounces;
@@ -505,6 +525,18 @@ void RTXPTSample::CreatePhase4Passes()
     // Material-texture sampling needs descriptor indexing. Gate it on bindless support; if the textured
     // pipeline fails to build, fall back to the Phase 5.2 factor-only path so the sample still renders.
     const bool EnableMaterialTextures = m_FeatureCaps.BindlessResources && m_Materials.GetTextureCount() > 0;
+
+    m_EmissiveTrianglePass.Initialize(m_pDevice,
+                                      m_pEngineFactory,
+                                      m_Materials.GetMaterialBuffer(),
+                                      m_AccelerationStructures.GetSubInstanceBuffer(),
+                                      m_AccelerationStructures.GetSubInstanceTransformBuffer(),
+                                      m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
+                                      m_SkinnedGeometry.GetSkinnedVertexBuffer(),
+                                      m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
+                                      m_Scene.GetIndexType(),
+                                      m_Lights.GetEmissiveTriangleBuffer(),
+                                      m_FeatureCaps.ComputeShaders);
 
     const bool RTReady =
         m_RayTracingPass.Initialize(m_pDevice,
@@ -552,6 +584,24 @@ void RTXPTSample::CreatePhase4Passes()
                                   "RTXPTDebugCompute.csh",
                                   m_FrameConstantsCB,
                                   m_FeatureCaps.ComputeShaders);
+}
+
+bool RTXPTSample::BuildEmissiveTriangles()
+{
+    const Uint32 EmissiveTriangleCount = m_Lights.GetEmissiveTriangleCount();
+    if (EmissiveTriangleCount == 0u)
+    {
+        m_EmissiveTrianglesDirty = false;
+        return true;
+    }
+
+    if (!m_EmissiveTrianglePass.IsReady() || m_AccelerationStructures.GetStats().SubInstanceCount == 0)
+        return false;
+
+    const bool Executed = m_EmissiveTrianglePass.Dispatch(m_pImmediateContext, m_AccelerationStructures.GetStats().SubInstanceCount);
+    if (Executed)
+        m_EmissiveTrianglesDirty = false;
+    return Executed;
 }
 
 bool RTXPTSample::EnsureRenderTargets()
@@ -663,6 +713,8 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
                 m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, SceneData, m_SkinnedGeometry);
             if (ASUpdated)
             {
+                m_EmissiveTrianglesDirty = true;
+                BuildEmissiveTriangles();
                 RequestAccumulationReset("Skinned geometry updated");
                 m_Scene.ClearGeometryDirty();
             }
@@ -791,6 +843,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Indent(Indent);
         {
             ResetOnChange(ImGui::Checkbox("Use Next Event Estimation", &m_EnableNEE), "NEE toggled");
+            ResetOnChange(ImGui::Checkbox("Emissive mesh NEE + MIS", &m_EnableEmissiveNEE), "Emissive NEE toggled");
             ResetOnChange(ImGui::Checkbox("Environment NEE + MIS", &m_EnableEnvNEE), "Environment NEE toggled");
 
             int MaxNEEBouncesUI = static_cast<int>(m_MaxNEEBounces);
@@ -965,6 +1018,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Primitives: %u", m_Scene.GetPrimitiveCount());
         ImGui::Text("Materials: %u", m_Materials.GetStats().MaterialCount);
         ImGui::Text("Lights: %u", m_Lights.GetStats().LightCount);
+        ImGui::Text("Emissive triangles: %u", m_Lights.GetStats().EmissiveTriangleCount);
         ImGui::Text("Animations: %s", GeometryStats.HasAnimations ? "yes" : "no");
         ImGui::Text("Skinned nodes: %u", GeometryStats.SkinnedNodeCount);
         ImGui::Text("Skinned primitives: %u", GeometryStats.SkinnedPrimitiveCount);
@@ -1007,6 +1061,10 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
         ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
         ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
+        ImGui::Text("Emissive triangle pass: %s", m_EmissiveTrianglePass.IsReady() ? "ready" : "not ready");
+        ImGui::Text("Emissive triangle dispatch count: %u", m_EmissiveTrianglePass.GetStats().DispatchCount);
+        if (!m_EmissiveTrianglePass.GetStats().DisabledReason.empty())
+            ImGui::TextWrapped("Emissive triangle pass disabled: %s", m_EmissiveTrianglePass.GetStats().DisabledReason.c_str());
         ImGui::Text("Vertex buffer: %s", RTPassStats.VertexBufferBound ? "bound" : "fallback");
         ImGui::Text("Skinned vertex buffer: %s", RTPassStats.SkinnedVertexBufferBound ? "bound" : "fallback");
         ImGui::Text("Skinning pass: %s", m_SkinnedGeometry.IsReady() ? "ready" : "not ready");

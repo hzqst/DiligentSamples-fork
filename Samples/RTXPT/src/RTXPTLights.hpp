@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "Buffer.h"
@@ -47,9 +48,20 @@ struct PolymorphicLightInfo
 };
 static_assert(sizeof(PolymorphicLightInfo) == 64, "PolymorphicLightInfo layout must match PathTracer/PathTracerShared.h");
 
+struct EmissiveTriangle
+{
+    float4 base     = float4{0, 0, 0, 0};
+    float4 edge1    = float4{0, 0, 0, 0};
+    float4 edge2    = float4{0, 0, 0, 0};
+    float4 radiance = float4{0, 0, 0, 0};
+};
+static_assert(sizeof(EmissiveTriangle) == 64, "EmissiveTriangle layout must match PathTracer/PathTracerShared.h");
+
 struct RTXPTLightStats
 {
-    Uint32 LightCount = 0;
+    Uint32      LightCount            = 0;
+    Uint32      EmissiveTriangleCount = 0;
+    std::string LastError;
 };
 
 class RTXPTLights
@@ -58,14 +70,19 @@ public:
     void Reset();
     bool Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const GLTF::ModelTransforms& Transforms);
     bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
+    bool UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
 
     const RTXPTLightStats& GetStats() const { return m_Stats; }
     IBuffer*               GetLightBuffer() const { return m_LightBuffer; }
+    IBuffer*               GetEmissiveTriangleBuffer() const { return m_EmissiveTriangleBuffer; }
+    Uint32                 GetEmissiveTriangleCount() const { return m_Stats.EmissiveTriangleCount; }
 
 private:
     bool UploadLightBuffer(IRenderDevice* pDevice, std::vector<PolymorphicLightInfo>& Lights);
+    bool UploadEmissiveTriangleBuffer(IRenderDevice* pDevice, Uint32 EmissiveTriangleCount);
 
     RefCntAutoPtr<IBuffer> m_LightBuffer;
+    RefCntAutoPtr<IBuffer> m_EmissiveTriangleBuffer;
     RTXPTLightStats        m_Stats;
 };
 

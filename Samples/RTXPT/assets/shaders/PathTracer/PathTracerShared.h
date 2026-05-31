@@ -5,6 +5,10 @@
 static const uint kSubInstanceFlagIndexed = 0x1u;
 static const uint kSubInstanceFlagSkinned = 0x2u;
 
+// Maximum area-light solid-angle pdf (G4). Mirrors RTXPT-fork PolymorphicLight.hlsli:25 MAX_SOLID_ANGLE_PDF;
+// clamps the area->solid-angle conversion for near-grazing / very close emissive-triangle samples.
+static const float kMaxSolidAnglePdf = 1e10;
+
 // Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 48 bytes).
 struct PathTracerConstants
 {
@@ -14,7 +18,7 @@ struct PathTracerConstants
     uint minBounceCount;    // Russian-roulette start bounce.
 
     uint  NEEEnabled;            // Non-zero enables next-event estimation (direct light sampling) at each hit.
-    uint  environmentNEEEnabled; // Non-zero adds environment (sky) NEE with MIS in addition to analytic lights.
+    uint  environmentNEEEnabled; // bit 0: environment NEE enabled; bits 1..31: emissive triangle count (G4).
     float environmentIntensity;  // Scales the procedural-sky environment radiance.
     float lightIntensityScale;   // Scales analytic (punctual) light radiance.
 
@@ -77,7 +81,7 @@ struct SubInstanceData
     uint IndexCount;
     uint VertexOffset;
     uint VertexCount;
-    uint _padding0;
+    uint emissiveTriangleOffset; // First entry in t_EmissiveTriangles for this sub-instance (G4).
     uint _padding1;
 };
 
@@ -116,6 +120,7 @@ static const uint kMaterialFlagAlphaTested                 = 0x2u;
 static const uint kMaterialFlagHasEmissiveTexture          = 0x4u;
 static const uint kMaterialFlagHasMetallicRoughnessTexture = 0x8u;
 static const uint kMaterialFlagHasNormalTexture            = 0x10u;
+static const uint kMaterialFlagEmissiveAreaLight           = 0x20u;
 
 // Mirrors Diligent::PolymorphicLightInfo in RTXPTLights.hpp.
 struct PolymorphicLightInfo
@@ -124,6 +129,17 @@ struct PolymorphicLightInfo
     float4 positionRange;
     float4 directionType;
     float4 spotAngles;
+};
+
+// Mirrors Diligent::EmissiveTriangle in RTXPTLights.hpp (total size 64 bytes). One world-space,
+// NEE-eligible emissive triangle (constant emitter). Stores base + two edges + radiance like
+// RTXPT-fork TriangleLight; the surface normal and area are recomputed on the fly.
+struct EmissiveTriangle
+{
+    float4 base;     // xyz: world-space vertex 0 (.w unused)
+    float4 edge1;    // xyz: world-space (vertex1 - vertex0) (.w unused)
+    float4 edge2;    // xyz: world-space (vertex2 - vertex0) (.w unused)
+    float4 radiance; // rgb: emitted radiance (.w unused)
 };
 
 // Per-vertex layout for vertex buffer 0 of the default Diligent GLTF model

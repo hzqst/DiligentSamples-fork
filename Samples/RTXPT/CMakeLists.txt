@@ -13,6 +13,7 @@ set(SOURCE
     src/RTXPTSkinnedGeometry.cpp
     src/RTXPTRenderTargets.cpp
     src/RTXPTRayTracingPass.cpp
+    src/RTXPTEmissiveTrianglePass.cpp
     src/RTXPTComputePass.cpp
     src/RTXPTBlitPass.cpp
 )
@@ -28,6 +29,7 @@ set(INCLUDE
     src/RTXPTSkinnedGeometry.hpp
     src/RTXPTRenderTargets.hpp
     src/RTXPTRayTracingPass.hpp
+    src/RTXPTEmissiveTrianglePass.hpp
     src/RTXPTComputePass.hpp
     src/RTXPTBlitPass.hpp
     RTXPT_FORK_MAPPING.md
@@ -48,6 +50,7 @@ set(SHADERS
     assets/shaders/PathTracer/PathTracerSample.rgen
     assets/shaders/PathTracer/PathTracerMiss.rmiss
     assets/shaders/PathTracer/PathTracerClosestHit.rchit
+    assets/shaders/PathTracer/EmissiveTriangleBuild.hlsl
     assets/shaders/PathTracer/PathTracerAnyHit.rahit
     assets/shaders/PathTracer/SkinnedVertexBuild.csh
     assets/shaders/RTXPTDebugCompute.csh

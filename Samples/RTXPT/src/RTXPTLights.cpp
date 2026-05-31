@@ -25,11 +25,14 @@
  */
 
 #include "RTXPTLights.hpp"
+#include "RTXPTMaterials.hpp"
 #include "RTXPTSceneGraph.hpp"
 #include "RTXPTSceneJson.hpp"
 
 #include "DebugUtilities.hpp"
 
+#include <algorithm>
+#include <limits>
 #include <vector>
 
 namespace Diligent
@@ -84,11 +87,17 @@ float ReadRTXPTLightIntensity(const nlohmann::json& Json)
                                   ReadRTXPTOptionalFloat(Json, "irradiance", 1.0f));
 }
 
+Uint32 GetPrimitiveTriangleCount(const GLTF::Primitive& Primitive)
+{
+    return Primitive.HasIndices() ? Primitive.IndexCount / 3u : Primitive.VertexCount / 3u;
+}
+
 } // namespace
 
 void RTXPTLights::Reset()
 {
     m_LightBuffer.Release();
+    m_EmissiveTriangleBuffer.Release();
     m_Stats = {};
 }
 
@@ -117,6 +126,39 @@ bool RTXPTLights::UploadLightBuffer(IRenderDevice* pDevice, std::vector<Polymorp
 
     VERIFY(m_LightBuffer, "Failed to create RTXPT light buffer");
     return m_LightBuffer != nullptr;
+}
+
+bool RTXPTLights::UploadEmissiveTriangleBuffer(IRenderDevice* pDevice, Uint32 EmissiveTriangleCount)
+{
+    m_EmissiveTriangleBuffer.Release();
+
+    if (pDevice == nullptr)
+    {
+        m_Stats.LastError = "RTXPT emissive triangle buffer requires a render device";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        return false;
+    }
+
+    const Uint32 ElementCount = std::max<Uint32>(EmissiveTriangleCount, 1u);
+
+    BufferDesc Desc;
+    Desc.Name              = "RTXPT emissive triangle buffer";
+    Desc.Usage             = USAGE_DEFAULT;
+    Desc.BindFlags         = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+    Desc.Mode              = BUFFER_MODE_STRUCTURED;
+    Desc.ElementByteStride = sizeof(EmissiveTriangle);
+    Desc.Size              = Uint64{ElementCount} * sizeof(EmissiveTriangle);
+
+    pDevice->CreateBuffer(Desc, nullptr, &m_EmissiveTriangleBuffer);
+
+    VERIFY(m_EmissiveTriangleBuffer, "Failed to create RTXPT emissive triangle buffer");
+    if (!m_EmissiveTriangleBuffer)
+    {
+        m_Stats.LastError = "Failed to create RTXPT emissive triangle buffer";
+        return false;
+    }
+
+    return true;
 }
 
 bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const GLTF::ModelTransforms& Transforms)
@@ -179,6 +221,58 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& Scen
     }
 
     return UploadLightBuffer(pDevice, Lights);
+}
+
+bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData)
+{
+    m_Stats.EmissiveTriangleCount = 0;
+    m_Stats.LastError.clear();
+
+    Uint64 EmissiveTriangleCount = 0;
+    for (Uint32 InstanceId = 0; InstanceId < SceneData.ModelInstances.size(); ++InstanceId)
+    {
+        const RTXPTModelInstance& Instance = SceneData.ModelInstances[InstanceId];
+        if (Instance.ModelAssetId >= SceneData.ModelAssets.size())
+            continue;
+
+        const RTXPTModelAsset& Asset = SceneData.ModelAssets[Instance.ModelAssetId];
+        if (!Asset.Model || Asset.SceneIndex >= Asset.Model->Scenes.size())
+            continue;
+
+        const GLTF::Model& Model = *Asset.Model;
+        const GLTF::Scene& Scene = Model.Scenes[Asset.SceneIndex];
+        const GLTF::ModelTransforms& Transforms = Instance.Transforms.NodeGlobalMatrices.empty() ?
+            Asset.StaticTransforms :
+            Instance.Transforms;
+        for (const GLTF::Node* pNode : Scene.LinearNodes)
+        {
+            if (pNode == nullptr || pNode->pMesh == nullptr)
+                continue;
+            if (pNode->Index < 0 || static_cast<size_t>(pNode->Index) >= Transforms.NodeGlobalMatrices.size())
+                continue;
+
+            for (const GLTF::Primitive& Primitive : pNode->pMesh->Primitives)
+            {
+                if (Primitive.MaterialId >= Model.Materials.size())
+                    continue;
+
+                const RTXPTMaterialExtension* pExtension = RTXPTGetMaterialExtension(SceneData, Asset, Primitive.MaterialId);
+                if (!RTXPTMaterialIsEmissiveAreaLight(Model.Materials[Primitive.MaterialId], pExtension))
+                    continue;
+
+                EmissiveTriangleCount += GetPrimitiveTriangleCount(Primitive);
+                if (EmissiveTriangleCount > Uint64{std::numeric_limits<Uint32>::max()})
+                {
+                    m_Stats.LastError = "RTXPT emissive triangle count exceeds Uint32";
+                    LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+                    return false;
+                }
+            }
+        }
+    }
+
+    m_Stats.EmissiveTriangleCount = static_cast<Uint32>(EmissiveTriangleCount);
+    return UploadEmissiveTriangleBuffer(pDevice, m_Stats.EmissiveTriangleCount);
 }
 
 } // namespace Diligent

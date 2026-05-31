@@ -41,6 +41,11 @@ namespace
 
 constexpr Uint32 InvalidTextureIndex = ~Uint32{0};
 
+bool HasNonZeroEmission(const float3& Emission)
+{
+    return Emission.x > 0.0f || Emission.y > 0.0f || Emission.z > 0.0f;
+}
+
 RefCntAutoPtr<ITextureView> CreateMaterialTextureView(ITexture* pTexture)
 {
     if (pTexture == nullptr)
@@ -100,6 +105,9 @@ void FillMaterialPTDataFromGLTF(const GLTF::Material& Material, MaterialPTData& 
 
     if (RTXPTMaterialIsAlphaTested(Material) && (Data.flags & kMaterialFlag_HasBaseColorTexture) != 0u)
         Data.flags |= kMaterialFlag_AlphaTested;
+
+    if (RTXPTMaterialIsEmissiveAreaLight(Material))
+        Data.flags |= kMaterialFlag_EmissiveAreaLight;
 }
 
 void RemapTextureIndex(Uint32 Flag, Uint32& Flags, Uint32& TextureIndex, const std::vector<Uint32>& TextureRemap)
@@ -134,6 +142,11 @@ bool RTXPTMaterialIsAlphaTested(const GLTF::Material& Material)
 {
     return Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_MASK &&
         Material.GetTextureId(GLTF::DefaultBaseColorTextureAttribId) >= 0;
+}
+
+bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material& Material)
+{
+    return RTXPTMaterialIsEmissiveAreaLight(Material, nullptr);
 }
 
 const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphData& SceneData,
@@ -178,6 +191,20 @@ bool RTXPTMaterialIsAlphaTested(const GLTF::Material&          Material,
 
     const bool ExtensionAlphaTested = pExtension != nullptr && pExtension->Loaded && pExtension->EnableAlphaTesting;
     return Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_MASK || ExtensionAlphaTested;
+}
+
+bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&         Material,
+                                      const RTXPTMaterialExtension* pExtension)
+{
+    const bool ExtensionLoaded = pExtension != nullptr && pExtension->Loaded;
+    const bool UsesEmissiveTexture =
+        Material.GetTextureId(GLTF::DefaultEmissiveTextureAttribId) >= 0 &&
+        (!ExtensionLoaded || pExtension->EnableEmissiveTexture);
+    if (UsesEmissiveTexture)
+        return false;
+
+    const float3& Emission = ExtensionLoaded ? pExtension->EmissiveFactor : Material.Attribs.EmissiveFactor;
+    return HasNonZeroEmission(Emission);
 }
 
 void RTXPTMaterials::Reset()
@@ -299,6 +326,10 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
             Data.flags &= ~kMaterialFlag_AlphaTested;
             if (RTXPTMaterialIsAlphaTested(Material, pExtension, (Data.flags & kMaterialFlag_HasBaseColorTexture) != 0u))
                 Data.flags |= kMaterialFlag_AlphaTested;
+
+            Data.flags &= ~kMaterialFlag_EmissiveAreaLight;
+            if (RTXPTMaterialIsEmissiveAreaLight(Material, pExtension))
+                Data.flags |= kMaterialFlag_EmissiveAreaLight;
 
             MaterialData.emplace_back(Data);
         }

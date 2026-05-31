@@ -33,6 +33,7 @@
 
 #include "DebugUtilities.hpp"
 #include "GraphicsAccessories.hpp"
+#include "MapHelper.hpp"
 #include "RTXPTMaterials.hpp"
 
 namespace Diligent
@@ -107,6 +108,8 @@ void RTXPTAccelerationStructures::Reset()
     m_TLASScratch.Release();
     m_InstanceBuffer.Release();
     m_SubInstanceBuffer.Release();
+    m_SubInstanceTransformBuffer.Release();
+    m_SubInstanceTransforms.clear();
     m_InstanceNames.clear();
     m_TLASInstances.clear();
     m_Stats = {};
@@ -157,8 +160,11 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
     m_TLASInstances.reserve(SceneData.GraphNodes.size());
     m_InstanceNames.reserve(SceneData.GraphNodes.size());
     SubInstances.reserve(SceneData.GraphNodes.size());
+    m_SubInstanceTransforms.clear();
+    m_SubInstanceTransforms.reserve(SceneData.GraphNodes.size());
 
     Uint32 SubInstanceBase    = 0;
+    Uint32 EmissiveTriangleOffset = 0;
     bool   HasDynamicGeometry = false;
     for (Uint32 InstanceId = 0; InstanceId < SceneData.ModelInstances.size(); ++InstanceId)
     {
@@ -185,12 +191,14 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
         }
 
         std::vector<Uint8> MaterialAlphaTested(Model.Materials.size(), Uint8{0});
+        std::vector<Uint8> MaterialEmissiveAreaLight(Model.Materials.size(), Uint8{0});
         for (Uint32 MatIdx = 0; MatIdx < Model.Materials.size(); ++MatIdx)
         {
             const GLTF::Material&          Material              = Model.Materials[MatIdx];
             const RTXPTMaterialExtension*  pExtension            = RTXPTGetMaterialExtension(SceneData, Asset, MatIdx);
             const bool                     HasBaseColorTexture   = RTXPTMaterialHasBaseColorTexture(Model, Material, pExtension);
             MaterialAlphaTested[MatIdx] = RTXPTMaterialIsAlphaTested(Material, pExtension, HasBaseColorTexture) ? Uint8{1} : Uint8{0};
+            MaterialEmissiveAreaLight[MatIdx] = RTXPTMaterialIsEmissiveAreaLight(Material, pExtension) ? Uint8{1} : Uint8{0};
         }
 
         IBuffer* pVertexBuffer = Model.GetVertexBuffer(Position.BufferId, pDevice, pContext);
@@ -294,13 +302,17 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
                 const std::string NodeName = pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name;
                 GeometryNames.emplace_back(Instance.Name + "_" + NodeName + "_" + std::to_string(PrimitiveIndex));
 
-                const bool IsIndexed = Primitive.HasIndices();
+                const bool   IsIndexed     = Primitive.HasIndices();
+                const Uint32 TriangleCount = IsIndexed ? Primitive.IndexCount / 3u : Primitive.VertexCount / 3u;
+                const bool   GeometryEmissiveAreaLight = Primitive.MaterialId < MaterialEmissiveAreaLight.size() &&
+                    MaterialEmissiveAreaLight[Primitive.MaterialId] != 0;
 
                 SubInstanceData SubEntry;
                 SubEntry.MaterialID = Primitive.MaterialId < Asset.MaterialRemap.size() ?
                     Asset.MaterialRemap[Primitive.MaterialId] :
                     0;
                 SubEntry.VertexCount = Primitive.VertexCount;
+                SubEntry.EmissiveTriangleOffset = EmissiveTriangleOffset;
                 if (IsSkinnedNode)
                 {
                     SubEntry.Flags |= kSubInstanceFlag_Skinned;
@@ -317,6 +329,16 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
                     SubEntry.IndexCount  = Primitive.IndexCount;
                 }
                 SubInstances.emplace_back(SubEntry);
+                m_SubInstanceTransforms.emplace_back(Transforms.NodeGlobalMatrices[pNode->Index]);
+                if (GeometryEmissiveAreaLight)
+                {
+                    if (Uint64{EmissiveTriangleOffset} + Uint64{TriangleCount} > Uint64{std::numeric_limits<Uint32>::max()})
+                    {
+                        LOG_ERROR_MESSAGE("RTXPT emissive triangle offset exceeds Uint32");
+                        return false;
+                    }
+                    EmissiveTriangleOffset += TriangleCount;
+                }
 
                 // The GLTF builder bakes VertexStart into indexed primitives and resets FirstVertex to 0.
                 // BLAS indexed geometry therefore needs the whole model vertex range, not Primitive.VertexCount.
@@ -332,7 +354,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
                 TriangleDesc.MaxVertexCount       = PrimitiveVertexCnt;
                 TriangleDesc.VertexValueType      = Position.ValueType;
                 TriangleDesc.VertexComponentCount = Position.ComponentCount;
-                TriangleDesc.MaxPrimitiveCount    = IsIndexed ? Primitive.IndexCount / 3 : Primitive.VertexCount / 3;
+                TriangleDesc.MaxPrimitiveCount    = TriangleCount;
                 TriangleDesc.IndexType            = IsIndexed ? IndexType : VT_UNDEFINED;
 
                 BLASBuildTriangleData BuildData;
@@ -378,6 +400,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
             Record.ModelInstanceId       = InstanceId;
             Record.pNode                 = pNode;
             Record.InstanceIndex         = static_cast<Uint32>(m_TLASInstances.size());
+            Record.SubInstanceBase       = SubInstanceBase;
             Record.SkinningDispatchCount = IsSkinnedNode ? SkinningDispatchCount : 0;
             Record.GeometryNames         = std::move(GeometryNames);
             Record.TriangleData          = TriangleData;
@@ -514,6 +537,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
     {
         // Always upload at least one dummy entry so the bridge buffer can be bound unconditionally.
         SubInstances.push_back(SubInstanceData{});
+        m_SubInstanceTransforms.push_back(float4x4::Identity());
     }
 
     BufferDesc SubInstanceDesc;
@@ -529,6 +553,27 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
     VERIFY(m_SubInstanceBuffer, "Failed to create RTXPT sub-instance buffer");
     if (!m_SubInstanceBuffer)
         return false;
+
+    BufferDesc TransformDesc;
+    TransformDesc.Name              = "RTXPT sub-instance transform buffer";
+    TransformDesc.Usage             = USAGE_DYNAMIC;
+    TransformDesc.BindFlags         = BIND_SHADER_RESOURCE;
+    TransformDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
+    TransformDesc.Mode              = BUFFER_MODE_STRUCTURED;
+    TransformDesc.ElementByteStride = sizeof(float4x4);
+    TransformDesc.Size              = Uint64{m_SubInstanceTransforms.size()} * sizeof(float4x4);
+    pDevice->CreateBuffer(TransformDesc, nullptr, &m_SubInstanceTransformBuffer);
+    VERIFY(m_SubInstanceTransformBuffer, "Failed to create RTXPT sub-instance transform buffer");
+    if (!m_SubInstanceTransformBuffer)
+        return false;
+
+    {
+        MapHelper<float4x4> Mapped{pContext, m_SubInstanceTransformBuffer, MAP_WRITE, MAP_FLAG_DISCARD};
+        VERIFY(Mapped, "Failed to map RTXPT sub-instance transform buffer");
+        if (!Mapped)
+            return false;
+        std::copy(m_SubInstanceTransforms.begin(), m_SubInstanceTransforms.end(), static_cast<float4x4*>(Mapped));
+    }
 
     m_Stats.BLASCount        = static_cast<Uint32>(m_BLASRecords.size());
     m_Stats.InstanceCount    = static_cast<Uint32>(m_TLASInstances.size());
@@ -580,8 +625,30 @@ bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const RTX
             return false;
         }
 
-        m_TLASInstances[Record.InstanceIndex].Transform    = ToInstanceMatrix(Transforms.NodeGlobalMatrices[NodeIndex]);
+        const float4x4& WorldTransform = Transforms.NodeGlobalMatrices[NodeIndex];
+        m_TLASInstances[Record.InstanceIndex].Transform    = ToInstanceMatrix(WorldTransform);
         m_TLASInstances[Record.InstanceIndex].InstanceName = m_InstanceNames[Record.InstanceIndex].c_str();
+
+        if (Uint64{Record.SubInstanceBase} + Uint64{Record.GeometryCount} > m_SubInstanceTransforms.size())
+        {
+            DEV_ERROR("RTXPT dynamic TLAS update has invalid sub-instance transform data");
+            return false;
+        }
+        for (Uint32 i = 0; i < Record.GeometryCount; ++i)
+            m_SubInstanceTransforms[Record.SubInstanceBase + i] = WorldTransform;
+    }
+
+    if (!m_SubInstanceTransformBuffer || m_SubInstanceTransforms.empty())
+    {
+        DEV_ERROR("RTXPT dynamic TLAS update requires a sub-instance transform buffer");
+        return false;
+    }
+    {
+        MapHelper<float4x4> Mapped{pContext, m_SubInstanceTransformBuffer, MAP_WRITE, MAP_FLAG_DISCARD};
+        VERIFY(Mapped, "Failed to map RTXPT sub-instance transform buffer");
+        if (!Mapped)
+            return false;
+        std::copy(m_SubInstanceTransforms.begin(), m_SubInstanceTransforms.end(), static_cast<float4x4*>(Mapped));
     }
 
     BuildTLASAttribs TLASAttribs;

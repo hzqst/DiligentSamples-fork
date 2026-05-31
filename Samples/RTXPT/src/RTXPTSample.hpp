@@ -34,6 +34,7 @@
 #include "RTXPTAccelerationStructures.hpp"
 #include "RTXPTBlitPass.hpp"
 #include "RTXPTComputePass.hpp"
+#include "RTXPTEmissiveTrianglePass.hpp"
 #include "RTXPTLights.hpp"
 #include "RTXPTMaterials.hpp"
 #include "RTXPTRayTracingPass.hpp"
@@ -64,7 +65,7 @@ struct PathTracerConstants
     Uint32 minBounceCount    = 0;
 
     Uint32 NEEEnabled            = 1;    // Non-zero enables next-event estimation (direct light sampling).
-    Uint32 environmentNEEEnabled = 1;    // Non-zero adds environment (sky) NEE with MIS alongside analytic lights.
+    Uint32 environmentNEEEnabled = 1;    // bit 0 enables environment NEE; bits 1..31 pack emissive triangle count (G4).
     float  environmentIntensity  = 1.0f; // Scales the procedural-sky environment radiance.
     float  lightIntensityScale   = 1.0f; // Scales analytic (punctual) light radiance.
 
@@ -136,6 +137,7 @@ private:
     void UpdateCameraProjection(Uint32 Width, Uint32 Height);
     void UpdateFrameConstants(double CurrTime);
     void CreatePhase4Passes();
+    bool BuildEmissiveTriangles();
     bool EnsureRenderTargets();
     void ClearFallback(const float4& ClearColor);
     void RequestAccumulationReset(const char* Reason);
@@ -152,6 +154,7 @@ private:
     RTXPTRenderTargets          m_RenderTargets;
     RTXPTRayTracingPass         m_RayTracingPass;
     RTXPTComputePass            m_DebugComputePass;
+    RTXPTEmissiveTrianglePass   m_EmissiveTrianglePass;
     RTXPTBlitPass               m_BlitPass;
     FirstPersonCamera           m_Camera;
     RefCntAutoPtr<IBuffer>      m_FrameConstantsCB;
@@ -169,6 +172,9 @@ private:
     Uint32                      m_MaxNEEBounces            = 16;
     bool                        m_EnableNEE                = true;
     bool                        m_EnableEnvNEE             = true;
+    bool                        m_EnableEmissiveNEE        = true;
+    bool                        m_HasDynamicGeometry       = false;
+    bool                        m_EmissiveTrianglesDirty   = true;
     float                       m_EnvIntensity             = 1.0f;
     float                       m_LightIntensityScale      = 1.0f;
     int                         m_SelectedSceneCamera      = -1;

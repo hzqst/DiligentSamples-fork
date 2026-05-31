@@ -235,6 +235,31 @@ void RTXPTSample::EnumerateAvailableScenes()
     m_AvailableScenes = EnumerateSceneFiles(m_AssetsRoot);
 }
 
+void RTXPTSample::EnumerateEnvironmentMaps()
+{
+    m_EnvMapSources        = RTXPTEnvMapBaker::EnumerateEnvironmentSources(m_AssetsRoot);
+    m_SelectedEnvMapSource = 0;
+}
+
+void RTXPTSample::ApplySceneEnvironmentSettings()
+{
+    m_EnvMapSettings                    = RTXPTEnvMapBaker::MakeSceneDefaultSettings(m_Scene.GetSceneGraphData());
+    m_ReferenceUI.EnvironmentMapEnabled = m_EnvMapSettings.Enabled;
+    m_EnvIntensity                      = m_EnvMapSettings.Intensity;
+
+    m_SelectedEnvMapSource = 0;
+    for (size_t Index = 0; Index < m_EnvMapSources.size(); ++Index)
+    {
+        if (m_EnvMapSources[Index].RelativePath == m_EnvMapSettings.SourceRelativePath)
+        {
+            m_SelectedEnvMapSource = static_cast<int>(Index);
+            break;
+        }
+    }
+
+    m_EnvMapBakerDirty = true;
+}
+
 void RTXPTSample::ResetSceneDependentResources()
 {
     m_Materials.Reset();
@@ -330,6 +355,7 @@ bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload
             m_EnableSceneAnimations = SceneSettings.EnableAnimations.value();
         if (SceneSettings.MaxBounces.has_value())
             m_MaxBounces = SceneSettings.MaxBounces.value();
+        ApplySceneEnvironmentSettings();
     }
 
     const bool ResourcesReady = SceneLoaded && RebuildSceneDependentResources();
@@ -443,6 +469,7 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
     CreateFrameResources();
 
     m_AssetsRoot = ResolveRTXPTAssetsRoot();
+    EnumerateEnvironmentMaps();
     EnumerateAvailableScenes();
 
     std::string InitialScene;

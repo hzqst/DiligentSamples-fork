@@ -27,14 +27,17 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "Buffer.h"
 #include "FirstPersonCamera.hpp"
+#include "PBR_Renderer.hpp"
 #include "RefCntAutoPtr.hpp"
 #include "RTXPTAccelerationStructures.hpp"
 #include "RTXPTBlitPass.hpp"
 #include "RTXPTComputePass.hpp"
 #include "RTXPTEmissiveTrianglePass.hpp"
+#include "RTXPTEnvMapBaker.hpp"
 #include "RTXPTFrameConstants.hpp"
 #include "RTXPTLights.hpp"
 #include "RTXPTLightsBaker.hpp"
@@ -105,7 +108,9 @@ protected:
 private:
     void CreateFrameResources();
     void EnumerateAvailableScenes();
+    void EnumerateEnvironmentMaps();
     bool SetCurrentScene(const std::string& SceneName, bool ForceReload = false);
+    void ApplySceneEnvironmentSettings();
     void ResetSceneDependentResources();
     bool RebuildSceneDependentResources();
     void InitializeCamera();
@@ -113,6 +118,7 @@ private:
     void UpdateCameraProjection(Uint32 Width, Uint32 Height);
     void UpdateFrameConstants(double CurrTime);
     bool UpdateLightsBaker(bool ResetFeedback);
+    bool UpdateEnvMapBaker(bool ForceRebuild);
     void CreatePhase4Passes();
     bool BuildEmissiveTriangles();
     bool EnsureRenderTargets();
@@ -127,6 +133,9 @@ private:
     RTXPTMaterials              m_Materials;
     RTXPTLights                 m_Lights;
     RTXPTLightsBaker            m_LightsBaker;
+    RTXPTEnvMapBaker            m_EnvMapBaker;
+    std::vector<RTXPTEnvMapSource> m_EnvMapSources;
+    RTXPTEnvMapSettings         m_EnvMapSettings;
     RTXPTAccelerationStructures m_AccelerationStructures;
     RTXPTSkinnedSceneGeometry   m_SkinnedGeometry;
     RTXPTRenderTargets          m_RenderTargets;
@@ -156,12 +165,14 @@ private:
     float                       m_EnvIntensity             = 1.0f;
     float                       m_LightIntensityScale      = 1.0f;
     int                         m_SelectedSceneCamera      = -1;
+    int                         m_SelectedEnvMapSource     = 0;
     bool                        m_EnableSceneAnimations    = true;
     bool                        m_EnableDebugComputePass   = false;
     bool                        m_ResetAccumulationPending = true;
     bool                        m_AccumulationActive       = false;
     bool                        m_HasLastCameraMatrices    = false;
     bool                        m_LightsBakerSettingsDirty = false;
+    bool                        m_EnvMapBakerDirty         = true;
 };
 
 } // namespace Diligent

@@ -3,6 +3,19 @@
 
 #include "../PathTracerShared.h"
 
+// Area-measure -> solid-angle-measure pdf conversion (RTXPT-fork Utils/Geometry.hlsli:79).
+float pdfAtoW(float pdfA, float distance, float cosTheta)
+{
+    return pdfA * (distance * distance) / max(cosTheta, 2e-9);
+}
+
+// Uniformly sampled barycentric coordinates inside a triangle (RTXPT-fork Utils/Geometry.hlsli:33).
+float3 SampleTriangleUniform(float2 rnd)
+{
+    const float sqrtx = sqrt(rnd.x);
+    return float3(1.0 - sqrtx, sqrtx * (1.0 - rnd.y), sqrtx * rnd.y);
+}
+
 struct LightSample
 {
     float3 dir;

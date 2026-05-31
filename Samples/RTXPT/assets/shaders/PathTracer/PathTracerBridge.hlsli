@@ -7,6 +7,7 @@
 ConstantBuffer<SampleConstants>        g_Const;
 StructuredBuffer<SubInstanceData>      t_SubInstanceData;
 StructuredBuffer<PolymorphicLightInfo> t_Lights;
+StructuredBuffer<EmissiveTriangle>     t_EmissiveTriangles;
 StructuredBuffer<GeometryVertexData>   t_VertexBuffer;
 StructuredBuffer<GeometryVertexData>   t_SkinnedVertexBuffer;
 Buffer<uint>                           t_IndexBuffer;
@@ -157,6 +158,16 @@ namespace Bridge
     PolymorphicLightInfo getLight(uint index)
     {
         return t_Lights[index];
+    }
+
+    uint getEmissiveTriangleCount()
+    {
+        return g_Const.ptConsts.environmentNEEEnabled >> 1u;
+    }
+
+    EmissiveTriangle getEmissiveTriangle(uint index)
+    {
+        return t_EmissiveTriangles[index];
     }
 } // namespace Bridge
 

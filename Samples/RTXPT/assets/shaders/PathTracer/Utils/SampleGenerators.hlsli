@@ -44,6 +44,7 @@ static const uint kSampleEffect_Base                = 0u;
 static const uint kSampleEffect_ScatterBSDF         = 1u;
 static const uint kSampleEffect_NextEventEstimation = 2u;
 static const uint kSampleEffect_NEELightSampler     = 3u;
+static const uint kSampleEffect_NEEEmissive         = 4u; // emissive-triangle NEE
 static const uint kSampleEffect_RussianRoulette     = 6u;
 
 // Stateless per-(pixel, vertex, sample) seeding (G3): each path vertex + effect draws a decorrelated

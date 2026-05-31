@@ -135,14 +135,15 @@ Hard constraints:
 | fields `.Wi/.Distance/.Radiance/.Valid` | `.dir/.distance/.radiance/.valid` (style) | |
 | `RTXPTInvalidLightSample` | `LightSample_make_empty` (style) | |
 | `RTXPTNormalizeDirection` | `tryNormalize` (style) | |
-| `RTXPTEvalAnalyticLight(Light, SurfacePos)` | `EvalAnalyticLight(light, surfacePos)` (style) | |
+| `RTXPTEvalAnalyticLight(Light, SurfacePos)` | `SampleAnalyticLight(light, random, surfacePos)` (style) | |
 | `RTXPTEvalSky(RayDir)` | `EnvMap::Eval(worldDir)` = RTXPT-fork | procedural sky wrapped in `namespace EnvMap` |
 | `TriangleLight` (struct) | `EmissiveTriangle` (R2/G4 backing layout) | base+edge1+edge2+radiance; normal/area recomputed |
-| `PathTracer/Lighting/LightSampler.hlsli` `NEEWeightedReservoirSampler` / `GenerateLightSample` | `PathTracer/Lighting/LightSampler.hlsli` `NEEWeightedReservoirSampler` / `GenerateDirectLightCandidate` / `SampleDirectLightNEE` | R3/G5 ports the RIS/WRS math over a compact Diligent global proxy table |
-| `LightSampler::SampleGlobal` proxy table | `RTXPTLights::UploadLightProxyBuffer` + `StructuredBuffer<RTXPTLightProxy> t_LightProxies` | global-only CDF; no `LightsBaker`, feedback, local tiles, or NEE-AT in G5 |
+| `PathTracer/Lighting/LightSampler.hlsli` `NEEWeightedReservoirSampler` / `GenerateLightSample` | `PathTracer/Lighting/LightSampler.hlsli` `NEEWeightedReservoirSampler` / `GenerateDirectLightCandidate` / `SampleDirectLightNEE` | R3/G5 ports the RIS/WRS math as part of the full `LightsBaker` parity target |
+| `LightSampler::SampleGlobal` proxy table | `RTXPTLightsBaker` `t_LightProxyCounters` + `t_LightSamplingProxies` | global proxy data now feeds the baker-owned light/feedback/proxy pipeline |
+| `LightSampler::SampleLocal` local proxy table | `RTXPTLightsBaker` `t_LocalSamplingBuffer` | populated by baker-owned local sampling passes |
 | `TriangleLight::CalcSample` | emissive bucket branch inside `GenerateDirectLightCandidate` | R2 stores `EmissiveTriangle`; R3 samples it through the RIS/WRS proxy table, still with uniform per-triangle selection inside the emissive bucket |
 | `SampleTriangleUniform` / `pdfAtoW` / `MAX_SOLID_ANGLE_PDF` | `SampleTriangleUniform` / `pdfAtoW` / `kMaxSolidAnglePdf` (style) | |
-| `LightsBaker` emissive triangle list | `RTXPTLights::UploadEmissiveTriangles` + `RTXPTEmissiveTrianglePass` (GPU build from current geometry) | minimal Diligent data path, not the baker |
+| `LightsBaker` emissive triangle list | `RTXPTLights::UploadEmissiveTriangles` + `RTXPTEmissiveTrianglePass` (GPU build from current geometry) | full `LightsBaker` parity target; keep the Diligent-native scene plumbing |
 
 ### T-E. PathTracer Core (`PathTracer/PathTracer.hlsli`, `PathTracerHelpers.hlsli`, Raygen)
 
@@ -290,10 +291,10 @@ Raygen locals become camelCase:
 | `MaterialPTData` | `NormalTextureSlice` | `normalTextureSlice` |
 | `MaterialPTData` | `NormalScale` | `normalScale` |
 | `MaterialPTData` | `Padding0` / `Padding1` / `Padding2` / `Padding3` | `_padding0` / `_padding1` / `_padding2` / `_padding3` |
-| `PolymorphicLightInfo` | `ColorIntensity` | `colorIntensity` |
-| `PolymorphicLightInfo` | `PositionRange` | `positionRange` |
-| `PolymorphicLightInfo` | `DirectionType` | `directionType` |
-| `PolymorphicLightInfo` | `SpotAngles` | `spotAngles` |
+| `PolymorphicLightInfo` | `ColorType` | `colorType` |
+| `PolymorphicLightInfo` | `PositionRadius` | `positionRadius` |
+| `PolymorphicLightInfo` | `DirectionRange` | `directionRange` |
+| `PolymorphicLightInfo` | `Shaping` | `shaping` |
 | `GeometryVertexData` | `Position` | `position` |
 | `GeometryVertexData` | `Normal` | `normal` |
 | `GeometryVertexData` | `TexCoord0` | `texCoord0` |
@@ -343,10 +344,10 @@ Raygen locals become camelCase:
 - Emissive-triangle area lights (R2/G4) are **two-sided** (`abs(cosTheta)` in both the
   NEE estimator and the BSDF-hit MIS), unlike RTXPT-fork's one-sided `TriangleLight`.
   This preserves the port's pre-R2 two-sided emissive look and stays unbiased.
-  Textured-emissive triangles are excluded from NEE (BSDF-only) for now. R3/G5 samples
-  constant emitters through a global RIS/WRS proxy table with one emissive bucket, not
-  RTXPT-fork's full `LightsBaker`/local-feedback system. TODO: align one-sided +
-  double-sided baker semantics.
+  Textured-emissive triangles are excluded from NEE (BSDF-only) for now. R3/G5 now
+  covers the full `LightsBaker`/local-feedback system; the remaining question is how
+  to reconcile the Diligent scene's emissive-triangle semantics with the upstream
+  one-sided baker inputs. TODO: align one-sided + double-sided baker semantics.
 - Resource/global names follow the RTXPT-fork `t_/u_/s_/g_` prefix scheme, but
   the set here is the reference-mode subset only. `t_PTMaterialData` is the
   material-buffer resource/global name backed by the local `MaterialPTData`
@@ -360,8 +361,10 @@ Raygen locals become camelCase:
   applicable. Fields kept identical in T-H, such as `MaterialID`, `Flags`,
   `IndexCount`, and `VertexCount`, remain intentionally unchanged, and every
   `static_assert(sizeof(...) == N)` byte-layout contract stays unchanged.
-- `EnvMap::Eval` returns a procedural gradient for now; HDR map sampling is
-  deferred to Phase R4.
+- `EnvMap::Eval` starts from the current procedural gradient fallback, but Phase
+  R4 now targets full `EnvMapBaker` parity: HDR/procedural input baking,
+  processed cubemap output, importance maps, BRDF LUT generation, and the
+  Diligent-native resource plumbing needed to bind those outputs.
 - `BxDF.hlsli` keeps the Fresnel/Microfacet helpers together in one file, while
   RTXPT-fork splits them into separate helper headers.
 - `RTXPTCommon.fxh`, `RTXPTDebugCompute.csh`, and `RTXPTBlit.vsh` / `psh` keep

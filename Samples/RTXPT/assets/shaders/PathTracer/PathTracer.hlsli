@@ -98,13 +98,12 @@ namespace PathTracer
         return fLi * damp * (misWeight / envPdf);
     }
 
-    float ComputeBSDFMISForEmissiveTriangle(float bsdfPdf, float emissiveSolidAnglePdf, uint fullSamples)
+    float ComputeBSDFMISForEmissiveTriangle(uint2 pixelPos, float bsdfPdf, float emissiveSolidAnglePdf, uint fullSamples)
     {
         if (bsdfPdf <= 0.0 || emissiveSolidAnglePdf <= 0.0)
             return 1.0;
 
-        const bool  usePowerSampling = g_Const.ptConsts.NEEType == 1u;
-        const float selectionPdf     = GetEmissiveTriangleSelectionPdf(usePowerSampling);
+        const float selectionPdf = GetEmissiveTriangleSelectionPdf(pixelPos);
         if (selectionPdf <= 0.0)
             return 1.0;
 
@@ -113,16 +112,15 @@ namespace PathTracer
     }
 
     float3 SampleDirectLightNEE(StandardBSDFData bsdfData, float3 hitPos, float3 visibilityOrigin,
-                                float3 wo, inout SampleGenerator sg, float fireflyFilterK,
+                                float3 wo, uint2 pixelPos, inout SampleGenerator sg, float fireflyFilterK,
                                 out bool sampledEmissive)
     {
         sampledEmissive = false;
 
         const uint fullSamples = min(32u, g_Const.ptConsts.NEEFullSamples);
-        if (fullSamples == 0u || Bridge::getLightProxyCount() == 0u)
+        if (fullSamples == 0u || Bridge::getTotalLightCount() == 0u)
             return float3(0.0, 0.0, 0.0);
 
-        const bool usePowerSampling = g_Const.ptConsts.NEEType == 1u;
         const uint candidateSamples = max(1u, min(32u, g_Const.ptConsts.NEECandidateSamples));
 
         float3 result = float3(0.0, 0.0, 0.0);
@@ -134,7 +132,7 @@ namespace PathTracer
             [loop]
             for (uint candidateIndex = 0u; candidateIndex < candidateSamples; ++candidateIndex)
             {
-                DirectLightSample candidate = GenerateDirectLightCandidate(bsdfData, hitPos, wo, sg, usePowerSampling);
+                DirectLightSample candidate = GenerateDirectLightCandidate(bsdfData, hitPos, wo, pixelPos, sg);
                 wrs.Add(sampleNext1D(sg), candidate, EvalDirectLightCandidateWeight(candidate));
             }
 
@@ -159,6 +157,9 @@ namespace PathTracer
                 contribution *= FireflyFilterShort(Average(contribution), ffThreshold, neeK);
             }
 
+            const uint feedbackLightIndex =
+                picked.kind == kLightProxyKindAnalytic ? picked.index : Bridge::getEmissiveBucketLightIndex();
+            InsertFeedbackFromNEE(pixelPos, feedbackLightIndex, contribution, sampleNext1D(sg));
             sampledEmissive = sampledEmissive || picked.kind == kLightProxyKindEmissiveBucket;
             result += contribution;
         }

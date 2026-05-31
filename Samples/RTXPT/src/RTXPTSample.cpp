@@ -239,6 +239,7 @@ void RTXPTSample::ResetSceneDependentResources()
 {
     m_Materials.Reset();
     m_Lights.Reset();
+    m_LightsBaker.SceneReloaded();
     m_AccelerationStructures.Reset();
     m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
@@ -255,6 +256,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_HasLastCameraMatrices = false;
     m_HasDynamicGeometry    = false;
     m_EmissiveTrianglesDirty = true;
+    m_LightsBakerSettingsDirty = false;
 }
 
 bool RTXPTSample::RebuildSceneDependentResources()
@@ -277,6 +279,10 @@ bool RTXPTSample::RebuildSceneDependentResources()
     ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData);
     ResourcesReady &= m_Lights.Upload(m_pDevice, SceneData);
     ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData);
+
+    const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+    ResourcesReady &= m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, SCDesc.Width, SCDesc.Height, m_FeatureCaps.ComputeShaders);
+    ResourcesReady &= UpdateLightsBaker(true);
 
     ResourcesReady &= m_SkinnedGeometry.Initialize(m_pDevice,
                                                     m_pEngineFactory,
@@ -501,10 +507,10 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.ptConsts.lightIntensityScale   = m_LightIntensityScale;
     m_LastFrameConstants.ptConsts.maxNEEBounceCount     = m_MaxNEEBounces;
     m_LastFrameConstants.ptConsts.analyticLightCount    = m_Lights.GetStats().LightCount;
-    m_LastFrameConstants.ptConsts.NEEType                = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 1));
+    m_LastFrameConstants.ptConsts.NEEType                = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 2));
     m_LastFrameConstants.ptConsts.NEECandidateSamples    = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEECandidateSamples, 1, 32));
     m_LastFrameConstants.ptConsts.NEEFullSamples         = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEFullSamples, 0, 32));
-    m_LastFrameConstants.ptConsts.NEEMISType             = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 0));
+    m_LastFrameConstants.ptConsts.NEEMISType             = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 2));
     // G1: a disabled firefly filter uploads a zero threshold, so the soft cap is a no-op and the
     // converged image is identical to the filter-on image (only per-sample variance differs).
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
@@ -520,6 +526,30 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_ResetAccumulationPending = false;
 
     ++m_FrameIndex;
+}
+
+bool RTXPTSample::UpdateLightsBaker(bool ResetFeedback)
+{
+    if (!m_pDevice || !m_pSwapChain || !m_Scene.HasValidContent())
+        return false;
+
+    const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+    RTXPTLightsBakerSettings BakerSettings;
+    BakerSettings.ImportanceSamplingType        = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 2));
+    BakerSettings.CameraPosition                = m_Camera.GetPos();
+    BakerSettings.ViewProjMatrix                = m_Camera.GetViewMatrix() * m_Camera.GetProjMatrix();
+    BakerSettings.GlobalTemporalFeedbackWeight  = m_ReferenceUI.NEEAT_GlobalTemporalFeedbackWeight;
+    BakerSettings.LocalToGlobalSampleRatio      = m_ReferenceUI.NEEAT_LocalToGlobalSampleRatio;
+    BakerSettings.DistantVsLocalImportanceScale = m_ReferenceUI.NEEAT_DistantVsLocalImportance;
+    BakerSettings.ResetFeedback                 = ResetFeedback;
+    BakerSettings.ViewportSize                  = float2{static_cast<float>(SCDesc.Width), static_cast<float>(SCDesc.Height)};
+    BakerSettings.PrevViewportSize              = BakerSettings.ViewportSize;
+    BakerSettings.FrameIndex                    = static_cast<Int64>(m_FrameIndex);
+
+    const bool Updated = m_LightsBaker.UpdateBegin(m_pDevice, m_Lights, BakerSettings);
+    if (Updated)
+        m_LightsBakerSettingsDirty = false;
+    return Updated;
 }
 
 void RTXPTSample::CreatePhase4Passes()
@@ -550,7 +580,12 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_Materials.GetMaterialBuffer(),
                                     m_AccelerationStructures.GetSubInstanceBuffer(),
                                     m_Lights.GetLightBuffer(),
-                                    m_Lights.GetLightProxyBuffer(),
+                                    m_LightsBaker.GetControlBuffer(),
+                                    m_LightsBaker.GetLightProxyCounters(),
+                                    m_LightsBaker.GetLightSamplingProxies(),
+                                    m_LightsBaker.GetLocalSamplingBuffer(),
+                                    m_LightsBaker.GetFeedbackTotalWeightUAV(),
+                                    m_LightsBaker.GetFeedbackCandidatesUAV(),
                                     m_Lights.GetEmissiveTriangleBuffer(),
                                     m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
                                     m_SkinnedGeometry.GetSkinnedVertexBuffer(),
@@ -572,7 +607,12 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_Materials.GetMaterialBuffer(),
                                     m_AccelerationStructures.GetSubInstanceBuffer(),
                                     m_Lights.GetLightBuffer(),
-                                    m_Lights.GetLightProxyBuffer(),
+                                    m_LightsBaker.GetControlBuffer(),
+                                    m_LightsBaker.GetLightProxyCounters(),
+                                    m_LightsBaker.GetLightSamplingProxies(),
+                                    m_LightsBaker.GetLocalSamplingBuffer(),
+                                    m_LightsBaker.GetFeedbackTotalWeightUAV(),
+                                    m_LightsBaker.GetFeedbackCandidatesUAV(),
                                     m_Lights.GetEmissiveTriangleBuffer(),
                                     m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
                                     m_SkinnedGeometry.GetSkinnedVertexBuffer(),
@@ -656,6 +696,12 @@ void RTXPTSample::Render()
         return;
     }
 
+    if (!m_LightsBaker.UpdateEnd(m_pImmediateContext))
+    {
+        ClearFallback(float4{1.0f, 0.35f, 0.0f, 1.0f});
+        return;
+    }
+
     const bool TraceExecuted =
         m_RayTracingPass.Trace(m_pImmediateContext,
                                m_RenderTargets.GetOutputColorUAV(),
@@ -728,6 +774,10 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
             }
         }
     }
+
+    if (m_LightsBakerSettingsDirty && UpdateLightsBaker(true))
+        CreatePhase4Passes();
+
     UpdateFrameConstants(CurrTime);
 }
 
@@ -748,6 +798,12 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     {
         m_AccumulationActive = m_RenderTargets.IsAccumulationActive();
         RequestAccumulationReset("Window resized");
+        if (m_Scene.HasValidContent())
+        {
+            m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, Width, Height, m_FeatureCaps.ComputeShaders);
+            UpdateLightsBaker(true);
+            CreatePhase4Passes();
+        }
     }
 }
 
@@ -760,6 +816,14 @@ void RTXPTSample::UpdateUI()
         if (Changed)
             RequestAccumulationReset(Reason);
         return Changed;
+    };
+    auto ResetLightsBakerOnChange = [this, &ResetOnChange](bool Changed, const char* Reason) -> bool {
+        if (ResetOnChange(Changed, Reason))
+        {
+            m_LightsBakerSettingsDirty = true;
+            return true;
+        }
+        return false;
     };
     // Tooltip for a present-but-disabled placeholder control. AllowWhenDisabled lets the
     // tooltip appear even though the preceding item was inside BeginDisabled()/EndDisabled().
@@ -865,15 +929,11 @@ void RTXPTSample::UpdateUI()
                 ImGui::TextColored(CategoryColor, "NEE settings:");
                 ImGui::Indent(Indent);
                 {
-                    // Light importance sampling + MIS type: G5.
-                    const char* SamplingTechniqueItems = "Uniform\0Power+\0\0";
-                    if (ResetOnChange(ImGui::Combo("Sampling technique", &m_ReferenceUI.NEEType, SamplingTechniqueItems),
-                                      "NEE sampling technique changed"))
-                        m_ReferenceUI.NEEType = std::clamp(m_ReferenceUI.NEEType, 0, 1);
-                    ImGui::BeginDisabled(true);
-                    ImGui::TextUnformatted("NEE-AT");
-                    ImGui::EndDisabled();
-                    PlaceholderTooltip("NEE-AT requires RTXPT-fork's feedback/local sampling path and remains deferred.");
+                    // Light importance sampling + MIS type: G5/R3.
+                    const char* SamplingTechniqueItems = "Uniform\0Power+\0NEE-AT\0\0";
+                    if (ResetLightsBakerOnChange(ImGui::Combo("Sampling technique", &m_ReferenceUI.NEEType, SamplingTechniqueItems),
+                                                 "NEE sampling technique changed"))
+                        m_ReferenceUI.NEEType = std::clamp(m_ReferenceUI.NEEType, 0, 2);
 
                     if (ResetOnChange(ImGui::InputInt("Candidate samples", &m_ReferenceUI.NEECandidateSamples, 1),
                                       "NEE candidate count changed"))
@@ -887,6 +947,21 @@ void RTXPTSample::UpdateUI()
                     ImGui::Combo("MIS Type", &m_ReferenceUI.NEEMISType, "Full\0ApproxInRealtime\0Approximate\0\0");
                     ImGui::EndDisabled();
                     PlaceholderTooltip("G5 uses the full light-vs-BSDF MIS path; approximate MIS modes remain deferred.");
+
+                    ImGui::TextColored(CategoryColor, "NEE-AT settings:");
+                    if (m_ReferenceUI.NEEType != 2)
+                    {
+                        ImGui::TextWrapped("NOTE: NEE-AT inactive (enable in Path Tracer -> Next Event Estimation settings).");
+                    }
+                    else
+                    {
+                        ResetLightsBakerOnChange(ImGui::SliderFloat("Global feedback weight", &m_ReferenceUI.NEEAT_GlobalTemporalFeedbackWeight, 0.0f, 0.95f),
+                                                 "NEE-AT global feedback changed");
+                        ResetLightsBakerOnChange(ImGui::SliderFloat("Local to global sampler ratio", &m_ReferenceUI.NEEAT_LocalToGlobalSampleRatio, 0.0f, 0.95f),
+                                                 "NEE-AT local/global ratio changed");
+                        ResetLightsBakerOnChange(ImGui::SliderFloat("Distant vs Local initial importance", &m_ReferenceUI.NEEAT_DistantVsLocalImportance, 0.01f, 100.0f, "%.2f"),
+                                                 "NEE-AT distant/local importance changed");
+                    }
                 }
                 ImGui::Unindent(Indent);
             }
@@ -1071,9 +1146,13 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
         ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
         ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
-        ImGui::Text("Light proxies: %u", m_Lights.GetStats().LightProxyCount);
-        ImGui::Text("Light proxy weight: %.3f", m_Lights.GetStats().LightProxyTotalWeight);
-        ImGui::Text("Light proxy bridge: %s", RTPassStats.LightProxyBridgeBound ? "bound" : "missing");
+        const RTXPTLightsBakerStats& BakerStats = m_LightsBaker.GetStats();
+        ImGui::Text("LightsBaker lights: %u", BakerStats.TotalLightCount);
+        ImGui::Text("LightsBaker proxies: %u", BakerStats.SamplingProxyCount);
+        ImGui::Text("LightsBaker proxy weight: %.3f", BakerStats.ProxyTotalWeight);
+        ImGui::Text("LightsBaker feedback: %s", BakerStats.FeedbackReady ? "ready" : "missing");
+        ImGui::Text("LightsBaker update: %u", BakerStats.UpdateCounter);
+        ImGui::Text("LightsBaker bridge: %s", RTPassStats.LightsBakerBridgeBound ? "bound" : "missing");
         ImGui::Text("Emissive triangle pass: %s", m_EmissiveTrianglePass.IsReady() ? "ready" : "not ready");
         ImGui::Text("Emissive triangle dispatch count: %u", m_EmissiveTrianglePass.GetStats().DispatchCount);
         if (!m_EmissiveTrianglePass.GetStats().DisabledReason.empty())
@@ -1103,7 +1182,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
         ImGui::Separator();
         ImGui::TextColored(CategoryColor, "Roadmap (open work):");
-        ImGui::TextWrapped("TODO(RTXPT-Port Phase R3.G6): photometric / shaped punctual-light units.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R4): HDR environment map with importance sampling + MIS.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R5): VNDF/Frostbite/multi-scatter BSDF + low-discrepancy sampler.");
         ImGui::TextWrapped("TODO(RTXPT-Port Phase R6): transmission / nested dielectrics / ALPHA_MODE_BLEND.");
@@ -1118,6 +1196,7 @@ void RTXPTSample::RequestAccumulationReset(const char* /*Reason*/)
 {
     m_AccumulationFrame        = 0;
     m_ResetAccumulationPending = true;
+    m_LightsBaker.RequestFeedbackReset();
 }
 
 } // namespace Diligent

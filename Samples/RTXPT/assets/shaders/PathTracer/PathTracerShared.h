@@ -24,7 +24,7 @@ struct PathTracerConstants
 
     uint  maxNEEBounceCount;   // Limits NEE work to the first N path bounces.
     uint  analyticLightCount;  // CPU-side count of valid analytic lights; the dummy light is not sampled.
-    uint  NEEType;             // G5: 0=Uniform, 1=Power+, 2=NEE-AT (deferred/disabled in UI).
+    uint  NEEType;             // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
     uint  NEECandidateSamples; // G5: RIS candidate count per full sample.
 
     uint  NEEFullSamples;         // G5: visibility-tested full samples.
@@ -136,24 +136,18 @@ static const uint kMaterialFlagEmissiveAreaLight           = 0x20u;
 // Mirrors Diligent::PolymorphicLightInfo in RTXPTLights.hpp.
 struct PolymorphicLightInfo
 {
-    float4 colorIntensity;
-    float4 positionRange;
-    float4 directionType;
-    float4 spotAngles;
+    float4 colorType;
+    float4 positionRadius;
+    float4 directionRange;
+    float4 shaping;
 };
+
+static const uint kPolymorphicLightTypeSphere      = 0u;
+static const uint kPolymorphicLightTypeDirectional = 2u;
+static const uint kPolymorphicLightTypePoint       = 4u;
 
 static const uint kLightProxyKindAnalytic       = 0u;
 static const uint kLightProxyKindEmissiveBucket = 1u;
-
-// Mirrors Diligent::RTXPTLightProxy in RTXPTLights.hpp (16 bytes).
-// prefixWeight is the inclusive cumulative weight after this proxy.
-struct RTXPTLightProxy
-{
-    float prefixWeight;
-    float weight;
-    uint  index;
-    uint  kind;
-};
 
 // Mirrors Diligent::EmissiveTriangle in RTXPTLights.hpp (total size 64 bytes). One world-space,
 // NEE-eligible emissive triangle (constant emitter). Stores base + two edges + radiance like

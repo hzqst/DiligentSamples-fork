@@ -32,6 +32,7 @@
 #include "DebugUtilities.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -41,16 +42,11 @@ namespace Diligent
 namespace
 {
 
-float LightTypeToShaderValue(GLTF::Light::TYPE Type)
-{
-    switch (Type)
-    {
-        case GLTF::Light::TYPE::DIRECTIONAL: return 0.0f;
-        case GLTF::Light::TYPE::POINT: return 1.0f;
-        case GLTF::Light::TYPE::SPOT: return 2.0f;
-        default: return -1.0f;
-    }
-}
+constexpr float kPolymorphicLightTypeSphere      = 0.0f;
+constexpr float kPolymorphicLightTypeDirectional = 2.0f;
+constexpr float kPolymorphicLightTypePoint       = 4.0f;
+constexpr float kDefaultPunctualLightRadius      = 0.01f;
+constexpr float kDefaultDirectionalAngularSize   = PI_F * 0.53f / 180.0f;
 
 float DegreesToRadians(float AngleInDegrees)
 {
@@ -71,20 +67,68 @@ float ReadRTXPTSpotAngleRadians(const nlohmann::json& Json, const char* DegreesK
     return DegreesToRadians(DefaultDegrees);
 }
 
+PolymorphicLightInfo MakeSphereLightData(const float3& Color, float Intensity, const float4x4& Transform,
+                                         float Range, float Radius, float InnerCone, float OuterCone)
+{
+    const float ClampedRadius = std::max(Radius, 1.0e-4f);
+    const float3 Radiance = Color * std::max(Intensity, 0.0f) / (PI_F * ClampedRadius * ClampedRadius);
+
+    PolymorphicLightInfo Data;
+    Data.colorType      = float4{Radiance.x, Radiance.y, Radiance.z, kPolymorphicLightTypeSphere};
+    Data.positionRadius = float4{Transform._41, Transform._42, Transform._43, ClampedRadius};
+    Data.directionRange = float4{-Transform._31, -Transform._32, -Transform._33, Range};
+    if (OuterCone > 0.0f)
+    {
+        const float OuterCos = std::cos(OuterCone);
+        const float InnerCos = std::cos(InnerCone);
+        Data.shaping = float4{OuterCos, std::max(0.0f, InnerCos - OuterCos), 0.0f, 0.0f};
+    }
+    return Data;
+}
+
+PolymorphicLightInfo MakeDirectionalLightData(const float3& Color, float Intensity, const float4x4& Transform, float AngularSizeRadians)
+{
+    const float HalfAngle  = std::max(AngularSizeRadians * 0.5f, 0.00001f);
+    const float SolidAngle = std::max(2.0f * PI_F * (1.0f - std::cos(HalfAngle)), 1.0e-8f);
+    const float3 Radiance  = Color * std::max(Intensity, 0.0f) / SolidAngle;
+
+    PolymorphicLightInfo Data;
+    Data.colorType      = float4{Radiance.x, Radiance.y, Radiance.z, kPolymorphicLightTypeDirectional};
+    Data.directionRange = float4{-Transform._31, -Transform._32, -Transform._33, 0.0f};
+    Data.shaping        = float4{-1.0f, 0.0f, 0.0f, SolidAngle};
+    return Data;
+}
+
 PolymorphicLightInfo MakeLightData(const GLTF::Light& Light, const float4x4& NodeTransform)
 {
-    PolymorphicLightInfo Data;
-    Data.colorIntensity = float4{Light.Color.x, Light.Color.y, Light.Color.z, Light.Intensity};
-    Data.positionRange  = float4{NodeTransform._41, NodeTransform._42, NodeTransform._43, Light.Range};
-    Data.directionType  = float4{-NodeTransform._31, -NodeTransform._32, -NodeTransform._33, LightTypeToShaderValue(Light.Type)};
-    Data.spotAngles     = float4{Light.InnerConeAngle, Light.OuterConeAngle, 0.0f, 0.0f};
-    return Data;
+    switch (Light.Type)
+    {
+        case GLTF::Light::TYPE::DIRECTIONAL:
+            return MakeDirectionalLightData(Light.Color, Light.Intensity, NodeTransform, kDefaultDirectionalAngularSize);
+        case GLTF::Light::TYPE::POINT:
+            return MakeSphereLightData(Light.Color, Light.Intensity, NodeTransform, Light.Range,
+                                       kDefaultPunctualLightRadius, 0.0f, 0.0f);
+        case GLTF::Light::TYPE::SPOT:
+            return MakeSphereLightData(Light.Color, Light.Intensity, NodeTransform, Light.Range,
+                                       kDefaultPunctualLightRadius, Light.InnerConeAngle, Light.OuterConeAngle);
+        default:
+            return {};
+    }
 }
 
 float ReadRTXPTLightIntensity(const nlohmann::json& Json)
 {
     return ReadRTXPTOptionalFloat(Json, "intensity",
                                   ReadRTXPTOptionalFloat(Json, "irradiance", 1.0f));
+}
+
+float ReadRTXPTDirectionalAngularSizeRadians(const nlohmann::json& Json)
+{
+    const auto DegreesIt = Json.find("angularSize");
+    if (DegreesIt != Json.end() && DegreesIt->is_number())
+        return DegreesToRadians(DegreesIt->get<float>());
+
+    return ReadRTXPTOptionalFloat(Json, "angularSizeRadians", kDefaultDirectionalAngularSize);
 }
 
 Uint32 GetPrimitiveTriangleCount(const GLTF::Primitive& Primitive)
@@ -111,7 +155,6 @@ void RTXPTLights::Reset()
 {
     m_LightBuffer.Release();
     m_EmissiveTriangleBuffer.Release();
-    m_LightProxyBuffer.Release();
     m_AnalyticLights.clear();
     m_EmissiveProxyWeight = 0.0f;
     m_Stats = {};
@@ -125,8 +168,6 @@ bool RTXPTLights::UploadLightBuffer(IRenderDevice* pDevice, std::vector<Polymorp
     {
         // Always upload at least one default (disabled) light so the shader-side bridge SRV is never null.
         PolymorphicLightInfo Default;
-        Default.colorIntensity = float4{0, 0, 0, 0};
-        Default.directionType  = float4{0, -1, 0, -1.0f}; // Type < 0 means unused.
         Lights.emplace_back(Default);
     }
 
@@ -143,67 +184,6 @@ bool RTXPTLights::UploadLightBuffer(IRenderDevice* pDevice, std::vector<Polymorp
 
     VERIFY(m_LightBuffer, "Failed to create RTXPT light buffer");
     return m_LightBuffer != nullptr;
-}
-
-bool RTXPTLights::UploadLightProxyBuffer(IRenderDevice* pDevice)
-{
-    m_LightProxyBuffer.Release();
-    m_Stats.LightProxyCount       = 0;
-    m_Stats.LightProxyTotalWeight = 0.0f;
-    if (pDevice == nullptr)
-    {
-        m_Stats.LastError = "RTXPT light proxy buffer requires a render device";
-        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
-        return false;
-    }
-
-    std::vector<RTXPTLightProxy> Proxies;
-    Proxies.reserve(m_AnalyticLights.size() + (m_Stats.EmissiveTriangleCount > 0 ? 1u : 0u));
-
-    float Prefix = 0.0f;
-    for (Uint32 LightIndex = 0; LightIndex < static_cast<Uint32>(m_AnalyticLights.size()); ++LightIndex)
-    {
-        const PolymorphicLightInfo& Light = m_AnalyticLights[LightIndex];
-        const float3 Radiance = float3{Light.colorIntensity.x, Light.colorIntensity.y, Light.colorIntensity.z} *
-            std::max(Light.colorIntensity.w, 0.0f);
-        const float Weight = std::max(1e-6f, MaxRGB(Radiance));
-        Prefix += Weight;
-        Proxies.push_back(RTXPTLightProxy{Prefix, Weight, LightIndex, kLightProxyKind_Analytic});
-    }
-
-    if (m_Stats.EmissiveTriangleCount > 0)
-    {
-        const float Weight = std::max(1e-6f, m_EmissiveProxyWeight);
-        Prefix += Weight;
-        Proxies.push_back(RTXPTLightProxy{Prefix, Weight, 0u, kLightProxyKind_EmissiveBucket});
-    }
-
-    const Uint32 ProxyCount  = static_cast<Uint32>(Proxies.size());
-    const float   TotalWeight = Prefix;
-    if (Proxies.empty())
-        Proxies.emplace_back();
-
-    BufferDesc Desc;
-    Desc.Name              = "RTXPT light proxy buffer";
-    Desc.Usage             = USAGE_IMMUTABLE;
-    Desc.BindFlags         = BIND_SHADER_RESOURCE;
-    Desc.Mode              = BUFFER_MODE_STRUCTURED;
-    Desc.ElementByteStride = sizeof(RTXPTLightProxy);
-    Desc.Size              = sizeof(RTXPTLightProxy) * Proxies.size();
-
-    BufferData Data{Proxies.data(), Desc.Size};
-    pDevice->CreateBuffer(Desc, &Data, &m_LightProxyBuffer);
-
-    if (!m_LightProxyBuffer)
-    {
-        m_Stats.LastError = "Failed to create RTXPT light proxy buffer";
-        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
-        return false;
-    }
-
-    m_Stats.LightProxyCount       = ProxyCount;
-    m_Stats.LightProxyTotalWeight = TotalWeight;
-    return true;
 }
 
 bool RTXPTLights::UploadEmissiveTriangleBuffer(IRenderDevice* pDevice, Uint32 EmissiveTriangleCount)
@@ -268,34 +248,36 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& Scen
         if (LightMeta.Type == "EnvironmentLight")
             continue;
 
-        PolymorphicLightInfo Light;
-        float                Color[3] = {1.0f, 1.0f, 1.0f};
+        float Color[3] = {1.0f, 1.0f, 1.0f};
         ReadRTXPTFloatArray(LightMeta.RawJson, "color", Color, 3);
 
-        Light.colorIntensity = float4{Color[0], Color[1], Color[2], ReadRTXPTLightIntensity(LightMeta.RawJson)};
-        Light.positionRange  = float4{LightMeta.GlobalTransform._41,
-                                      LightMeta.GlobalTransform._42,
-                                      LightMeta.GlobalTransform._43,
-                                      ReadRTXPTOptionalFloat(LightMeta.RawJson, "range", 0.0f)};
-        Light.directionType  = float4{-LightMeta.GlobalTransform._31,
-                                      -LightMeta.GlobalTransform._32,
-                                      -LightMeta.GlobalTransform._33,
-                                      0.0f};
-        Light.spotAngles     = float4{ReadRTXPTSpotAngleRadians(LightMeta.RawJson, "innerAngle", "innerConeAngle"),
-                                      ReadRTXPTSpotAngleRadians(LightMeta.RawJson, "outerAngle", "outerConeAngle"),
-                                      0.0f,
-                                      0.0f};
-
+        const float3 LightColor{Color[0], Color[1], Color[2]};
+        const float  Intensity = ReadRTXPTLightIntensity(LightMeta.RawJson);
         if (LightMeta.Type == "DirectionalLight")
-            Light.directionType.w = 0.0f;
+        {
+            Lights.emplace_back(MakeDirectionalLightData(LightColor, Intensity, LightMeta.GlobalTransform,
+                                                         ReadRTXPTDirectionalAngularSizeRadians(LightMeta.RawJson)));
+        }
         else if (LightMeta.Type == "PointLight")
-            Light.directionType.w = 1.0f;
+        {
+            Lights.emplace_back(MakeSphereLightData(LightColor, Intensity, LightMeta.GlobalTransform,
+                                                    ReadRTXPTOptionalFloat(LightMeta.RawJson, "range", 0.0f),
+                                                    ReadRTXPTOptionalFloat(LightMeta.RawJson, "radius", kDefaultPunctualLightRadius),
+                                                    0.0f,
+                                                    0.0f));
+        }
         else if (LightMeta.Type == "SpotLight")
-            Light.directionType.w = 2.0f;
+        {
+            Lights.emplace_back(MakeSphereLightData(LightColor, Intensity, LightMeta.GlobalTransform,
+                                                    ReadRTXPTOptionalFloat(LightMeta.RawJson, "range", 0.0f),
+                                                    ReadRTXPTOptionalFloat(LightMeta.RawJson, "radius", kDefaultPunctualLightRadius),
+                                                    ReadRTXPTSpotAngleRadians(LightMeta.RawJson, "innerAngle", "innerConeAngle"),
+                                                    ReadRTXPTSpotAngleRadians(LightMeta.RawJson, "outerAngle", "outerConeAngle")));
+        }
         else
+        {
             continue;
-
-        Lights.emplace_back(Light);
+        }
     }
 
     return UploadLightBuffer(pDevice, Lights);
@@ -305,9 +287,6 @@ bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSce
 {
     m_Stats.EmissiveTriangleCount = 0;
     m_Stats.LastError.clear();
-    m_LightProxyBuffer.Release();
-    m_Stats.LightProxyCount       = 0;
-    m_Stats.LightProxyTotalWeight = 0.0f;
     m_EmissiveProxyWeight = 0.0f;
 
     Uint64 EmissiveTriangleCount = 0;
@@ -359,7 +338,7 @@ bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSce
     }
 
     m_Stats.EmissiveTriangleCount = static_cast<Uint32>(EmissiveTriangleCount);
-    return UploadEmissiveTriangleBuffer(pDevice, m_Stats.EmissiveTriangleCount) && UploadLightProxyBuffer(pDevice);
+    return UploadEmissiveTriangleBuffer(pDevice, m_Stats.EmissiveTriangleCount);
 }
 
 } // namespace Diligent

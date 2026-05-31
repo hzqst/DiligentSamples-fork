@@ -41,24 +41,12 @@ struct RTXPTSceneGraphData;
 
 struct PolymorphicLightInfo
 {
-    float4 colorIntensity = float4{1, 1, 1, 0};
-    float4 positionRange  = float4{0, 0, 0, 0};
-    float4 directionType  = float4{0, -1, 0, 0};
-    float4 spotAngles     = float4{0, 0, 0, 0};
+    float4 colorType      = float4{0, 0, 0, -1};
+    float4 positionRadius = float4{0, 0, 0, 0};
+    float4 directionRange = float4{0, -1, 0, 0};
+    float4 shaping        = float4{-1, 0, 0, 0};
 };
 static_assert(sizeof(PolymorphicLightInfo) == 64, "PolymorphicLightInfo layout must match PathTracer/PathTracerShared.h");
-
-constexpr Uint32 kLightProxyKind_Analytic       = 0u;
-constexpr Uint32 kLightProxyKind_EmissiveBucket = 1u;
-
-struct RTXPTLightProxy
-{
-    float  prefixWeight = 0.0f;
-    float  weight       = 0.0f;
-    Uint32 index        = 0;
-    Uint32 kind         = kLightProxyKind_Analytic;
-};
-static_assert(sizeof(RTXPTLightProxy) == 16, "RTXPTLightProxy layout must match PathTracer/PathTracerShared.h");
 
 struct EmissiveTriangle
 {
@@ -73,8 +61,6 @@ struct RTXPTLightStats
 {
     Uint32      LightCount            = 0;
     Uint32      EmissiveTriangleCount = 0;
-    Uint32      LightProxyCount       = 0;
-    float       LightProxyTotalWeight = 0.0f;
     std::string LastError;
 };
 
@@ -88,19 +74,17 @@ public:
 
     const RTXPTLightStats& GetStats() const { return m_Stats; }
     IBuffer*               GetLightBuffer() const { return m_LightBuffer; }
-    IBuffer*               GetLightProxyBuffer() const { return m_LightProxyBuffer; }
     IBuffer*               GetEmissiveTriangleBuffer() const { return m_EmissiveTriangleBuffer; }
-    Uint32                 GetLightProxyCount() const { return m_Stats.LightProxyCount; }
     Uint32                 GetEmissiveTriangleCount() const { return m_Stats.EmissiveTriangleCount; }
+    const std::vector<PolymorphicLightInfo>& GetAnalyticLights() const { return m_AnalyticLights; }
+    float                                  GetEmissiveProxyWeight() const { return m_EmissiveProxyWeight; }
 
 private:
     bool UploadLightBuffer(IRenderDevice* pDevice, std::vector<PolymorphicLightInfo>& Lights);
     bool UploadEmissiveTriangleBuffer(IRenderDevice* pDevice, Uint32 EmissiveTriangleCount);
-    bool UploadLightProxyBuffer(IRenderDevice* pDevice);
 
     RefCntAutoPtr<IBuffer>         m_LightBuffer;
     RefCntAutoPtr<IBuffer>         m_EmissiveTriangleBuffer;
-    RefCntAutoPtr<IBuffer>         m_LightProxyBuffer;
     std::vector<PolymorphicLightInfo> m_AnalyticLights;
     float                         m_EmissiveProxyWeight = 0.0f;
     RTXPTLightStats               m_Stats;

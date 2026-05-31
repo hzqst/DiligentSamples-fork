@@ -23,16 +23,16 @@ struct DirectLightSample
 DirectLightSample DirectLightSample_make_empty()
 {
     DirectLightSample sample;
-    sample.dir               = float3(0.0, 1.0, 0.0);
-    sample.distance          = 0.0;
-    sample.radianceOverPdf   = float3(0.0, 0.0, 0.0);
-    sample.proposalPdf       = 0.0;
-    sample.bsdfF             = float3(0.0, 0.0, 0.0);
-    sample.bsdfPdf           = 0.0;
-    sample.kind              = kLightProxyKindAnalytic;
-    sample.index             = 0u;
-    sample.valid             = false;
-    sample.sampleableByBSDF  = false;
+    sample.dir              = float3(0.0, 1.0, 0.0);
+    sample.distance         = 0.0;
+    sample.radianceOverPdf  = float3(0.0, 0.0, 0.0);
+    sample.proposalPdf      = 0.0;
+    sample.bsdfF            = float3(0.0, 0.0, 0.0);
+    sample.bsdfPdf          = 0.0;
+    sample.kind            = kLightProxyKindAnalytic;
+    sample.index           = 0u;
+    sample.valid           = false;
+    sample.sampleableByBSDF = false;
     return sample;
 }
 
@@ -59,7 +59,7 @@ struct NEEWeightedReservoirSampler
         weightSum += targetWeight;
         if (randomValue * weightSum <= targetWeight)
         {
-            candidate = sample;
+            candidate       = sample;
             candidateWeight = targetWeight;
         }
     }
@@ -70,96 +70,173 @@ struct NEEWeightedReservoirSampler
     }
 };
 
-uint SamplePowerProxyIndex(float randomValue)
+uint SampleUniformLightIndex(float randomValue, out float pdf)
 {
-    const uint proxyCount = Bridge::getLightProxyCount();
-    if (proxyCount == 0u)
-        return 0u;
-
-    const float totalWeight = Bridge::getLightProxyTotalWeight();
-    if (totalWeight <= 0.0)
-        return 0u;
-
-    const float targetWeight = randomValue * totalWeight;
-    uint        lo           = 0u;
-    uint        hi           = proxyCount;
-    [loop]
-    while (lo + 1u < hi)
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    if (ctrl.TotalLightCount == 0u)
     {
-        const uint mid = (lo + hi) >> 1u;
-        if (targetWeight <= Bridge::getLightProxy(mid).prefixWeight)
-            hi = mid;
-        else
-            lo = mid;
+        pdf = 0.0;
+        return RTXPT_INVALID_LIGHT_INDEX;
     }
 
-    return targetWeight <= Bridge::getLightProxy(lo).prefixWeight ? lo : min(lo + 1u, proxyCount - 1u);
+    const uint lightIndex = min(uint(randomValue * float(ctrl.TotalLightCount)), ctrl.TotalLightCount - 1u);
+    pdf                   = 1.0 / float(ctrl.TotalLightCount);
+    return lightIndex;
 }
 
-float GetProxySelectionPdf(uint proxyIndex, bool usePowerSampling)
+uint SampleGlobalLightIndex(float randomValue, out float pdf)
 {
-    const uint proxyCount = Bridge::getLightProxyCount();
-    if (proxyCount == 0u || proxyIndex >= proxyCount)
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    if (ctrl.TotalLightCount == 0u)
+    {
+        pdf = 0.0;
+        return RTXPT_INVALID_LIGHT_INDEX;
+    }
+
+    if (ctrl.ImportanceSamplingType == 0u)
+        return SampleUniformLightIndex(randomValue, pdf);
+
+    if (ctrl.SamplingProxyCount == 0u)
+    {
+        pdf = 0.0;
+        return RTXPT_INVALID_LIGHT_INDEX;
+    }
+
+    const uint proxyIndex = min(uint(randomValue * float(ctrl.SamplingProxyCount)), ctrl.SamplingProxyCount - 1u);
+    const uint lightIndex = t_LightSamplingProxies[proxyIndex];
+    const uint proxyCount = max(1u, t_LightProxyCounters[lightIndex]);
+    pdf                   = float(proxyCount) / float(ctrl.SamplingProxyCount);
+    return lightIndex;
+}
+
+uint2 GetLocalTilePos(uint2 pixelPos)
+{
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    return (pixelPos + ctrl.LocalSamplingTileJitter) / RTXPT_LIGHTING_SAMPLING_BUFFER_TILE_SIZE.xx;
+}
+
+bool HasLocalLightSampling(LightingControlData ctrl)
+{
+    return ctrl.ImportanceSamplingType == 2u &&
+        saturate(ctrl.LocalToGlobalSampleRatio) > 0.0 &&
+        ctrl.SamplingProxyCount > 0u &&
+        ctrl.LocalSamplingResolution.x > 0u &&
+        ctrl.LocalSamplingResolution.y > 0u;
+}
+
+uint CountLocalLightOccurrences(uint base, uint lightIndex)
+{
+    uint count = 0u;
+    [loop]
+    for (uint localIndex = 0u; localIndex < RTXPT_LIGHTING_LOCAL_PROXY_COUNT; ++localIndex)
+        count += UnpackMiniListLight(t_LocalSamplingBuffer[base + localIndex]) == lightIndex ? 1u : 0u;
+    return count;
+}
+
+uint SampleLocalLightIndex(uint2 pixelPos, float randomValue, out float pdf)
+{
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    if (ctrl.LocalSamplingResolution.x == 0u || ctrl.LocalSamplingResolution.y == 0u)
+    {
+        pdf = 0.0;
+        return RTXPT_INVALID_LIGHT_INDEX;
+    }
+
+    const uint2 tilePos = min(GetLocalTilePos(pixelPos), ctrl.LocalSamplingResolution - 1u);
+    const uint   base   = LLSB_ComputeBaseAddress(tilePos, ctrl.LocalSamplingResolution);
+    const uint   localIndex = min(uint(randomValue * float(RTXPT_LIGHTING_LOCAL_PROXY_COUNT)), RTXPT_LIGHTING_LOCAL_PROXY_COUNT - 1u);
+    const uint   lightIndex = UnpackMiniListLight(t_LocalSamplingBuffer[base + localIndex]);
+    const uint   occurrenceCount = CountLocalLightOccurrences(base, lightIndex);
+    pdf = float(occurrenceCount) / float(RTXPT_LIGHTING_LOCAL_PROXY_COUNT);
+    return lightIndex;
+}
+
+float SampleGlobalPDF(uint lightIndex)
+{
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    if (ctrl.TotalLightCount == 0u || lightIndex >= ctrl.TotalLightCount)
         return 0.0;
 
-    if (!usePowerSampling)
-        return 1.0 / float(proxyCount);
+    if (ctrl.ImportanceSamplingType == 0u)
+        return 1.0 / float(ctrl.TotalLightCount);
 
-    const float totalWeight = Bridge::getLightProxyTotalWeight();
-    if (totalWeight <= 0.0)
+    return float(max(1u, t_LightProxyCounters[lightIndex])) / float(max(1u, ctrl.SamplingProxyCount));
+}
+
+float SampleLocalPDF(uint2 pixelPos, uint lightIndex)
+{
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    if (ctrl.LocalSamplingResolution.x == 0u || ctrl.LocalSamplingResolution.y == 0u)
         return 0.0;
 
-    return Bridge::getLightProxy(proxyIndex).weight / totalWeight;
+    const uint2 tilePos = min(GetLocalTilePos(pixelPos), ctrl.LocalSamplingResolution - 1u);
+    const uint   base   = LLSB_ComputeBaseAddress(tilePos, ctrl.LocalSamplingResolution);
+    return float(CountLocalLightOccurrences(base, lightIndex)) / float(RTXPT_LIGHTING_LOCAL_PROXY_COUNT);
 }
 
-uint SampleProxyIndex(float randomValue, bool usePowerSampling)
+float GetLightSelectionPdf(uint2 pixelPos, uint lightIndex)
 {
-    const uint proxyCount = Bridge::getLightProxyCount();
-    if (proxyCount == 0u)
-        return 0u;
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    if (lightIndex == RTXPT_INVALID_LIGHT_INDEX || lightIndex >= ctrl.TotalLightCount)
+        return 0.0;
 
-    if (usePowerSampling)
-        return SamplePowerProxyIndex(randomValue);
+    const float globalPdf = SampleGlobalPDF(lightIndex);
+    if (!HasLocalLightSampling(ctrl))
+        return globalPdf;
 
-    return min(uint(randomValue * float(proxyCount)), proxyCount - 1u);
+    const float localRatio = saturate(ctrl.LocalToGlobalSampleRatio);
+    const float localPdf   = SampleLocalPDF(pixelPos, lightIndex);
+    return localRatio * localPdf + (1.0 - localRatio) * globalPdf;
 }
 
-float GetEmissiveTriangleSelectionPdf(bool usePowerSampling)
+float GetEmissiveTriangleSelectionPdf(uint2 pixelPos)
 {
-    const uint proxyCount = Bridge::getLightProxyCount();
     const uint triCount = Bridge::getEmissiveTriangleCount();
-    if (proxyCount == 0u || triCount == 0u)
+    if (triCount == 0u)
         return 0.0;
 
-    const uint emissiveProxyIndex = proxyCount - 1u;
-    if (Bridge::getLightProxy(emissiveProxyIndex).kind != kLightProxyKindEmissiveBucket)
-        return 0.0;
-
-    return GetProxySelectionPdf(emissiveProxyIndex, usePowerSampling) / float(triCount);
+    const uint bucketIndex = Bridge::getEmissiveBucketLightIndex();
+    return GetLightSelectionPdf(pixelPos, bucketIndex) / float(triCount);
 }
 
 DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3 hitPos, float3 wo,
-                                               inout SampleGenerator sg, bool usePowerSampling)
+                                               uint2 pixelPos, inout SampleGenerator sg)
 {
     DirectLightSample sample = DirectLightSample_make_empty();
-
-    const uint proxyCount = Bridge::getLightProxyCount();
-    if (proxyCount == 0u)
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    if (ctrl.TotalLightCount == 0u)
         return sample;
 
-    const uint proxyIndex = SampleProxyIndex(sampleNext1D(sg), usePowerSampling);
-    const RTXPTLightProxy proxy = Bridge::getLightProxy(proxyIndex);
-    const float selectionPdf    = GetProxySelectionPdf(proxyIndex, usePowerSampling);
+    float selectionPdf = 0.0;
+    uint  lightIndex   = RTXPT_INVALID_LIGHT_INDEX;
+
+    const float localRatio = saturate(ctrl.LocalToGlobalSampleRatio);
+    const bool  hasLocal   = HasLocalLightSampling(ctrl);
+    if (hasLocal && sampleNext1D(sg) < localRatio)
+    {
+        lightIndex = SampleLocalLightIndex(pixelPos, sampleNext1D(sg), selectionPdf);
+    }
+    else
+    {
+        lightIndex = SampleGlobalLightIndex(sampleNext1D(sg), selectionPdf);
+    }
+
+    if (lightIndex == RTXPT_INVALID_LIGHT_INDEX || selectionPdf <= 0.0)
+        return sample;
+    selectionPdf = GetLightSelectionPdf(pixelPos, lightIndex);
     if (selectionPdf <= 0.0)
         return sample;
 
-    if (proxy.kind == kLightProxyKindAnalytic)
+    if (lightIndex < ctrl.AnalyticLightCount)
     {
-        const LightSample light = EvalAnalyticLight(Bridge::getLight(proxy.index), hitPos);
-        if (!light.valid)
+        const LightSample light = SampleAnalyticLight(Bridge::getLight(lightIndex), sampleNext2D(sg), hitPos);
+        if (!light.valid || light.solidAnglePdf <= 0.0)
             return sample;
 
-        const float3 radiance = light.radiance * g_Const.ptConsts.lightIntensityScale;
+        const float lightPdf = selectionPdf * light.solidAnglePdf;
+        if (lightPdf <= 0.0)
+            return sample;
+
         const float  bsdfProb = getSpecularProbability(bsdfData, wo);
         float3       f;
         float        bsdfPdf;
@@ -167,21 +244,18 @@ DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3
 
         sample.dir              = light.dir;
         sample.distance         = light.distance;
-        sample.radianceOverPdf  = radiance / selectionPdf;
-        sample.proposalPdf      = selectionPdf;
+        sample.radianceOverPdf  = light.radiance * max(g_Const.ptConsts.lightIntensityScale, 0.0) / lightPdf;
+        sample.proposalPdf      = lightPdf;
         sample.bsdfF            = f;
         sample.bsdfPdf          = bsdfPdf;
-        sample.kind             = proxy.kind;
-        sample.index            = proxy.index;
+        sample.kind             = kLightProxyKindAnalytic;
+        sample.index            = lightIndex;
         sample.valid            = true;
         sample.sampleableByBSDF = false;
     }
-    else if (proxy.kind == kLightProxyKindEmissiveBucket)
+    else if (lightIndex == ctrl.AnalyticLightCount && Bridge::getEmissiveTriangleCount() > 0u)
     {
         const uint triCount = Bridge::getEmissiveTriangleCount();
-        if (triCount == 0u)
-            return sample;
-
         const uint triIndex = min(uint(sampleNext1D(sg) * float(triCount)), triCount - 1u);
         const EmissiveTriangle tri = Bridge::getEmissiveTriangle(triIndex);
 
@@ -219,7 +293,7 @@ DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3
         sample.proposalPdf      = trianglePdf;
         sample.bsdfF            = f;
         sample.bsdfPdf          = bsdfPdf;
-        sample.kind             = proxy.kind;
+        sample.kind             = kLightProxyKindEmissiveBucket;
         sample.index            = triIndex;
         sample.valid            = true;
         sample.sampleableByBSDF = true;
@@ -229,6 +303,24 @@ DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3
         return DirectLightSample_make_empty();
 
     return sample;
+}
+
+void InsertFeedbackFromNEE(uint2 pixelPos, uint lightIndex, float3 contribution, float randomValue)
+{
+    const LightingControlData ctrl = Bridge::getLightingControl();
+    if (ctrl.TemporalFeedbackRequired == 0u || lightIndex == RTXPT_INVALID_LIGHT_INDEX)
+        return;
+
+    const float avgContribution = max(0.0, dot(contribution, float3(0.2126, 0.7152, 0.0722)));
+    if (avgContribution <= 0.0)
+        return;
+
+    float feedbackWeight = avgContribution;
+    const float globalPdf = max(SampleGlobalPDF(lightIndex), 1e-6);
+    feedbackWeight /= pow(globalPdf, max(ctrl.GlobalFeedbackUseWeight, 0.0));
+
+    LightFeedbackReservoir reservoir = LightFeedbackReservoir::make(pixelPos, u_FeedbackTotalWeight, u_FeedbackCandidates);
+    reservoir.Add(randomValue, lightIndex, feedbackWeight, true);
 }
 
 float EvalDirectLightCandidateWeight(DirectLightSample sample)

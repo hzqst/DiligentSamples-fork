@@ -2,12 +2,18 @@
 #define __PATH_TRACER_BRIDGE_HLSLI__
 
 #include "PathTracerShared.h"
+#include "Lighting/LightingTypes.hlsli"
 
-// Global shader resources used by the scene bridge. C++ binds these as static SRVs.
+// Global shader resources used by the scene bridge. C++ binds these as static SRVs/UAVs.
 ConstantBuffer<SampleConstants>        g_Const;
 StructuredBuffer<SubInstanceData>      t_SubInstanceData;
 StructuredBuffer<PolymorphicLightInfo> t_Lights;
-StructuredBuffer<RTXPTLightProxy>      t_LightProxies;
+StructuredBuffer<LightingControlData>  t_LightingControl;
+Buffer<uint>                           t_LightProxyCounters;
+Buffer<uint>                           t_LightSamplingProxies;
+Buffer<uint>                           t_LocalSamplingBuffer;
+RWTexture2D<float>                     u_FeedbackTotalWeight;
+RWTexture2D<uint>                      u_FeedbackCandidates;
 StructuredBuffer<EmissiveTriangle>     t_EmissiveTriangles;
 StructuredBuffer<GeometryVertexData>   t_VertexBuffer;
 StructuredBuffer<GeometryVertexData>   t_SkinnedVertexBuffer;
@@ -149,11 +155,31 @@ namespace Bridge
     }
 #endif
 
+    LightingControlData getLightingControl()
+    {
+        return t_LightingControl[0];
+    }
+
+    uint getTotalLightCount()
+    {
+        return t_LightingControl[0].TotalLightCount;
+    }
+
+    uint getAnalyticLightCount()
+    {
+        return t_LightingControl[0].AnalyticLightCount;
+    }
+
+    uint getEmissiveBucketLightIndex()
+    {
+        return t_LightingControl[0].AnalyticLightCount;
+    }
+
     // Total valid analytic light count. The C++ side may upload one disabled dummy light for binding safety;
     // that dummy is intentionally excluded from sampling.
     uint getLightCount()
     {
-        return g_Const.ptConsts.analyticLightCount;
+        return t_LightingControl[0].AnalyticLightCount;
     }
 
     PolymorphicLightInfo getLight(uint index)
@@ -163,28 +189,12 @@ namespace Bridge
 
     uint getEmissiveTriangleCount()
     {
-        return g_Const.ptConsts.environmentNEEEnabled >> 1u;
+        return t_LightingControl[0].TriangleLightCount;
     }
 
     EmissiveTriangle getEmissiveTriangle(uint index)
     {
         return t_EmissiveTriangles[index];
-    }
-
-    uint getLightProxyCount()
-    {
-        return getLightCount() + ((getEmissiveTriangleCount() > 0u) ? 1u : 0u);
-    }
-
-    RTXPTLightProxy getLightProxy(uint index)
-    {
-        return t_LightProxies[index];
-    }
-
-    float getLightProxyTotalWeight()
-    {
-        const uint proxyCount = getLightProxyCount();
-        return proxyCount > 0u ? getLightProxy(proxyCount - 1u).prefixWeight : 0.0;
     }
 } // namespace Bridge
 

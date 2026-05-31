@@ -115,6 +115,35 @@ uint ComputeCandidateSampleGlobalCount(float localToGlobalRatio, uint totalCandi
 }
 
 #if !defined(__cplusplus)
+    #define LFR_SCREEN_SPACE_COHERENT_FLAG 0x80000000u
+    #define LFR_MAX_WEIGHT 1e12
+
+struct LightFeedbackReservoir
+{
+    uint2             pixelPos;
+    RWTexture2D<float> totalWeight;
+    RWTexture2D<uint>  candidates;
+
+    static LightFeedbackReservoir make(uint2 pixelPos, RWTexture2D<float> totalWeight, RWTexture2D<uint> candidates)
+    {
+        LightFeedbackReservoir ret;
+        ret.pixelPos   = pixelPos;
+        ret.totalWeight = totalWeight;
+        ret.candidates  = candidates;
+        return ret;
+    }
+
+    void Add(float randomValue, uint candidateIndex, float candidateWeight, bool coherent)
+    {
+        candidateWeight = min(candidateWeight, LFR_MAX_WEIGHT);
+        float sum = min(totalWeight[pixelPos] + candidateWeight, LFR_MAX_WEIGHT);
+        totalWeight[pixelPos] = sum;
+
+        if (sum > 0.0 && randomValue < candidateWeight / sum)
+            candidates[pixelPos] = candidateIndex | (coherent ? LFR_SCREEN_SPACE_COHERENT_FLAG : 0u);
+    }
+};
+
 uint PackMiniListLightAndCount(uint globalLightIndex, uint counter)
 {
     return ((globalLightIndex & 0x007FFFFFu) << 9u) | ((counter - 1u) & 0x1FFu);

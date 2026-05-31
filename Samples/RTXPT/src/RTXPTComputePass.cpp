@@ -105,7 +105,7 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
     if (!m_SRB)
         return false;
 
-    // TODO(RTXPT-Port Phase 4): Restore RTXDI DI/GI, light feedback, and denoising-guide compute chains; current helper runs only the debug color pass.
+    // TODO(RTXPT-Port Phase 5.5): Restore RTXDI DI/GI and denoising-guide compute chains; R3 LightsBaker feedback uses RTXPTLightsBakerPass.
     m_Stats.Ready = true;
     return true;
 }

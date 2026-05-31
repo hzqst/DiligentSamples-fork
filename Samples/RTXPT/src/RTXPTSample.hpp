@@ -36,6 +36,7 @@
 #include "RTXPTComputePass.hpp"
 #include "RTXPTEmissiveTrianglePass.hpp"
 #include "RTXPTLights.hpp"
+#include "RTXPTLightsBaker.hpp"
 #include "RTXPTMaterials.hpp"
 #include "RTXPTRayTracingPass.hpp"
 #include "RTXPTRenderTargets.hpp"
@@ -71,7 +72,7 @@ struct PathTracerConstants
 
     Uint32 maxNEEBounceCount  = 16; // NEE budget clamp; default covers the full bounce budget.
     Uint32 analyticLightCount = 0;  // CPU-side valid analytic lights; the dummy binding light is not sampled.
-    Uint32 NEEType            = 1;  // G5: 0=Uniform, 1=Power+, 2=NEE-AT (deferred/disabled in UI).
+    Uint32 NEEType            = 1;  // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
     Uint32 NEECandidateSamples = 5; // G5: RIS candidate count per full sample.
 
     Uint32 NEEFullSamples          = 1;    // G5: visibility-tested full samples.
@@ -99,10 +100,13 @@ struct RTXPTReferenceUIState
     float ToneMappingExposureValue        = 0.0f;  // Phase 6.
     float ToneMappingExposureValueMin     = -16.0f; // Phase 6.
     float ToneMappingExposureValueMax     = 16.0f;  // Phase 6.
-    int   NEEType                         = 1;     // Phase R3 (G5): 0=Uniform, 1=Power+; 2=NEE-AT remains deferred.
+    int   NEEType                         = 1;     // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
     int   NEECandidateSamples             = 5;     // Phase R3 (G5): RIS candidate count.
     int   NEEFullSamples                  = 1;     // Phase R3 (G5): visibility-tested full samples.
     int   NEEMISType                      = 0;     // Phase R3 (G5): 0=Full, 1=ApproxInRealtime, 2=Approximate (deferred).
+    float NEEAT_GlobalTemporalFeedbackWeight = 0.75f;
+    float NEEAT_LocalToGlobalSampleRatio     = 0.65f;
+    float NEEAT_DistantVsLocalImportance     = 1.0f;
     int   NestedDielectricsQuality        = 1;     // Phase R6 (G10): 0=Off, 1=Fast, 2=Quality.
     bool  EnableLDSamplerForBSDF          = true;  // Phase R5 (G9): low-discrepancy (Sobol/Owen) sampler.
     bool  EnvironmentMapEnabled           = false; // Phase R4 (G7): HDR env-map loading (procedural sky is always active).
@@ -141,6 +145,7 @@ private:
     bool ApplySceneCamera(Uint32 CameraIndex);
     void UpdateCameraProjection(Uint32 Width, Uint32 Height);
     void UpdateFrameConstants(double CurrTime);
+    bool UpdateLightsBaker(bool ResetFeedback);
     void CreatePhase4Passes();
     bool BuildEmissiveTriangles();
     bool EnsureRenderTargets();
@@ -154,6 +159,7 @@ private:
     RTXPTScene                  m_Scene;
     RTXPTMaterials              m_Materials;
     RTXPTLights                 m_Lights;
+    RTXPTLightsBaker            m_LightsBaker;
     RTXPTAccelerationStructures m_AccelerationStructures;
     RTXPTSkinnedSceneGeometry   m_SkinnedGeometry;
     RTXPTRenderTargets          m_RenderTargets;
@@ -188,6 +194,7 @@ private:
     bool                        m_ResetAccumulationPending = true;
     bool                        m_AccumulationActive       = false;
     bool                        m_HasLastCameraMatrices    = false;
+    bool                        m_LightsBakerSettingsDirty = false;
 };
 
 } // namespace Diligent

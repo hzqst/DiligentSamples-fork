@@ -5,6 +5,8 @@ project(RTXPT CXX)
 set(SOURCE
     src/RTXPTSample.cpp
     src/RTXPTScene.cpp
+    src/RTXPTSceneJson.cpp
+    src/RTXPTSceneGraph.cpp
     src/RTXPTMaterials.cpp
     src/RTXPTLights.cpp
     src/RTXPTAccelerationStructures.cpp
@@ -18,6 +20,8 @@ set(SOURCE
 set(INCLUDE
     src/RTXPTSample.hpp
     src/RTXPTScene.hpp
+    src/RTXPTSceneJson.hpp
+    src/RTXPTSceneGraph.hpp
     src/RTXPTMaterials.hpp
     src/RTXPTLights.hpp
     src/RTXPTAccelerationStructures.hpp

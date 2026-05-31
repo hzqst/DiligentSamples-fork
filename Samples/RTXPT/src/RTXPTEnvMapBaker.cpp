@@ -70,8 +70,7 @@ bool IsEnvironmentFile(const std::filesystem::path& Path)
 
 bool EnvMapSourceChanged(const RTXPTEnvMapSettings& Lhs, const RTXPTEnvMapSettings& Rhs)
 {
-    return Lhs.SourceRelativePath != Rhs.SourceRelativePath ||
-        Lhs.TargetCubeResolution != Rhs.TargetCubeResolution;
+    return Lhs.SourceRelativePath != Rhs.SourceRelativePath;
 }
 
 bool CreateCubeTexture(IRenderDevice* pDevice, const char* Name, Uint32 Size, Uint32 Color,

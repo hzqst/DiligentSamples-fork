@@ -865,7 +865,7 @@ void RTXPTSample::UpdateUI()
                 ImGui::TextColored(CategoryColor, "NEE settings:");
                 ImGui::Indent(Indent);
                 {
-                    // Light importance sampling (RIS/WRS) + MIS type: G5.
+                    // Light importance sampling + MIS type: G5.
                     const char* SamplingTechniqueItems = "Uniform\0Power+\0\0";
                     if (ResetOnChange(ImGui::Combo("Sampling technique", &m_ReferenceUI.NEEType, SamplingTechniqueItems),
                                       "NEE sampling technique changed"))

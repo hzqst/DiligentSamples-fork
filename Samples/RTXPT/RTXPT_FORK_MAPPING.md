@@ -138,7 +138,9 @@ Hard constraints:
 | `RTXPTEvalAnalyticLight(Light, SurfacePos)` | `EvalAnalyticLight(light, surfacePos)` (style) | |
 | `RTXPTEvalSky(RayDir)` | `EnvMap::Eval(worldDir)` = RTXPT-fork | procedural sky wrapped in `namespace EnvMap` |
 | `TriangleLight` (struct) | `EmissiveTriangle` (R2/G4 backing layout) | base+edge1+edge2+radiance; normal/area recomputed |
-| `TriangleLight::CalcSample` | `PathTracer::SampleEmissiveNEE` | uniform triangle selection (RIS is R3) |
+| `PathTracer/Lighting/LightSampler.hlsli` `NEEWeightedReservoirSampler` / `GenerateLightSample` | `PathTracer/Lighting/LightSampler.hlsli` `NEEWeightedReservoirSampler` / `GenerateDirectLightCandidate` / `SampleDirectLightNEE` | R3/G5 ports the RIS/WRS math over a compact Diligent global proxy table |
+| `LightSampler::SampleGlobal` proxy table | `RTXPTLights::UploadLightProxyBuffer` + `StructuredBuffer<RTXPTLightProxy> t_LightProxies` | global-only CDF; no `LightsBaker`, feedback, local tiles, or NEE-AT in G5 |
+| `TriangleLight::CalcSample` | emissive bucket branch inside `GenerateDirectLightCandidate` | R2 stores `EmissiveTriangle`; R3 samples it through the RIS/WRS proxy table, still with uniform per-triangle selection inside the emissive bucket |
 | `SampleTriangleUniform` / `pdfAtoW` / `MAX_SOLID_ANGLE_PDF` | `SampleTriangleUniform` / `pdfAtoW` / `kMaxSolidAnglePdf` (style) | |
 | `LightsBaker` emissive triangle list | `RTXPTLights::UploadEmissiveTriangles` + `RTXPTEmissiveTrianglePass` (GPU build from current geometry) | minimal Diligent data path, not the baker |
 
@@ -341,8 +343,10 @@ Raygen locals become camelCase:
 - Emissive-triangle area lights (R2/G4) are **two-sided** (`abs(cosTheta)` in both the
   NEE estimator and the BSDF-hit MIS), unlike RTXPT-fork's one-sided `TriangleLight`.
   This preserves the port's pre-R2 two-sided emissive look and stays unbiased.
-  Textured-emissive triangles are excluded from NEE (BSDF-only) for now. Selection is
-  uniform (RIS/WRS is Phase R3). TODO: align one-sided + double-sided baker semantics.
+  Textured-emissive triangles are excluded from NEE (BSDF-only) for now. R3/G5 samples
+  constant emitters through a global RIS/WRS proxy table with one emissive bucket, not
+  RTXPT-fork's full `LightsBaker`/local-feedback system. TODO: align one-sided +
+  double-sided baker semantics.
 - Resource/global names follow the RTXPT-fork `t_/u_/s_/g_` prefix scheme, but
   the set here is the reference-mode subset only. `t_PTMaterialData` is the
   material-buffer resource/global name backed by the local `MaterialPTData`

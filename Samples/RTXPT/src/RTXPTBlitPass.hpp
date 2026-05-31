@@ -26,8 +26,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "DeviceContext.h"
 #include "EngineFactory.h"
 #include "PipelineState.h"
@@ -47,15 +45,13 @@ public:
     bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, ISwapChain* pSwapChain);
     bool Render(IDeviceContext* pContext, ISwapChain* pSwapChain, ITextureView* pSourceSRV);
 
-    bool               IsReady() const { return m_PSO && m_SRB; }
-    Uint32             GetDrawCount() const { return m_DrawCount; }
-    const std::string& GetLastError() const { return m_LastError; }
+    bool   IsReady() const { return m_PSO && m_SRB; }
+    Uint32 GetDrawCount() const { return m_DrawCount; }
 
 private:
     RefCntAutoPtr<IPipelineState>         m_PSO;
     RefCntAutoPtr<IShaderResourceBinding> m_SRB;
     Uint32                                m_DrawCount = 0;
-    std::string                           m_LastError;
 };
 
 } // namespace Diligent

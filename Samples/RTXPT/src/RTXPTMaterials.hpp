@@ -27,7 +27,6 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
 #include <vector>
 
 #include "Buffer.h"
@@ -93,9 +92,8 @@ bool RTXPTMaterialIsAlphaTested(const GLTF::Material& Material);
 
 struct RTXPTMaterialStats
 {
-    Uint32      MaterialCount = 0;
-    Uint32      TextureCount  = 0;
-    std::string LastError;
+    Uint32 MaterialCount = 0;
+    Uint32 TextureCount  = 0;
 };
 
 class RTXPTMaterials

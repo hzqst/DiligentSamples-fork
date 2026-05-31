@@ -60,7 +60,6 @@ struct RTXPTRayTracingPassStats
     Uint32      MaterialTextureCount     = 0;
     Uint32      TraceCount               = 0;
     std::string DisabledReason;
-    std::string LastError;
 };
 
 class RTXPTRayTracingPass

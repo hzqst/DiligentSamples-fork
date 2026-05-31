@@ -25,6 +25,7 @@
  */
 
 #include "RTXPTComputePass.hpp"
+#include "DebugUtilities.hpp"
 
 #include "GraphicsTypesX.hpp"
 
@@ -76,11 +77,9 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
 
     RefCntAutoPtr<IShader> pCS;
     pDevice->CreateShader(ShaderCI, &pCS);
+    VERIFY(pCS, "Failed to create ", m_Name, " shader");
     if (!pCS)
-    {
-        m_Stats.LastError = "Failed to create " + m_Name + " shader";
         return false;
-    }
 
     ComputePipelineStateCreateInfo PSOCreateInfo;
     PSOCreateInfo.PSODesc.Name         = m_Name.c_str();
@@ -96,19 +95,15 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
     pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
+    VERIFY(m_PSO, "Failed to create ", m_Name, " PSO");
     if (!m_PSO)
-    {
-        m_Stats.LastError = "Failed to create " + m_Name + " PSO";
         return false;
-    }
 
     m_PSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "g_Const")->Set(pFrameConstants);
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
+    VERIFY(m_SRB, "Failed to create ", m_Name, " SRB");
     if (!m_SRB)
-    {
-        m_Stats.LastError = "Failed to create " + m_Name + " SRB";
         return false;
-    }
 
     // TODO(RTXPT-Port Phase 4): Restore RTXDI DI/GI, light feedback, and denoising-guide compute chains; current helper runs only the debug color pass.
     m_Stats.Ready = true;

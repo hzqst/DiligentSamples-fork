@@ -68,7 +68,6 @@ struct RTXPTSkinnedGeometryStats
     Uint32      JointMatrixCount     = 0;
     Uint32      DispatchCount        = 0;
     std::string DisabledReason;
-    std::string LastError;
 };
 
 class RTXPTSkinnedGeometry

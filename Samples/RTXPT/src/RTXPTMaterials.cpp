@@ -25,6 +25,7 @@
  */
 
 #include "RTXPTMaterials.hpp"
+#include "DebugUtilities.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -65,7 +66,7 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
         {
             m_TextureBindings.clear();
             m_TextureViews.clear();
-            m_Stats.LastError = "RTXPT material texture is missing";
+            LOG_ERROR_MESSAGE("RTXPT material texture is missing; texture sampling disabled");
             break;
         }
 
@@ -79,7 +80,7 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
         {
             m_TextureBindings.clear();
             m_TextureViews.clear();
-            m_Stats.LastError = "RTXPT material texture view creation failed";
+            LOG_ERROR_MESSAGE("RTXPT material texture view creation failed; texture sampling disabled");
             break;
         }
 
@@ -160,11 +161,9 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
     BufferData Data{MaterialData.data(), Desc.Size};
     pDevice->CreateBuffer(Desc, &Data, &m_MaterialBuffer);
 
+    VERIFY(m_MaterialBuffer, "Failed to create RTXPT material buffer");
     if (!m_MaterialBuffer)
-    {
-        m_Stats.LastError = "Failed to create RTXPT material buffer";
         return false;
-    }
 
     return true;
 }

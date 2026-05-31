@@ -28,6 +28,7 @@
 
 #include <algorithm>
 
+#include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
 
@@ -100,18 +101,16 @@ bool RTXPTSkinnedGeometry::CreateBuffers(IRenderDevice* pDevice, IBuffer* pSourc
     VertexDesc.ElementByteStride = sizeof(RTXPTGeometryVertex);
     VertexDesc.Size              = Uint64{VertexCountForBuffer} * sizeof(RTXPTGeometryVertex);
     pDevice->CreateBuffer(VertexDesc, nullptr, &m_SkinnedVertexBuffer);
+    VERIFY(m_SkinnedVertexBuffer, "Failed to create RTXPT skinned vertex arena");
     if (!m_SkinnedVertexBuffer)
-    {
-        m_Stats.LastError = "Failed to create RTXPT skinned vertex arena";
         return false;
-    }
 
     if (m_Nodes.empty())
         return true;
 
     if (pSourceVertexBuffer == nullptr || pSourceSkinBuffer == nullptr)
     {
-        m_Stats.LastError = "RTXPT skinned geometry requires source vertex and skin buffers";
+        LOG_ERROR_MESSAGE("RTXPT skinned geometry requires source vertex and skin buffers");
         return false;
     }
 
@@ -127,11 +126,9 @@ bool RTXPTSkinnedGeometry::CreateBuffers(IRenderDevice* pDevice, IBuffer* pSourc
     JointDesc.ElementByteStride = sizeof(float4x4);
     JointDesc.Size              = Uint64{std::max<Uint32>(m_Stats.JointMatrixCount, 1)} * sizeof(float4x4);
     pDevice->CreateBuffer(JointDesc, nullptr, &m_JointMatrixBuffer);
+    VERIFY(m_JointMatrixBuffer, "Failed to create RTXPT skinned joint matrix buffer");
     if (!m_JointMatrixBuffer)
-    {
-        m_Stats.LastError = "Failed to create RTXPT skinned joint matrix buffer";
         return false;
-    }
 
     BufferDesc ConstantsDesc;
     ConstantsDesc.Name           = "RTXPT skinning constants";
@@ -140,11 +137,9 @@ bool RTXPTSkinnedGeometry::CreateBuffers(IRenderDevice* pDevice, IBuffer* pSourc
     ConstantsDesc.CPUAccessFlags = CPU_ACCESS_WRITE;
     ConstantsDesc.Size           = sizeof(SkinningConstants);
     pDevice->CreateBuffer(ConstantsDesc, nullptr, &m_SkinningConstantsCB);
+    VERIFY(m_SkinningConstantsCB, "Failed to create RTXPT skinning constants");
     if (!m_SkinningConstantsCB)
-    {
-        m_Stats.LastError = "Failed to create RTXPT skinning constants";
         return false;
-    }
 
     return true;
 }
@@ -169,11 +164,9 @@ bool RTXPTSkinnedGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory
 
     RefCntAutoPtr<IShader> pCS;
     pDevice->CreateShader(ShaderCI, &pCS);
+    VERIFY(pCS, "Failed to create RTXPT skinned vertex build shader");
     if (!pCS)
-    {
-        m_Stats.LastError = "Failed to create RTXPT skinned vertex build shader";
         return false;
-    }
 
     ComputePipelineStateCreateInfo PSOCreateInfo;
     PSOCreateInfo.PSODesc.Name         = "RTXPT skinned vertex build PSO";
@@ -191,11 +184,9 @@ bool RTXPTSkinnedGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
     pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
+    VERIFY(m_PSO, "Failed to create RTXPT skinned vertex build PSO");
     if (!m_PSO)
-    {
-        m_Stats.LastError = "Failed to create RTXPT skinned vertex build PSO";
         return false;
-    }
 
     auto SetStatic = [&](const char* Name, IDeviceObject* pObject) {
         IShaderResourceVariable* pVar = m_PSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, Name);
@@ -211,18 +202,14 @@ bool RTXPTSkinnedGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory
         SetStatic("t_SourceSkinData", m_SourceSkinBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE)) &&
         SetStatic("t_JointMatrices", m_JointMatrixBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE)) &&
         SetStatic("u_SkinnedVertices", m_SkinnedVertexBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
+    VERIFY(Bound, "Failed to bind RTXPT skinned vertex build resources");
     if (!Bound)
-    {
-        m_Stats.LastError = "Failed to bind RTXPT skinned vertex build resources";
         return false;
-    }
 
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
+    VERIFY(m_SRB, "Failed to create RTXPT skinned vertex build SRB");
     if (!m_SRB)
-    {
-        m_Stats.LastError = "Failed to create RTXPT skinned vertex build SRB";
         return false;
-    }
 
     return true;
 }
@@ -239,14 +226,14 @@ bool RTXPTSkinnedGeometry::Initialize(IRenderDevice*     pDevice,
 
     if (pDevice == nullptr || pEngineFactory == nullptr)
     {
-        m_Stats.LastError = "RTXPT skinned geometry requires a device and engine factory";
+        DEV_ERROR("RTXPT skinned geometry requires a device and engine factory");
         return false;
     }
 
     BuildNodeTable(Model, SceneIndex);
     if (!m_Nodes.empty() && (pSourceVertexBuffer == nullptr || pSourceSkinBuffer == nullptr))
     {
-        m_Stats.LastError = "Skinned GLTF nodes require buffer 0 POSITION/NORMAL/TEXCOORD_0 and buffer 1 JOINTS_0/WEIGHTS_0";
+        LOG_ERROR_MESSAGE("RTXPT skinned geometry requires source vertex and skin buffers");
         return false;
     }
     if (!CreateBuffers(pDevice, pSourceVertexBuffer, pSourceSkinBuffer))
@@ -279,21 +266,21 @@ bool RTXPTSkinnedGeometry::UploadJointMatrices(IDeviceContext* pContext, const G
     {
         if (Node.pNode == nullptr || Node.pNode->SkinTransformsIndex < 0)
         {
-            m_Stats.LastError = "RTXPT skinned node is missing skin transform data";
+            LOG_ERROR_MESSAGE("RTXPT skinned node is missing skin transform data");
             return false;
         }
 
         const Uint32 SkinIndex = static_cast<Uint32>(Node.pNode->SkinTransformsIndex);
         if (SkinIndex >= Transforms.Skins.size())
         {
-            m_Stats.LastError = "RTXPT skinned node is missing skin transform data";
+            LOG_ERROR_MESSAGE("RTXPT skinned node is missing skin transform data");
             return false;
         }
 
         const std::vector<float4x4>& Source = Transforms.Skins[SkinIndex].JointMatrices;
         if (Source.size() < Node.JointCount)
         {
-            m_Stats.LastError = "RTXPT skinned joint matrix buffer is incomplete";
+            LOG_ERROR_MESSAGE("RTXPT skinned node is missing skin transform data");
             return false;
         }
 
@@ -302,11 +289,9 @@ bool RTXPTSkinnedGeometry::UploadJointMatrices(IDeviceContext* pContext, const G
     }
 
     MapHelper<float4x4> Mapped{pContext, m_JointMatrixBuffer, MAP_WRITE, MAP_FLAG_DISCARD};
+    VERIFY(Mapped, "Failed to map RTXPT skinned joint matrix buffer");
     if (!Mapped)
-    {
-        m_Stats.LastError = "Failed to map RTXPT skinned joint matrix buffer";
         return false;
-    }
 
     std::copy(m_JointMatrices.begin(), m_JointMatrices.end(), static_cast<float4x4*>(Mapped));
     return true;
@@ -324,7 +309,7 @@ bool RTXPTSkinnedGeometry::Update(IDeviceContext* pContext, const GLTF::ModelTra
 
     if (pContext == nullptr)
     {
-        m_Stats.LastError = "RTXPT skinned geometry requires a device context";
+        DEV_ERROR("RTXPT skinned geometry requires a device context");
         return false;
     }
 
@@ -342,15 +327,12 @@ bool RTXPTSkinnedGeometry::Update(IDeviceContext* pContext, const GLTF::ModelTra
         Constants.VertexCount      = Node.VertexCount;
 
         {
-            if (MapHelper<SkinningConstants> Mapped{pContext, m_SkinningConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD})
-            {
-                *Mapped = Constants;
-            }
-            else
-            {
-                m_Stats.LastError = "Failed to map RTXPT skinning constants";
+            MapHelper<SkinningConstants> Mapped{pContext, m_SkinningConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
+            VERIFY(Mapped, "Failed to map RTXPT skinning constants");
+            if (!Mapped)
                 return false;
-            }
+
+            *Mapped = Constants;
         }
 
         pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

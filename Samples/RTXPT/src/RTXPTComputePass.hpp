@@ -46,7 +46,6 @@ struct RTXPTComputePassStats
     bool        LastDispatchExecuted = false;
     Uint32      DispatchCount        = 0;
     std::string DisabledReason;
-    std::string LastError;
 };
 
 class RTXPTComputePass

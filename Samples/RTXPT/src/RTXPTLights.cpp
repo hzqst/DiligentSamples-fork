@@ -25,6 +25,7 @@
  */
 
 #include "RTXPTLights.hpp"
+#include "DebugUtilities.hpp"
 
 #include <vector>
 
@@ -100,11 +101,9 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const
     BufferData Data{Lights.data(), Desc.Size};
     pDevice->CreateBuffer(Desc, &Data, &m_LightBuffer);
 
+    VERIFY(m_LightBuffer, "Failed to create RTXPT light buffer");
     if (!m_LightBuffer)
-    {
-        m_Stats.LastError = "Failed to create RTXPT light buffer";
         return false;
-    }
 
     return true;
 }

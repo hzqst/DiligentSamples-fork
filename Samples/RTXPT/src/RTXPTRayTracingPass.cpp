@@ -25,6 +25,7 @@
  */
 
 #include "RTXPTRayTracingPass.hpp"
+#include "DebugUtilities.hpp"
 
 #include "GraphicsTypesX.hpp"
 #include "ShaderMacroHelper.hpp"
@@ -172,11 +173,10 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         pDevice->CreateShader(ShaderCI, &pAnyHit);
     }
 
+    VERIFY(pRayGen && (ScreenPatternDiagnostic || (pMiss && pClosestHit && (!UseTextures || pAnyHit))),
+           "Failed to create RTXPT reference ray tracing shaders");
     if (!pRayGen || (!ScreenPatternDiagnostic && (!pMiss || !pClosestHit || (UseTextures && !pAnyHit))))
-    {
-        m_Stats.LastError = "Failed to create RTXPT reference ray tracing shaders";
         return false;
-    }
 
     RayTracingPipelineStateCreateInfoX PSOCreateInfo;
     PSOCreateInfo.PSODesc.Name         = "RTXPT reference RT PSO";
@@ -237,23 +237,21 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
     pDevice->CreateRayTracingPipelineState(PSOCreateInfo, &m_PSO);
+    VERIFY(m_PSO, "Failed to create RTXPT reference RT PSO");
     if (!m_PSO)
-    {
-        m_Stats.LastError = "Failed to create RTXPT reference RT PSO";
         return false;
-    }
 
     auto SetStatic = [&](SHADER_TYPE Stage, const char* Name, IDeviceObject* pObject, const char* ObjectName) {
         if (pObject == nullptr)
         {
-            m_Stats.LastError = std::string{"RTXPT static resource object is null: "} + ObjectName;
+            DEV_ERROR("RTXPT static resource object is null: ", ObjectName);
             return false;
         }
 
         IShaderResourceVariable* pVar = m_PSO->GetStaticVariableByName(Stage, Name);
         if (pVar == nullptr)
         {
-            m_Stats.LastError = std::string{"RTXPT static shader variable is missing: "} + Name;
+            UNEXPECTED("RTXPT static shader variable is missing: ", Name);
             return false;
         }
 
@@ -267,11 +265,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         ScreenPatternDiagnostic || SetStatic(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS, "TLAS");
 
     if (!FrameConstantsBound || !TLASBound)
-    {
-        if (m_Stats.LastError.empty())
-            m_Stats.LastError = "Failed to bind required RTXPT frame constants or TLAS";
         return false;
-    }
 
     if (!FullPathTracer)
     {
@@ -298,7 +292,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     // create one here so HLSL can declare it as Buffer<uint>.
     if (FullPathTracer && IndexValueType != VT_UINT16 && IndexValueType != VT_UINT32)
     {
-        m_Stats.LastError = "Reference path tracer requires VT_UINT16 or VT_UINT32 indices";
+        LOG_ERROR_MESSAGE("Reference path tracer requires VT_UINT16 or VT_UINT32 indices");
         return false;
     }
     if (FullPathTracer)
@@ -310,11 +304,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         IndexViewDesc.Format.NumComponents = 1;
         IndexViewDesc.Format.IsNormalized  = false;
         pIndexBuffer->CreateView(IndexViewDesc, &m_IndexBufferView);
+        VERIFY(m_IndexBufferView, "Failed to create RTXPT index buffer view");
         if (!m_IndexBufferView)
-        {
-            m_Stats.LastError = "Failed to create RTXPT index buffer view";
             return false;
-        }
     }
 
     if (FullPathTracer)
@@ -344,18 +336,12 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
     if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound ||
         !m_Stats.VertexBufferBound || !m_Stats.SkinnedVertexBufferBound || !m_Stats.IndexBufferBound)
-    {
-        if (m_Stats.LastError.empty())
-            m_Stats.LastError = "Failed to bind required RTXPT bridge buffers";
         return false;
-    }
 
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
+    VERIFY(m_SRB, "Failed to create RTXPT reference RT SRB");
     if (!m_SRB)
-    {
-        m_Stats.LastError = "Failed to create RTXPT reference RT SRB";
         return false;
-    }
 
     if (!ScreenPatternDiagnostic && UseTextures)
     {
@@ -365,7 +351,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             m_SRB->GetVariableByName(SHADER_TYPE_RAY_ANY_HIT, "t_BindlessTextures");
         if (pClosestHitTexVar == nullptr || pAnyHitTexVar == nullptr)
         {
-            m_Stats.LastError = "Failed to find RTXPT material texture array binding";
+            UNEXPECTED("Failed to find RTXPT material texture array binding");
             return false;
         }
         pClosestHitTexVar->SetArray(pMaterialTextures, 0, MaterialTextureCount);
@@ -379,11 +365,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     SBTDesc.Name = "RTXPT reference SBT";
     SBTDesc.pPSO = m_PSO;
     pDevice->CreateSBT(SBTDesc, &m_SBT);
+    VERIFY(m_SBT, "Failed to create RTXPT reference SBT");
     if (!m_SBT)
-    {
-        m_Stats.LastError = "Failed to create RTXPT reference SBT";
         return false;
-    }
 
     m_SBT->BindRayGenShader("Main");
     if (!ScreenPatternDiagnostic)
@@ -406,27 +390,16 @@ bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext,
     m_Stats.LastTraceExecuted = false;
     m_Stats.AccumulationBound = false;
 
-    if (!IsReady() || pOutputUAV == nullptr || pAccumulationUAV == nullptr || Width == 0 || Height == 0)
-    {
-        if (!IsReady())
-        {
-            if (m_Stats.LastError.empty() && m_Stats.DisabledReason.empty())
-                m_Stats.LastError = "Trace skipped: RTXPT ray tracing pass is not ready";
-        }
-        else if (pOutputUAV == nullptr)
-            m_Stats.LastError = "Trace skipped: output UAV is null";
-        else if (pAccumulationUAV == nullptr)
-            m_Stats.LastError = "Trace skipped: accumulation UAV is null";
-        else
-            m_Stats.LastError = "Trace skipped: render target dimensions are zero";
+    if (!IsReady())
         return false;
-    }
+    if (pOutputUAV == nullptr || pAccumulationUAV == nullptr || Width == 0 || Height == 0)
+        return false;
 
     IShaderResourceVariable* pOutputColorVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Output");
     IShaderResourceVariable* pAccumColorVar  = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_AccumulationBuffer");
     if (pOutputColorVar == nullptr || pAccumColorVar == nullptr)
     {
-        m_Stats.LastError = "Failed to find RTXPT output bindings";
+        UNEXPECTED("Failed to find RTXPT output bindings");
         return false;
     }
 

@@ -25,6 +25,7 @@
  */
 
 #include "RTXPTRenderTargets.hpp"
+#include "DebugUtilities.hpp"
 
 namespace Diligent
 {
@@ -38,7 +39,6 @@ void RTXPTRenderTargets::Reset()
     m_Width                   = 0;
     m_Height                  = 0;
     m_Format                  = TEX_FORMAT_UNKNOWN;
-    m_LastError.clear();
 }
 
 bool RTXPTRenderTargets::CreateTarget(IRenderDevice* pDevice, const char* Name, RefCntAutoPtr<ITexture>& Target)
@@ -55,14 +55,14 @@ bool RTXPTRenderTargets::CreateTarget(IRenderDevice* pDevice, const char* Name, 
     pDevice->CreateTexture(Desc, nullptr, &Target);
     if (!Target)
     {
-        m_LastError = std::string{"Failed to create "} + Name;
+        LOG_ERROR_MESSAGE("Failed to create ", Name);
         return false;
     }
 
     if (Target->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) == nullptr ||
         Target->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) == nullptr)
     {
-        m_LastError = std::string{Name} + " is missing SRV or UAV";
+        LOG_ERROR_MESSAGE(Name, " is missing SRV or UAV");
         Target.Release();
         return false;
     }
@@ -108,7 +108,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice,
         const bool           SupportsUAV = (FmtInfo.BindFlags & BIND_UNORDERED_ACCESS) != 0;
         if (!SupportsUAV)
         {
-            m_LastError               = "RGBA32F UAV is not supported; reference path tracer accumulation is disabled";
+            LOG_ERROR_MESSAGE("RGBA32F UAV is not supported; reference path tracer accumulation is disabled");
             m_AccumulationUnavailable = true;
             return true;
         }
@@ -122,11 +122,9 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice,
         Desc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
         pDevice->CreateTexture(Desc, nullptr, &m_AccumColor);
 
+        VERIFY(m_AccumColor, "Failed to create RTXPT AccumColor");
         if (!m_AccumColor)
-        {
-            m_LastError = "Failed to create RTXPT AccumColor";
             return false;
-        }
     }
 
     return true;

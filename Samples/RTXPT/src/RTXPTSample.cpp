@@ -884,8 +884,6 @@ void RTXPTSample::UpdateUI()
             RequestAccumulationReset("Camera clip planes changed");
         }
 
-        if (!m_Scene.GetLastError().empty())
-            ImGui::TextWrapped("Asset load error: %s", m_Scene.GetLastError().c_str());
         ImGui::Text("Mesh nodes: %u", m_Scene.GetMeshNodeCount());
         ImGui::Text("Primitives: %u", m_Scene.GetPrimitiveCount());
         ImGui::Text("Materials: %u", m_Materials.GetStats().MaterialCount);
@@ -894,10 +892,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Animations: %s", GeometryStats.HasAnimations ? "yes" : "no");
         ImGui::Text("Skinned nodes: %u", GeometryStats.SkinnedNodeCount);
         ImGui::Text("Skinned primitives: %u", GeometryStats.SkinnedPrimitiveCount);
-        if (!m_Materials.GetStats().LastError.empty())
-            ImGui::TextWrapped("Material buffer error: %s", m_Materials.GetStats().LastError.c_str());
-        if (!m_Lights.GetStats().LastError.empty())
-            ImGui::TextWrapped("Light buffer error: %s", m_Lights.GetStats().LastError.c_str());
 
         ImGui::Unindent(Indent);
     }
@@ -927,8 +921,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Alpha-tested geometries: %u", ASStats.AlphaTestedGeometryCount);
         if (!ASStats.DisabledReason.empty())
             ImGui::TextWrapped("AS disabled: %s", ASStats.DisabledReason.c_str());
-        if (!ASStats.LastError.empty())
-            ImGui::TextWrapped("AS error: %s", ASStats.LastError.c_str());
         ImGui::Separator();
         ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
         ImGui::Text("Frame index: %u", m_FrameIndex);
@@ -944,8 +936,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Skinning pass: %s", m_SkinnedGeometry.IsReady() ? "ready" : "not ready");
         if (!m_SkinnedGeometry.GetStats().DisabledReason.empty())
             ImGui::TextWrapped("Skinning disabled: %s", m_SkinnedGeometry.GetStats().DisabledReason.c_str());
-        if (!m_SkinnedGeometry.GetStats().LastError.empty())
-            ImGui::TextWrapped("Skinning error: %s", m_SkinnedGeometry.GetStats().LastError.c_str());
         ImGui::Text("Index buffer: %s", RTPassStats.IndexBufferBound ? "bound" : "fallback");
         ImGui::Text("Material textures loaded: %u", m_Materials.GetStats().TextureCount);
         ImGui::Text("Material textures bound: %s (%u)", RTPassStats.MaterialTexturesBound ? "yes" : "no", RTPassStats.MaterialTextureCount);
@@ -956,8 +946,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
         if (!RTPassStats.DisabledReason.empty())
             ImGui::TextWrapped("TraceRays disabled: %s", RTPassStats.DisabledReason.c_str());
-        if (!RTPassStats.LastError.empty())
-            ImGui::TextWrapped("TraceRays error: %s", RTPassStats.LastError.c_str());
         ImGui::Separator();
         ImGui::Checkbox("Debug compute pass", &m_EnableDebugComputePass);
         ImGui::Text("Compute dispatch: %s", m_DebugComputePass.IsReady() ? "ready" : "not ready");
@@ -965,12 +953,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Compute dispatch count: %u", ComputeStats.DispatchCount);
         if (!ComputeStats.DisabledReason.empty())
             ImGui::TextWrapped("Compute disabled: %s", ComputeStats.DisabledReason.c_str());
-        if (!ComputeStats.LastError.empty())
-            ImGui::TextWrapped("Compute error: %s", ComputeStats.LastError.c_str());
-        if (!m_RenderTargets.GetLastError().empty())
-            ImGui::TextWrapped("Render target error: %s", m_RenderTargets.GetLastError().c_str());
-        if (!m_BlitPass.GetLastError().empty())
-            ImGui::TextWrapped("Blit error: %s", m_BlitPass.GetLastError().c_str());
         ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
         ImGui::Separator();
         ImGui::TextColored(CategoryColor, "Roadmap (open work):");

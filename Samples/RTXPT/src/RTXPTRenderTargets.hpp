@@ -26,8 +26,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "RenderDevice.h"
 #include "RefCntAutoPtr.hpp"
 #include "Texture.h"
@@ -58,10 +56,9 @@ public:
     ITextureView* GetAccumColorSRV() const;
     ITextureView* GetDisplaySRV(bool UseComputeOutput) const;
 
-    Uint32             GetWidth() const { return m_Width; }
-    Uint32             GetHeight() const { return m_Height; }
-    TEXTURE_FORMAT     GetFormat() const { return m_Format; }
-    const std::string& GetLastError() const { return m_LastError; }
+    Uint32         GetWidth() const { return m_Width; }
+    Uint32         GetHeight() const { return m_Height; }
+    TEXTURE_FORMAT GetFormat() const { return m_Format; }
 
 private:
     bool CreateTarget(IRenderDevice* pDevice, const char* Name, RefCntAutoPtr<ITexture>& Target);
@@ -73,7 +70,6 @@ private:
     Uint32                  m_Width                   = 0;
     Uint32                  m_Height                  = 0;
     TEXTURE_FORMAT          m_Format                  = TEX_FORMAT_UNKNOWN;
-    std::string             m_LastError;
 };
 
 } // namespace Diligent

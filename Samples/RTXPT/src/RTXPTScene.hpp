@@ -69,7 +69,6 @@ public:
     const std::string& GetLoadedSceneName() const { return m_LoadedSceneName; }
     const std::string& GetAssetsRoot() const { return m_AssetsRoot; }
     const std::string& GetModelPath() const { return m_ModelPath; }
-    const std::string& GetLastError() const { return m_LastError; }
 
     const GLTF::Model*             GetModel() const { return m_Model.get(); }
     const GLTF::ModelTransforms&   GetTransforms() const { return m_Transforms; }
@@ -105,7 +104,6 @@ private:
     std::string                   m_LoadedSceneName;
     std::string                   m_AssetsRoot;
     std::string                   m_ModelPath;
-    std::string                   m_LastError;
     VALUE_TYPE                    m_IndexType      = VT_UINT32;
     Uint32                        m_SceneIndex     = 0;
     Uint32                        m_MeshNodeCount  = 0;

@@ -31,6 +31,7 @@
 #include <limits>
 #include <utility>
 
+#include "DebugUtilities.hpp"
 #include "GraphicsAccessories.hpp"
 #include "RTXPTMaterials.hpp"
 
@@ -138,7 +139,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
 
     if (pDevice == nullptr || pContext == nullptr)
     {
-        m_Stats.LastError = "RTXPT acceleration structure build requires a device and device context";
+        DEV_ERROR("RTXPT acceleration structure build requires a device and device context");
         return false;
     }
 
@@ -150,28 +151,28 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
 
     if (SceneIndex >= Model.Scenes.size())
     {
-        m_Stats.LastError = "Invalid RTXPT scene index for acceleration structure build";
+        LOG_ERROR_MESSAGE("Invalid RTXPT scene index for acceleration structure build");
         return false;
     }
 
     const PositionLayout Position = FindPositionLayout(Model);
     if (!Position.Valid || Position.ValueType != VT_FLOAT32 || Position.ComponentCount != 3)
     {
-        m_Stats.LastError = "RTXPT BLAS build requires float3 POSITION vertex data";
+        LOG_ERROR_MESSAGE("RTXPT BLAS build requires float3 POSITION vertex data");
         return false;
     }
 
     IBuffer* pVertexBuffer = Model.GetVertexBuffer(Position.BufferId, pDevice, pContext);
     if (!HasBindFlag(pVertexBuffer, BIND_RAY_TRACING))
     {
-        m_Stats.LastError = "RTXPT POSITION vertex buffer is missing BIND_RAY_TRACING";
+        LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer is missing BIND_RAY_TRACING");
         return false;
     }
 
     IBuffer* pIndexBuffer = Model.GetIndexBuffer(pDevice, pContext);
     if (pIndexBuffer != nullptr && !HasBindFlag(pIndexBuffer, BIND_RAY_TRACING))
     {
-        m_Stats.LastError = "RTXPT index buffer is missing BIND_RAY_TRACING";
+        LOG_ERROR_MESSAGE("RTXPT index buffer is missing BIND_RAY_TRACING");
         return false;
     }
 
@@ -182,27 +183,27 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
 
     if (VertexStride == 0)
     {
-        m_Stats.LastError = "RTXPT POSITION vertex buffer has an invalid stride";
+        LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer has an invalid stride");
         return false;
     }
 
     const Uint64 ModelVertexOffset = Uint64{BaseVertex} * Uint64{VertexStride} + Uint64{Position.RelativeOffset};
     if (ModelVertexOffset >= pVertexBuffer->GetDesc().Size)
     {
-        m_Stats.LastError = "RTXPT POSITION vertex buffer is too small for the model base vertex";
+        LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer is too small for the model base vertex");
         return false;
     }
     const Uint64 ModelVertexCount64 = (pVertexBuffer->GetDesc().Size - ModelVertexOffset) / VertexStride;
     if (ModelVertexCount64 == 0 || ModelVertexCount64 > Uint64{std::numeric_limits<Uint32>::max()})
     {
-        m_Stats.LastError = "RTXPT POSITION vertex buffer has an invalid model vertex count";
+        LOG_ERROR_MESSAGE("RTXPT POSITION vertex buffer has an invalid model vertex count");
         return false;
     }
     const Uint32 ModelVertexCount = static_cast<Uint32>(ModelVertexCount64);
 
     if (pIndexBuffer != nullptr && IndexType != VT_UINT16 && IndexType != VT_UINT32)
     {
-        m_Stats.LastError = "RTXPT index buffer has an unsupported index size";
+        LOG_ERROR_MESSAGE("RTXPT index buffer has an unsupported index size");
         return false;
     }
     const Uint32   IndexSize             = GetValueSize(IndexType);
@@ -232,19 +233,19 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
         {
             if (pSkinnedGeometry == nullptr)
             {
-                m_Stats.LastError = "RTXPT skinned geometry requires current-frame skinned geometry";
+                LOG_ERROR_MESSAGE("RTXPT skinned geometry requires current-frame skinned geometry");
                 return false;
             }
 
             if (pSkinnedNode == nullptr)
             {
-                m_Stats.LastError = "RTXPT skinned geometry is missing a node record";
+                LOG_ERROR_MESSAGE("RTXPT skinned geometry is missing a node record");
                 return false;
             }
 
             if (!SkinnedGeometryReady || SkinningDispatchCount == 0)
             {
-                m_Stats.LastError = "RTXPT skinned geometry is not ready for BLAS build";
+                LOG_ERROR_MESSAGE("RTXPT skinned geometry is not ready for BLAS build");
                 return false;
             }
         }
@@ -366,7 +367,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
 
         if (Uint64{SubInstanceBase} + Uint64{Record.GeometryCount} > Uint64{MaxSubInstanceDataCount})
         {
-            m_Stats.LastError = "RTXPT sub-instance table exceeds the 24-bit TLAS CustomId range";
+            LOG_ERROR_MESSAGE("RTXPT sub-instance table exceeds the 24-bit TLAS CustomId range");
             return false;
         }
 
@@ -377,11 +378,9 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
         BLASDesc.TriangleCount = static_cast<Uint32>(TriangleDescs.size());
         pDevice->CreateBLAS(BLASDesc, &Record.BLAS);
 
+        VERIFY(Record.BLAS, "Failed to create RTXPT BLAS");
         if (!Record.BLAS)
-        {
-            m_Stats.LastError = "Failed to create RTXPT BLAS";
             return false;
-        }
 
         const Uint64 ScratchSize = std::max(Record.BLAS->GetScratchBufferSizes().Build,
                                             Record.BLAS->GetScratchBufferSizes().Update);
@@ -396,11 +395,9 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
             ScratchDesc.Size      = ScratchSize;
             m_BLASScratch.Release();
             pDevice->CreateBuffer(ScratchDesc, nullptr, &m_BLASScratch);
+            VERIFY(m_BLASScratch, "Failed to create RTXPT BLAS scratch buffer");
             if (!m_BLASScratch)
-            {
-                m_Stats.LastError = "Failed to create RTXPT BLAS scratch buffer";
                 return false;
-            }
         }
 
         BuildBLASAttribs BLASAttribs;
@@ -432,7 +429,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
 
     if (m_TLASInstances.empty())
     {
-        m_Stats.LastError = "No RTXPT mesh instances were available for TLAS build";
+        LOG_ERROR_MESSAGE("No RTXPT mesh instances were available for TLAS build");
         return false;
     }
 
@@ -445,11 +442,9 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
     TLASDesc.Flags            = HasDynamicGeometry ? RAYTRACING_BUILD_AS_ALLOW_UPDATE : RAYTRACING_BUILD_AS_NONE;
     pDevice->CreateTLAS(TLASDesc, &m_TLAS);
 
+    VERIFY(m_TLAS, "Failed to create RTXPT TLAS");
     if (!m_TLAS)
-    {
-        m_Stats.LastError = "Failed to create RTXPT TLAS";
         return false;
-    }
 
     const Uint64 TLASBuildScratchSize  = m_TLAS->GetScratchBufferSizes().Build;
     const Uint64 TLASUpdateScratchSize = m_TLAS->GetScratchBufferSizes().Update;
@@ -463,11 +458,9 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
     InstanceBufferDesc.BindFlags = BIND_RAY_TRACING;
     InstanceBufferDesc.Size      = Uint64{TLAS_INSTANCE_DATA_SIZE} * Uint64{m_TLASInstances.size()};
     pDevice->CreateBuffer(InstanceBufferDesc, nullptr, &m_InstanceBuffer);
+    VERIFY(m_InstanceBuffer, "Failed to create RTXPT TLAS instance buffer");
     if (!m_InstanceBuffer)
-    {
-        m_Stats.LastError = "Failed to create RTXPT TLAS instance buffer";
         return false;
-    }
 
     BufferDesc TLASScratchDesc;
     TLASScratchDesc.Name      = "RTXPT TLAS scratch buffer";
@@ -475,11 +468,9 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
     TLASScratchDesc.BindFlags = BIND_RAY_TRACING;
     TLASScratchDesc.Size      = m_Stats.TLASScratchSize;
     pDevice->CreateBuffer(TLASScratchDesc, nullptr, &m_TLASScratch);
+    VERIFY(m_TLASScratch, "Failed to create RTXPT TLAS scratch buffer");
     if (!m_TLASScratch)
-    {
-        m_Stats.LastError = "Failed to create RTXPT TLAS scratch buffer";
         return false;
-    }
 
     BuildTLASAttribs TLASAttribs;
     TLASAttribs.pTLAS                        = m_TLAS;
@@ -511,11 +502,9 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*               pDevic
 
     BufferData SubInstanceData{SubInstances.data(), SubInstanceDesc.Size};
     pDevice->CreateBuffer(SubInstanceDesc, &SubInstanceData, &m_SubInstanceBuffer);
+    VERIFY(m_SubInstanceBuffer, "Failed to create RTXPT sub-instance buffer");
     if (!m_SubInstanceBuffer)
-    {
-        m_Stats.LastError = "Failed to create RTXPT sub-instance buffer";
         return false;
-    }
 
     m_Stats.BLASCount        = static_cast<Uint32>(m_BLASRecords.size());
     m_Stats.InstanceCount    = static_cast<Uint32>(m_TLASInstances.size());
@@ -528,7 +517,7 @@ bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const GLT
 {
     if (!m_TLAS || !m_InstanceBuffer || !m_TLASScratch || m_TLASInstances.empty())
     {
-        m_Stats.LastError = "RTXPT dynamic TLAS update requires built TLAS resources";
+        DEV_ERROR("RTXPT dynamic TLAS update requires built TLAS resources");
         return false;
     }
 
@@ -538,14 +527,14 @@ bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const GLT
             Record.InstanceIndex >= m_TLASInstances.size() ||
             Record.InstanceIndex >= m_InstanceNames.size())
         {
-            m_Stats.LastError = "RTXPT dynamic TLAS update has invalid instance data";
+            DEV_ERROR("RTXPT dynamic TLAS update has invalid instance data");
             return false;
         }
 
         const Uint32 NodeIndex = static_cast<Uint32>(Record.pNode->Index);
         if (NodeIndex >= Transforms.NodeGlobalMatrices.size())
         {
-            m_Stats.LastError = "RTXPT dynamic TLAS update is missing node transforms";
+            DEV_ERROR("RTXPT dynamic TLAS update is missing node transforms");
             return false;
         }
 
@@ -576,25 +565,25 @@ bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext*             
 {
     if (pContext == nullptr)
     {
-        m_Stats.LastError = "RTXPT dynamic BLAS update requires a device context";
+        DEV_ERROR("RTXPT dynamic BLAS update requires a device context");
         return false;
     }
 
     if (!IsBuilt())
     {
-        m_Stats.LastError = "RTXPT dynamic BLAS update requires built acceleration structures";
+        DEV_ERROR("RTXPT dynamic BLAS update requires built acceleration structures");
         return false;
     }
 
     if (!SkinnedGeometry.IsReady())
     {
-        m_Stats.LastError = "RTXPT skinned geometry is not ready for dynamic BLAS update";
+        DEV_ERROR("RTXPT skinned geometry is not ready for dynamic BLAS update");
         return false;
     }
 
     if (SkinnedGeometry.HasSkinnedGeometry() && SkinnedGeometry.GetStats().DispatchCount == 0)
     {
-        m_Stats.LastError = "RTXPT skinned geometry has not been dispatched for this frame";
+        DEV_ERROR("RTXPT skinned geometry has not been dispatched for this frame");
         return false;
     }
 
@@ -608,13 +597,13 @@ bool RTXPTAccelerationStructures::UpdateDynamicBLAS(IDeviceContext*             
 
         if (Record.VertexBuffer.RawPtr() != SkinnedGeometry.GetSkinnedVertexBuffer())
         {
-            m_Stats.LastError = "RTXPT dynamic BLAS was built with a different skinned vertex buffer";
+            DEV_ERROR("RTXPT dynamic BLAS was built with a different skinned vertex buffer");
             return false;
         }
 
         if (Record.SkinningDispatchCount == SkinningDispatchCount)
         {
-            m_Stats.LastError = "RTXPT dynamic BLAS update requires a newer skinned geometry dispatch";
+            DEV_ERROR("RTXPT dynamic BLAS update requires a newer skinned geometry dispatch");
             return false;
         }
 

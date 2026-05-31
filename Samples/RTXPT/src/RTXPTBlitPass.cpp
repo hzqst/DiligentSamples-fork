@@ -25,6 +25,7 @@
  */
 
 #include "RTXPTBlitPass.hpp"
+#include "DebugUtilities.hpp"
 
 #include "GraphicsTypesX.hpp"
 
@@ -36,7 +37,6 @@ void RTXPTBlitPass::Reset()
     m_PSO.Release();
     m_SRB.Release();
     m_DrawCount = 0;
-    m_LastError.clear();
 }
 
 bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, ISwapChain* pSwapChain)
@@ -66,11 +66,9 @@ bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFa
     ShaderCI.EntryPoint      = "main";
     pDevice->CreateShader(ShaderCI, &pPS);
 
+    VERIFY(pVS && pPS, "Failed to create RTXPT blit shaders");
     if (!pVS || !pPS)
-    {
-        m_LastError = "Failed to create RTXPT blit shaders";
         return false;
-    }
 
     GraphicsPipelineStateCreateInfo PSOCreateInfo;
     PSOCreateInfo.PSODesc.Name                                  = "RTXPT blit PSO";
@@ -85,37 +83,36 @@ bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFa
     PSOCreateInfo.pPS                                           = pPS;
 
     pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &m_PSO);
+    VERIFY(m_PSO, "Failed to create RTXPT blit PSO");
     if (!m_PSO)
-    {
-        m_LastError = "Failed to create RTXPT blit PSO";
         return false;
-    }
 
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
+    VERIFY(m_SRB, "Failed to create RTXPT blit SRB");
     if (!m_SRB)
-    {
-        m_LastError = "Failed to create RTXPT blit SRB";
         return false;
-    }
 
     return true;
 }
 
 bool RTXPTBlitPass::Render(IDeviceContext* pContext, ISwapChain* pSwapChain, ITextureView* pSourceSRV)
 {
-    if (!IsReady() || pSourceSRV == nullptr)
+    if (!IsReady())
     {
-        if (!IsReady())
-            m_LastError = "RTXPT blit pass is not ready";
-        else
-            m_LastError = "RTXPT blit source SRV is null";
+        DEV_ERROR("RTXPT blit pass is not ready");
+        return false;
+    }
+
+    if (pSourceSRV == nullptr)
+    {
+        DEV_ERROR("RTXPT blit source SRV is null");
         return false;
     }
 
     IShaderResourceVariable* pTextureVar = m_SRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture");
     if (pTextureVar == nullptr)
     {
-        m_LastError = "RTXPT blit texture binding is unavailable";
+        UNEXPECTED("RTXPT blit texture binding is unavailable");
         return false;
     }
 

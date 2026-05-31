@@ -26,8 +26,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "Buffer.h"
 #include "GLTFLoader.hpp"
 #include "RefCntAutoPtr.hpp"
@@ -47,8 +45,7 @@ static_assert(sizeof(PolymorphicLightInfo) == 64, "PolymorphicLightInfo layout m
 
 struct RTXPTLightStats
 {
-    Uint32      LightCount = 0;
-    std::string LastError;
+    Uint32 LightCount = 0;
 };
 
 class RTXPTLights

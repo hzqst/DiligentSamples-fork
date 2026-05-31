@@ -148,6 +148,8 @@ bool RTXPTLights::UploadLightBuffer(IRenderDevice* pDevice, std::vector<Polymorp
 bool RTXPTLights::UploadLightProxyBuffer(IRenderDevice* pDevice)
 {
     m_LightProxyBuffer.Release();
+    m_Stats.LightProxyCount       = 0;
+    m_Stats.LightProxyTotalWeight = 0.0f;
     if (pDevice == nullptr)
     {
         m_Stats.LastError = "RTXPT light proxy buffer requires a render device";
@@ -176,8 +178,8 @@ bool RTXPTLights::UploadLightProxyBuffer(IRenderDevice* pDevice)
         Proxies.push_back(RTXPTLightProxy{Prefix, Weight, 0u, kLightProxyKind_EmissiveBucket});
     }
 
-    m_Stats.LightProxyCount       = static_cast<Uint32>(Proxies.size());
-    m_Stats.LightProxyTotalWeight = Prefix;
+    const Uint32 ProxyCount  = static_cast<Uint32>(Proxies.size());
+    const float   TotalWeight = Prefix;
     if (Proxies.empty())
         Proxies.emplace_back();
 
@@ -192,8 +194,16 @@ bool RTXPTLights::UploadLightProxyBuffer(IRenderDevice* pDevice)
     BufferData Data{Proxies.data(), Desc.Size};
     pDevice->CreateBuffer(Desc, &Data, &m_LightProxyBuffer);
 
-    VERIFY(m_LightProxyBuffer, "Failed to create RTXPT light proxy buffer");
-    return m_LightProxyBuffer != nullptr;
+    if (!m_LightProxyBuffer)
+    {
+        m_Stats.LastError = "Failed to create RTXPT light proxy buffer";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        return false;
+    }
+
+    m_Stats.LightProxyCount       = ProxyCount;
+    m_Stats.LightProxyTotalWeight = TotalWeight;
+    return true;
 }
 
 bool RTXPTLights::UploadEmissiveTriangleBuffer(IRenderDevice* pDevice, Uint32 EmissiveTriangleCount)
@@ -295,6 +305,9 @@ bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSce
 {
     m_Stats.EmissiveTriangleCount = 0;
     m_Stats.LastError.clear();
+    m_LightProxyBuffer.Release();
+    m_Stats.LightProxyCount       = 0;
+    m_Stats.LightProxyTotalWeight = 0.0f;
     m_EmissiveProxyWeight = 0.0f;
 
     Uint64 EmissiveTriangleCount = 0;

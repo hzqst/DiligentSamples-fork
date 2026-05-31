@@ -506,6 +506,8 @@ bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLi
     Control.LocalSamplingResolution[0] = m_Stats.LocalSamplingTileCountX;
     Control.LocalSamplingResolution[1] = m_Stats.LocalSamplingTileCountY;
     Control.BakerPadding[0]            = FloatAsUint(Settings.DistantVsLocalImportanceScale * kDistantVsLocalImportanceBaseScale);
+    Control.BakerPadding[1]            = Settings.EnvMapImportanceMapMipCount;
+    Control.BakerPadding[2]            = Settings.EnvMapImportanceMapResolution;
     Control.BakerPadding[4]            = m_AllocatedWidth;
     Control.BakerPadding[5]            = m_AllocatedHeight;
     Control.BakerPadding[6]            = m_AllocatedWidth;
@@ -519,6 +521,22 @@ bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLi
     Control.BakerPadding[21]           = FloatAsUint(Settings.CameraPosition.y);
     Control.BakerPadding[22]           = FloatAsUint(Settings.CameraPosition.z);
     Control.BakerPadding[23]           = FloatAsUint(Settings.AverageContentsDistance);
+    const auto WriteFloat4 = [&Control](Uint32 BaseIndex, const float4& Value) {
+        Control.BakerPadding[BaseIndex + 0] = FloatAsUint(Value.x);
+        Control.BakerPadding[BaseIndex + 1] = FloatAsUint(Value.y);
+        Control.BakerPadding[BaseIndex + 2] = FloatAsUint(Value.z);
+        Control.BakerPadding[BaseIndex + 3] = FloatAsUint(Value.w);
+    };
+    WriteFloat4(72u, Settings.EnvMapParams.Transform.Row0);
+    WriteFloat4(76u, Settings.EnvMapParams.Transform.Row1);
+    WriteFloat4(80u, Settings.EnvMapParams.Transform.Row2);
+    WriteFloat4(84u, Settings.EnvMapParams.InvTransform.Row0);
+    WriteFloat4(88u, Settings.EnvMapParams.InvTransform.Row1);
+    WriteFloat4(92u, Settings.EnvMapParams.InvTransform.Row2);
+    Control.BakerPadding[96]           = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.x);
+    Control.BakerPadding[97]           = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.y);
+    Control.BakerPadding[98]           = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.z);
+    Control.BakerPadding[99]           = FloatAsUint(Settings.EnvMapParams.Enabled);
 
     BufferDesc Desc;
     Desc.Name              = "RTXPT LightsBaker control buffer";

@@ -75,6 +75,8 @@ struct RTXPTLightsBakerSettings
     bool    ResetFeedback                 = false;
     float2  ViewportSize                  = float2{0, 0};
     float2  PrevViewportSize              = float2{0, 0};
+    Uint32  EnvMapImportanceMapResolution = 0;
+    Uint32  EnvMapImportanceMapMipCount    = 0;
     LightsBakerEnvMapParamsCPU EnvMapParams = {};
     float   DistantVsLocalImportanceScale = 1.0f;
     Int64   FrameIndex                    = -1;

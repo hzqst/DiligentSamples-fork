@@ -265,6 +265,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_Materials.Reset();
     m_Lights.Reset();
     m_LightsBaker.SceneReloaded();
+    m_EnvMapBaker.SceneReloaded();
     m_AccelerationStructures.Reset();
     m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
@@ -282,6 +283,25 @@ void RTXPTSample::ResetSceneDependentResources()
     m_HasDynamicGeometry    = false;
     m_EmissiveTrianglesDirty = true;
     m_LightsBakerSettingsDirty = false;
+    m_EnvMapBakerDirty         = true;
+}
+
+bool RTXPTSample::UpdateEnvMapBaker(bool ForceRebuild)
+{
+    if (!m_pDevice || !m_pImmediateContext || !m_pEngineFactory)
+        return false;
+
+    m_EnvMapSettings.Enabled   = m_ReferenceUI.EnvironmentMapEnabled;
+    m_EnvMapSettings.Intensity = m_EnvIntensity;
+    if (m_SelectedEnvMapSource >= 0 && m_SelectedEnvMapSource < static_cast<int>(m_EnvMapSources.size()))
+        m_EnvMapSettings.SourceRelativePath = m_EnvMapSources[static_cast<size_t>(m_SelectedEnvMapSource)].RelativePath;
+
+    const bool Updated = m_EnvMapBaker.Update(m_pDevice, m_pImmediateContext, m_pEngineFactory,
+                                              m_AssetsRoot, m_EnvMapSettings, ForceRebuild || m_EnvMapBakerDirty,
+                                              m_FeatureCaps.ComputeShaders);
+    if (Updated)
+        m_EnvMapBakerDirty = false;
+    return Updated;
 }
 
 bool RTXPTSample::RebuildSceneDependentResources()
@@ -306,6 +326,8 @@ bool RTXPTSample::RebuildSceneDependentResources()
     ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData);
 
     const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+    ResourcesReady &= m_EnvMapBaker.CreateResources(m_pDevice, m_pImmediateContext, m_pEngineFactory, m_FeatureCaps.ComputeShaders);
+    ResourcesReady &= UpdateEnvMapBaker(true);
     ResourcesReady &= m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, SCDesc.Width, SCDesc.Height, m_FeatureCaps.ComputeShaders);
     ResourcesReady &= UpdateLightsBaker(true);
 
@@ -543,6 +565,7 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
         m_ReferenceUI.ReferenceFireflyFilterEnabled ? m_ReferenceUI.ReferenceFireflyFilterThreshold : 0.0f;
     m_LastFrameConstants.ptConsts.exposureScale = ComputeToneMappingExposureScale(m_ReferenceUI);
+    m_LastFrameConstants.envMap                 = m_EnvMapBaker.GetConstants();
 
     if (m_FrameConstantsCB)
     {
@@ -571,6 +594,9 @@ bool RTXPTSample::UpdateLightsBaker(bool ResetFeedback)
     BakerSettings.ResetFeedback                 = ResetFeedback;
     BakerSettings.ViewportSize                  = float2{static_cast<float>(SCDesc.Width), static_cast<float>(SCDesc.Height)};
     BakerSettings.PrevViewportSize              = BakerSettings.ViewportSize;
+    BakerSettings.EnvMapParams                  = m_EnvMapBaker.GetLightsBakerParams();
+    BakerSettings.EnvMapImportanceMapResolution = m_EnvMapBaker.GetStats().ImportanceResolution;
+    BakerSettings.EnvMapImportanceMapMipCount   = m_EnvMapBaker.GetStats().ImportanceMipLevels;
     BakerSettings.FrameIndex                    = static_cast<Int64>(m_FrameIndex);
 
     const bool Updated = m_LightsBaker.UpdateBegin(m_pDevice, m_Lights, BakerSettings);
@@ -802,6 +828,13 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
         }
     }
 
+    if (m_EnvMapBakerDirty && UpdateEnvMapBaker(true))
+    {
+        m_LightsBakerSettingsDirty = true;
+        CreatePhase4Passes();
+        RequestAccumulationReset("Environment map changed");
+    }
+
     if (m_LightsBakerSettingsDirty && UpdateLightsBaker(true))
         CreatePhase4Passes();
 
@@ -827,6 +860,7 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
         RequestAccumulationReset("Window resized");
         if (m_Scene.HasValidContent())
         {
+            UpdateEnvMapBaker(false);
             m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, Width, Height, m_FeatureCaps.ComputeShaders);
             UpdateLightsBaker(true);
             CreatePhase4Passes();

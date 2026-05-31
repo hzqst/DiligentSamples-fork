@@ -785,9 +785,8 @@ bool RTXPTEnvMapBaker::DispatchImportanceReduce(IDeviceContext* pContext, Uint32
             return false;
         }
 
-        // The UAV is bound to a single destination mip, so RWTexture2D::GetDimensions() is view-local.
         const EnvMapImportanceBakerConstantsCPU Constants =
-            MakeImportanceConstants(pSourceCube->GetDesc(), Resolution, MipLevels, DstMip - 1u, 0u);
+            MakeImportanceConstants(pSourceCube->GetDesc(), Resolution, MipLevels, DstMip - 1u, DstMip);
         if (!UploadImportanceConstants(pContext, m_ImportanceConstants, Constants))
         {
             m_Stats.Ready           = false;

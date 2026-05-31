@@ -73,6 +73,11 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                                      IBuffer*              pLocalSamplingBuffer,
                                      ITextureView*         pFeedbackTotalWeightUAV,
                                      ITextureView*         pFeedbackCandidatesUAV,
+                                     ITextureView*         pEnvironmentMapSRV,
+                                     ITextureView*         pEnvironmentImportanceMapSRV,
+                                     ITextureView*         pEnvironmentRadianceMapSRV,
+                                     ISampler*             pEnvironmentSampler,
+                                     ISampler*             pEnvironmentImportanceSampler,
                                      IBuffer*              pEmissiveTriangleBuffer,
                                      IBuffer*              pVertexBuffer,
                                      IBuffer*              pSkinnedVertexBuffer,
@@ -207,6 +212,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     const SHADER_TYPE HitStages = UseTextures ?
         (SHADER_TYPE_RAY_CLOSEST_HIT | SHADER_TYPE_RAY_ANY_HIT) :
         SHADER_TYPE_RAY_CLOSEST_HIT;
+    const SHADER_TYPE EnvStages = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS;
 
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
@@ -217,7 +223,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     if (!ScreenPatternDiagnostic)
     {
         ResourceLayout
-            .AddVariable(SHADER_TYPE_RAY_GEN, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(SHADER_TYPE_RAY_GEN, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
     }
 
@@ -236,6 +242,11 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             .AddVariable(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "t_EnvironmentMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "t_EnvironmentImportanceMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "t_EnvironmentRadianceMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "s_EnvironmentMapSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "s_EnvironmentImportanceSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
     }
 
@@ -255,28 +266,33 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     if (!m_PSO)
         return false;
 
-    auto SetStatic = [&](SHADER_TYPE Stage, const char* Name, IDeviceObject* pObject, const char* ObjectName) {
-        if (pObject == nullptr)
+    auto SetStaticForStages = [&](SHADER_TYPE Stages, const char* Name, IDeviceObject* pObject, const char* ObjectName) {
+        bool Ok = true;
+        for (SHADER_TYPE Stage : {SHADER_TYPE_RAY_GEN, SHADER_TYPE_RAY_MISS, SHADER_TYPE_RAY_CLOSEST_HIT, SHADER_TYPE_RAY_ANY_HIT})
         {
-            DEV_ERROR("RTXPT static resource object is null: ", ObjectName);
-            return false;
-        }
+            if ((Stages & Stage) == 0)
+                continue;
 
-        IShaderResourceVariable* pVar = m_PSO->GetStaticVariableByName(Stage, Name);
-        if (pVar == nullptr)
-        {
-            UNEXPECTED("RTXPT static shader variable is missing: ", Name);
-            return false;
-        }
+            IShaderResourceVariable* pVar = m_PSO->GetStaticVariableByName(Stage, Name);
+            if (pVar == nullptr)
+                continue;
 
-        pVar->Set(pObject);
-        return true;
+            if (pObject == nullptr)
+            {
+                DEV_ERROR("RTXPT static resource object is null: ", ObjectName);
+                Ok = false;
+                continue;
+            }
+
+            pVar->Set(pObject);
+        }
+        return Ok;
     };
 
     const bool FrameConstantsBound =
-        ScreenPatternDiagnostic || SetStatic(SHADER_TYPE_RAY_GEN, "g_Const", pFrameConstants, "frame constants");
+        ScreenPatternDiagnostic || SetStaticForStages(EnvStages, "g_Const", pFrameConstants, "frame constants");
     const bool TLASBound =
-        ScreenPatternDiagnostic || SetStatic(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS, "TLAS");
+        ScreenPatternDiagnostic || SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS, "TLAS");
 
     if (!FrameConstantsBound || !TLASBound)
         return false;
@@ -287,6 +303,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         m_Stats.SubInstanceBound         = true;
         m_Stats.LightBridgeBound         = true;
         m_Stats.LightsBakerBridgeBound   = true;
+        m_Stats.EnvironmentBridgeBound   = true;
         m_Stats.EmissiveLightBridgeBound = true;
         m_Stats.VertexBufferBound        = true;
         m_Stats.SkinnedVertexBufferBound = true;
@@ -307,6 +324,11 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         pLightSamplingProxies != nullptr ? pLightSamplingProxies->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pLocalSamplingView =
         pLocalSamplingBuffer != nullptr ? pLocalSamplingBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+    IDeviceObject* pEnvironmentMapView = pEnvironmentMapSRV;
+    IDeviceObject* pEnvironmentImportanceMapView = pEnvironmentImportanceMapSRV;
+    IDeviceObject* pEnvironmentRadianceMapView = pEnvironmentRadianceMapSRV;
+    IDeviceObject* pEnvironmentSamplerView = pEnvironmentSampler;
+    IDeviceObject* pEnvironmentImportanceSamplerView = pEnvironmentImportanceSampler;
     IDeviceObject* pEmissiveView =
         pEmissiveTriangleBuffer != nullptr ? pEmissiveTriangleBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pVertexView =
@@ -337,40 +359,46 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
     if (FullPathTracer)
     {
-        m_Stats.MaterialBridgeBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_PTMaterialData", pMaterialsView, "material buffer");
-        m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
-        m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer");
+        m_Stats.MaterialBridgeBound = SetStaticForStages(HitStages, "t_PTMaterialData", pMaterialsView, "material buffer");
+        m_Stats.SubInstanceBound    = SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
+        m_Stats.LightBridgeBound    = SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer");
         m_Stats.LightsBakerBridgeBound =
-            SetStatic(SHADER_TYPE_RAY_GEN, "t_LightingControl", pLightingControlView, "LightsBaker control buffer") &&
-            SetStatic(SHADER_TYPE_RAY_GEN, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters") &&
-            SetStatic(SHADER_TYPE_RAY_GEN, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies") &&
-            SetStatic(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer") &&
-            SetStatic(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight") &&
-            SetStatic(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates");
+            SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightingControl", pLightingControlView, "LightsBaker control buffer") &&
+            SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters") &&
+            SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies") &&
+            SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer") &&
+            SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight") &&
+            SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates");
+        m_Stats.EnvironmentBridgeBound =
+            SetStaticForStages(EnvStages, "t_EnvironmentMap", pEnvironmentMapView, "environment map") &&
+            SetStaticForStages(EnvStages, "t_EnvironmentImportanceMap", pEnvironmentImportanceMapView, "environment importance map") &&
+            SetStaticForStages(EnvStages, "t_EnvironmentRadianceMap", pEnvironmentRadianceMapView, "environment radiance map") &&
+            SetStaticForStages(EnvStages, "s_EnvironmentMapSampler", pEnvironmentSamplerView, "environment map sampler") &&
+            SetStaticForStages(EnvStages, "s_EnvironmentImportanceSampler", pEnvironmentImportanceSamplerView, "environment importance sampler");
         m_Stats.EmissiveLightBridgeBound =
-            SetStatic(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer");
-        m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_VertexBuffer", pVertexView, "vertex buffer");
+            SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer");
+        m_Stats.VertexBufferBound   = SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
         m_Stats.SkinnedVertexBufferBound =
-            SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
-        m_Stats.IndexBufferBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_IndexBuffer", m_IndexBufferView, "index buffer");
+            SetStaticForStages(HitStages, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
+        m_Stats.IndexBufferBound = SetStaticForStages(HitStages, "t_IndexBuffer", m_IndexBufferView, "index buffer");
 
         if (UseTextures)
         {
             m_Stats.MaterialBridgeBound = m_Stats.MaterialBridgeBound &&
-                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_PTMaterialData", pMaterialsView, "material buffer");
+                SetStaticForStages(HitStages, "t_PTMaterialData", pMaterialsView, "material buffer");
             m_Stats.SubInstanceBound = m_Stats.SubInstanceBound &&
-                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
+                SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
             m_Stats.VertexBufferBound = m_Stats.VertexBufferBound &&
-                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_VertexBuffer", pVertexView, "vertex buffer");
+                SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
             m_Stats.SkinnedVertexBufferBound = m_Stats.SkinnedVertexBufferBound &&
-                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
+                SetStaticForStages(HitStages, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
             m_Stats.IndexBufferBound = m_Stats.IndexBufferBound &&
-                SetStatic(SHADER_TYPE_RAY_ANY_HIT, "t_IndexBuffer", m_IndexBufferView, "index buffer");
+                SetStaticForStages(HitStages, "t_IndexBuffer", m_IndexBufferView, "index buffer");
         }
     }
 
     if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound ||
-        !m_Stats.LightsBakerBridgeBound || !m_Stats.EmissiveLightBridgeBound ||
+        !m_Stats.LightsBakerBridgeBound || !m_Stats.EnvironmentBridgeBound || !m_Stats.EmissiveLightBridgeBound ||
         !m_Stats.VertexBufferBound || !m_Stats.SkinnedVertexBufferBound || !m_Stats.IndexBufferBound)
         return false;
 

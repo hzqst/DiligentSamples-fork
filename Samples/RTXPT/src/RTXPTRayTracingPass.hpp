@@ -52,6 +52,7 @@ struct RTXPTRayTracingPassStats
     bool        SubInstanceBound         = false;
     bool        LightBridgeBound         = false;
     bool        LightsBakerBridgeBound   = false;
+    bool        EnvironmentBridgeBound   = false;
     bool        EmissiveLightBridgeBound = false;
     bool        VertexBufferBound        = false;
     bool        SkinnedVertexBufferBound = false;
@@ -82,6 +83,11 @@ public:
                     IBuffer*              pLocalSamplingBuffer,
                     ITextureView*         pFeedbackTotalWeightUAV,
                     ITextureView*         pFeedbackCandidatesUAV,
+                    ITextureView*         pEnvironmentMapSRV,
+                    ITextureView*         pEnvironmentImportanceMapSRV,
+                    ITextureView*         pEnvironmentRadianceMapSRV,
+                    ISampler*             pEnvironmentSampler,
+                    ISampler*             pEnvironmentImportanceSampler,
                     IBuffer*              pEmissiveTriangleBuffer,
                     IBuffer*              pVertexBuffer,
                     IBuffer*              pSkinnedVertexBuffer,

@@ -652,6 +652,11 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_LightsBaker.GetLocalSamplingBuffer(),
                                     m_LightsBaker.GetFeedbackTotalWeightUAV(),
                                     m_LightsBaker.GetFeedbackCandidatesUAV(),
+                                    m_EnvMapBaker.GetEnvironmentMapSRV(),
+                                    m_EnvMapBaker.GetImportanceMapSRV(),
+                                    m_EnvMapBaker.GetRadianceMapSRV(),
+                                    m_EnvMapBaker.GetEnvironmentSampler(),
+                                    m_EnvMapBaker.GetImportanceSampler(),
                                     m_Lights.GetEmissiveTriangleBuffer(),
                                     m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
                                     m_SkinnedGeometry.GetSkinnedVertexBuffer(),
@@ -679,6 +684,11 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_LightsBaker.GetLocalSamplingBuffer(),
                                     m_LightsBaker.GetFeedbackTotalWeightUAV(),
                                     m_LightsBaker.GetFeedbackCandidatesUAV(),
+                                    m_EnvMapBaker.GetEnvironmentMapSRV(),
+                                    m_EnvMapBaker.GetImportanceMapSRV(),
+                                    m_EnvMapBaker.GetRadianceMapSRV(),
+                                    m_EnvMapBaker.GetEnvironmentSampler(),
+                                    m_EnvMapBaker.GetImportanceSampler(),
                                     m_Lights.GetEmissiveTriangleBuffer(),
                                     m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
                                     m_SkinnedGeometry.GetSkinnedVertexBuffer(),
@@ -1233,6 +1243,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
         ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
         ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
+        ImGui::Text("Environment bridge: %s", RTPassStats.EnvironmentBridgeBound ? "bound" : "missing");
         const RTXPTLightsBakerStats& BakerStats = m_LightsBaker.GetStats();
         ImGui::Text("LightsBaker lights: %u", BakerStats.TotalLightCount);
         ImGui::Text("LightsBaker proxies: %u", BakerStats.SamplingProxyCount);

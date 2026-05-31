@@ -14,6 +14,11 @@ StructuredBuffer<uint>                 t_LightSamplingProxies;
 StructuredBuffer<uint>                 t_LocalSamplingBuffer;
 RWTexture2D<float>                     u_FeedbackTotalWeight;
 RWTexture2D<uint>                      u_FeedbackCandidates;
+TextureCube<float4>                    t_EnvironmentMap;
+Texture2D<float>                       t_EnvironmentImportanceMap;
+Texture2D<float4>                      t_EnvironmentRadianceMap;
+SamplerState                           s_EnvironmentMapSampler;
+SamplerState                           s_EnvironmentImportanceSampler;
 StructuredBuffer<EmissiveTriangle>     t_EmissiveTriangles;
 StructuredBuffer<GeometryVertexData>   t_VertexBuffer;
 StructuredBuffer<GeometryVertexData>   t_SkinnedVertexBuffer;
@@ -154,6 +159,11 @@ namespace Bridge
         return float4(worldTangent, handedness);
     }
 #endif
+
+    RTXPTEnvMapConstants getEnvMapConstants()
+    {
+        return g_Const.envMap;
+    }
 
     LightingControlData getLightingControl()
     {

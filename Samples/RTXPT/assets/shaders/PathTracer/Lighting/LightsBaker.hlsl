@@ -1,13 +1,13 @@
 #include "Lighting/LightingTypes.hlsli"
 
 StructuredBuffer<LightingControlData> t_LightingControl;
-Buffer<uint>                          t_LightProxyCounters;
-Buffer<uint>                          t_LightSamplingProxies;
+StructuredBuffer<uint>                t_LightProxyCounters;
+StructuredBuffer<uint>                t_LightSamplingProxies;
 Texture2D<float>                      t_FeedbackTotalWeight;
 Texture2D<uint>                       t_FeedbackCandidates;
 RWTexture2D<float>                    u_FeedbackTotalWeight;
 RWTexture2D<uint>                     u_FeedbackCandidates;
-RWBuffer<uint>                        u_LocalSamplingBuffer;
+RWStructuredBuffer<uint>              u_LocalSamplingBuffer;
 
 [numthreads(8, 8, 1)]
 void ClearFeedbackCS(uint3 tid : SV_DispatchThreadID)

@@ -50,7 +50,8 @@ namespace
 
 constexpr const char* kProceduralSkyPath = "==PROCEDURAL_SKY==";
 constexpr Uint32      kFallbackCubeSize  = 4;
-constexpr Uint32      kImportanceBakerThreads = 16;
+constexpr Uint32      kMinImportanceMapResolution = 16;
+constexpr Uint32      kImportanceBakerThreads     = 16;
 constexpr Uint32      kImportanceSamplesPerAxis = 4;
 
 struct EnvMapImportanceBakerConstantsCPU
@@ -74,6 +75,19 @@ Uint32 MipCountForPowerOfTwo(Uint32 Resolution)
     while ((Resolution >> Mips) != 0)
         ++Mips;
     return Mips;
+}
+
+Uint32 RoundUpPowerOfTwo(Uint32 Value)
+{
+    Uint32 Result = 1;
+    while (Result < Value && Result <= (1u << 30))
+        Result <<= 1;
+    return Result;
+}
+
+Uint32 NormalizeImportanceResolution(Uint32 Resolution)
+{
+    return RoundUpPowerOfTwo(std::max(kMinImportanceMapResolution, Resolution));
 }
 
 Uint32 DispatchGroupsForDim(Uint32 Dim)
@@ -146,6 +160,11 @@ bool IsEnvironmentFile(const std::filesystem::path& Path)
 {
     const std::string Ext = ToLower(Path.extension().string());
     return Ext == ".hdr" || Ext == ".exr" || Ext == ".dds" || Ext == ".ktx" || Ext == ".ktx2";
+}
+
+bool IsEnvironmentSourceLoadError(const std::string& Error)
+{
+    return Error.rfind("Failed to load RTXPT environment source:", 0) == 0;
 }
 
 bool EnvMapSourceChanged(const RTXPTEnvMapSettings& Lhs, const RTXPTEnvMapSettings& Rhs)
@@ -304,23 +323,51 @@ bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, 
             return false;
     }
 
-    const Uint32 ImportanceResolution = std::max(16u, Settings.ImportanceMapResolution);
+    const Uint32 ImportanceResolution = NormalizeImportanceResolution(Settings.ImportanceMapResolution);
+    const Uint32 ImportanceMipLevels  = MipCountForPowerOfTwo(ImportanceResolution);
     const bool   SourceChanged        = ForceRebuild || !m_SourceTexture || !m_SourceSRV ||
         !m_EnvironmentMapSRV || !m_DiffuseIrradianceSRV || !m_BRDFLUTSRV ||
         EnvMapSourceChanged(m_LastSettings, Settings);
-    bool UpdateOk = true;
+    bool        UpdateOk = true;
+    std::string SourceLoadError;
     if (SourceChanged)
     {
         UpdateOk = LoadSourceTexture(pDevice, AssetsRoot, Settings) &&
             PrecomputeCubemap(pDevice, pContext, Settings);
+        if (UpdateOk && !IsProceduralSkyPath(Settings.SourceRelativePath) &&
+            m_Stats.Procedural && !m_Stats.LastError.empty())
+        {
+            SourceLoadError = m_Stats.LastError;
+        }
+    }
+    if (SourceLoadError.empty() && !IsProceduralSkyPath(Settings.SourceRelativePath) &&
+        m_Stats.Procedural && IsEnvironmentSourceLoadError(m_Stats.LastError))
+    {
+        SourceLoadError = m_Stats.LastError;
     }
 
+    const bool ImportanceResourceMissing = m_Stats.ImportanceReady && (!m_ImportanceMap || !m_RadianceMap);
     const bool ImportanceChanged = ForceRebuild || SourceChanged ||
-        !m_Stats.ImportanceReady || !m_ImportanceMap || !m_RadianceMap ||
         !m_ImportanceMapSRV || !m_RadianceMapSRV ||
-        m_Stats.ImportanceResolution != ImportanceResolution || m_Stats.ImportanceMipLevels == 0;
+        ImportanceResourceMissing ||
+        m_Stats.ImportanceResolution != ImportanceResolution ||
+        m_Stats.ImportanceMipLevels != ImportanceMipLevels;
+    bool ImportanceOk = true;
     if (UpdateOk && ImportanceChanged)
-        UpdateOk = CreateImportanceMaps(pDevice, pContext, pEngineFactory, Settings, ComputeSupported);
+    {
+        ImportanceOk = CreateImportanceMaps(pDevice, pContext, pEngineFactory, Settings, ComputeSupported);
+        if (!ImportanceOk)
+        {
+            const std::string ImportanceError = m_Stats.LastError;
+            UseFallbackImportanceMaps(ImportanceResolution);
+            if (!SourceLoadError.empty() && !ImportanceError.empty())
+                m_Stats.LastError = SourceLoadError + " | " + ImportanceError;
+            else if (!ImportanceError.empty())
+                m_Stats.LastError = ImportanceError;
+            else
+                m_Stats.LastError = SourceLoadError;
+        }
+    }
 
     if (UpdateOk)
     {
@@ -328,10 +375,13 @@ bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, 
         if (SourceChanged || ImportanceChanged)
             ++m_Stats.Version;
 
-        const bool KeepFallbackLoadError = !IsProceduralSkyPath(Settings.SourceRelativePath) &&
-            m_Stats.Procedural && !m_Stats.LastError.empty();
-        if (!KeepFallbackLoadError)
-            m_Stats.LastError.clear();
+        if (ImportanceOk)
+        {
+            if (!SourceLoadError.empty())
+                m_Stats.LastError = SourceLoadError;
+            else
+                m_Stats.LastError.clear();
+        }
     }
 
     m_Stats.CompressedOutput = false;
@@ -339,8 +389,6 @@ bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, 
         m_EnvironmentSampler && m_ImportanceSampler &&
         m_EnvironmentMapSRV && m_DiffuseIrradianceSRV && m_BRDFLUTSRV &&
         m_FallbackImportanceMap && m_FallbackRadianceMap &&
-        m_Stats.ImportanceReady &&
-        m_ImportanceMap && m_RadianceMap &&
         m_ImportanceMapSRV && m_RadianceMapSRV;
     UpdateConstants(Settings);
     return m_Stats.Ready;
@@ -602,7 +650,7 @@ bool RTXPTEnvMapBaker::CreateImportanceMaps(IRenderDevice* pDevice, IDeviceConte
     if (EnvDesc.Width == 0 || EnvDesc.Height == 0 || EnvDesc.MipLevels == 0)
         return Fail("RTXPT EnvMapBaker baked environment cubemap is invalid");
 
-    const Uint32 Resolution = std::max(16u, Settings.ImportanceMapResolution);
+    const Uint32 Resolution = NormalizeImportanceResolution(Settings.ImportanceMapResolution);
 
     RefCntAutoPtr<IBuffer> NewImportanceConstants;
     BufferDesc             ConstantsDesc;
@@ -645,7 +693,7 @@ bool RTXPTEnvMapBaker::CreateImportanceTextures(IRenderDevice* pDevice, Uint32 R
         return false;
     }
 
-    const Uint32 SafeResolution = std::max(1u, Resolution);
+    const Uint32 SafeResolution = NormalizeImportanceResolution(Resolution);
     const Uint32 MipLevels      = MipCountForPowerOfTwo(SafeResolution);
 
     TextureDesc ImportanceDesc;
@@ -735,7 +783,7 @@ bool RTXPTEnvMapBaker::DispatchImportanceBuild(IDeviceContext* pContext, Uint32 
         return false;
     }
 
-    if (!m_BuildImportanceBasePass.Bind(m_ImportanceConstants, m_EnvironmentMapSRV, nullptr,
+    if (!m_BuildImportanceBasePass.Bind(m_ImportanceConstants, m_EnvironmentMapSRV, nullptr, nullptr,
                                         ImportanceMip0UAV, RadianceMip0UAV, m_EnvironmentSampler) ||
         !m_BuildImportanceBasePass.Dispatch(pContext, DispatchGroupsForDim(Resolution), DispatchGroupsForDim(Resolution)))
     {
@@ -773,10 +821,11 @@ bool RTXPTEnvMapBaker::DispatchImportanceReduce(IDeviceContext* pContext, Uint32
 
     for (Uint32 DstMip = 1; DstMip < MipLevels; ++DstMip)
     {
-        RefCntAutoPtr<ITextureView> SrcRadianceSRV = CreateMipView(m_RadianceMap, TEXTURE_VIEW_SHADER_RESOURCE, DstMip - 1u);
-        RefCntAutoPtr<ITextureView> ImportanceUAV  = CreateMipView(m_ImportanceMap, TEXTURE_VIEW_UNORDERED_ACCESS, DstMip);
-        RefCntAutoPtr<ITextureView> RadianceUAV    = CreateMipView(m_RadianceMap, TEXTURE_VIEW_UNORDERED_ACCESS, DstMip);
-        if (!SrcRadianceSRV || !ImportanceUAV || !RadianceUAV)
+        RefCntAutoPtr<ITextureView> SrcImportanceSRV = CreateMipView(m_ImportanceMap, TEXTURE_VIEW_SHADER_RESOURCE, DstMip - 1u);
+        RefCntAutoPtr<ITextureView> SrcRadianceSRV   = CreateMipView(m_RadianceMap, TEXTURE_VIEW_SHADER_RESOURCE, DstMip - 1u);
+        RefCntAutoPtr<ITextureView> ImportanceUAV    = CreateMipView(m_ImportanceMap, TEXTURE_VIEW_UNORDERED_ACCESS, DstMip);
+        RefCntAutoPtr<ITextureView> RadianceUAV      = CreateMipView(m_RadianceMap, TEXTURE_VIEW_UNORDERED_ACCESS, DstMip);
+        if (!SrcImportanceSRV || !SrcRadianceSRV || !ImportanceUAV || !RadianceUAV)
         {
             m_Stats.Ready           = false;
             m_Stats.ImportanceReady = false;
@@ -797,7 +846,7 @@ bool RTXPTEnvMapBaker::DispatchImportanceReduce(IDeviceContext* pContext, Uint32
         }
 
         const Uint32 MipDim = std::max(1u, Resolution >> DstMip);
-        if (!m_ReduceImportanceMipPass.Bind(m_ImportanceConstants, m_EnvironmentMapSRV, SrcRadianceSRV,
+        if (!m_ReduceImportanceMipPass.Bind(m_ImportanceConstants, m_EnvironmentMapSRV, SrcImportanceSRV, SrcRadianceSRV,
                                             ImportanceUAV, RadianceUAV, m_EnvironmentSampler) ||
             !m_ReduceImportanceMipPass.Dispatch(pContext, DispatchGroupsForDim(MipDim), DispatchGroupsForDim(MipDim)))
         {
@@ -810,6 +859,24 @@ bool RTXPTEnvMapBaker::DispatchImportanceReduce(IDeviceContext* pContext, Uint32
     }
 
     return true;
+}
+
+void RTXPTEnvMapBaker::UseFallbackImportanceMaps(Uint32 RequestedResolution)
+{
+    m_ImportanceMap.Release();
+    m_RadianceMap.Release();
+
+    m_ImportanceMapSRV = m_FallbackImportanceMap ?
+        m_FallbackImportanceMap->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) :
+        nullptr;
+    m_RadianceMapSRV = m_FallbackRadianceMap ?
+        m_FallbackRadianceMap->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) :
+        nullptr;
+
+    const Uint32 NormalizedResolution = NormalizeImportanceResolution(RequestedResolution);
+    m_Stats.ImportanceReady           = false;
+    m_Stats.ImportanceResolution      = NormalizedResolution;
+    m_Stats.ImportanceMipLevels       = MipCountForPowerOfTwo(NormalizedResolution);
 }
 
 bool RTXPTEnvMapBaker::CreateFallbackTextures(IRenderDevice* pDevice)

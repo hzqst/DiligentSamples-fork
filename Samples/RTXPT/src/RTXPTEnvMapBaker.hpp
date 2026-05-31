@@ -130,6 +130,7 @@ private:
     bool CreateImportanceTextures(IRenderDevice* pDevice, Uint32 Resolution);
     bool DispatchImportanceBuild(IDeviceContext* pContext, Uint32 Resolution);
     bool DispatchImportanceReduce(IDeviceContext* pContext, Uint32 Resolution, Uint32 MipLevels);
+    void UseFallbackImportanceMaps(Uint32 RequestedResolution);
     bool CreateFallbackTextures(IRenderDevice* pDevice);
     bool CreateSamplers(IRenderDevice* pDevice);
     void UpdateConstants(const RTXPTEnvMapSettings& Settings);

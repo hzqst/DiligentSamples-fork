@@ -73,7 +73,8 @@ bool RTXPTEnvMapBakerPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
     ResourceLayout
         .AddVariable(SHADER_TYPE_COMPUTE, "g_EnvMapImportanceBakerConsts", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_EnvMapCube", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
-        .AddVariable(SHADER_TYPE_COMPUTE, "t_SourceMip", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "t_SourceImportanceMip", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "t_SourceRadianceMip", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_ImportanceMap", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_RadianceMap", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "s_LinearWrap", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
@@ -89,24 +90,27 @@ bool RTXPTEnvMapBakerPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
     return m_SRB != nullptr;
 }
 
-bool RTXPTEnvMapBakerPass::Bind(IBuffer* pConstants, ITextureView* pSourceCubeSRV, ITextureView* pSrcMipSRV, ITextureView* pImportanceUAV, ITextureView* pRadianceUAV, ISampler* pLinearSampler)
+bool RTXPTEnvMapBakerPass::Bind(IBuffer* pConstants, ITextureView* pSourceCubeSRV, ITextureView* pSourceImportanceMipSRV,
+                                ITextureView* pSourceRadianceMipSRV, ITextureView* pImportanceUAV,
+                                ITextureView* pRadianceUAV, ISampler* pLinearSampler)
 {
     if (!m_SRB)
         return false;
 
-    auto SetVariable = [this](const char* Name, IDeviceObject* pObject) {
+    auto SetVariable = [this](const char* Name, IDeviceObject* pObject, bool Optional = false) {
         IShaderResourceVariable* pVar = m_SRB->GetVariableByName(SHADER_TYPE_COMPUTE, Name);
         if (pVar == nullptr)
             return true;
         if (pObject == nullptr)
-            return false;
+            return Optional;
         pVar->Set(pObject);
         return true;
     };
 
     return SetVariable("g_EnvMapImportanceBakerConsts", pConstants) &&
         SetVariable("t_EnvMapCube", pSourceCubeSRV) &&
-        SetVariable("t_SourceMip", pSrcMipSRV) &&
+        SetVariable("t_SourceImportanceMip", pSourceImportanceMipSRV, true) &&
+        SetVariable("t_SourceRadianceMip", pSourceRadianceMipSRV, true) &&
         SetVariable("u_ImportanceMap", pImportanceUAV) &&
         SetVariable("u_RadianceMap", pRadianceUAV) &&
         SetVariable("s_LinearWrap", pLinearSampler);

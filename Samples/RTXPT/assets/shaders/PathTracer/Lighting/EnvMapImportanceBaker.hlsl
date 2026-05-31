@@ -25,7 +25,8 @@ struct EnvMapImportanceBakerConstants
 ConstantBuffer<EnvMapImportanceBakerConstants> g_EnvMapImportanceBakerConsts;
 
 TextureCube<float4> t_EnvMapCube;
-Texture2D<float4>   t_SourceMip;
+Texture2D<float>    t_SourceImportanceMip;
+Texture2D<float4>   t_SourceRadianceMip;
 RWTexture2D<float>  u_ImportanceMap;
 RWTexture2D<float4> u_RadianceMap;
 SamplerState        s_LinearWrap;
@@ -85,13 +86,13 @@ void ReduceImportanceMipCS(uint3 tid : SV_DispatchThreadID)
     uint width;
     uint height;
     u_ImportanceMap.GetDimensions(width, height);
-    const uint2 dstDim = max(uint2(width, height) >> g_EnvMapImportanceBakerConsts.ReduceDstMip, uint2(1, 1));
+    const uint2 dstDim = uint2(width, height);
     if (any(tid.xy >= dstDim))
         return;
 
     const uint2 srcBase = tid.xy * 2u;
     float       totalImportance = 0.0;
-    float4      totalRadiance   = float4(0.0, 0.0, 0.0, 0.0);
+    float3      totalRadiance   = float3(0.0, 0.0, 0.0);
 
     [unroll]
     for (uint y = 0; y < 2u; ++y)
@@ -99,15 +100,15 @@ void ReduceImportanceMipCS(uint3 tid : SV_DispatchThreadID)
         [unroll]
         for (uint x = 0; x < 2u; ++x)
         {
-            const float4 src = t_SourceMip.Load(int3(srcBase + uint2(x, y), 0));
-            totalImportance += src.w;
-            totalRadiance += src;
+            const uint2 srcPos = srcBase + uint2(x, y);
+            totalImportance += t_SourceImportanceMip.Load(int3(srcPos, 0));
+            totalRadiance += t_SourceRadianceMip.Load(int3(srcPos, 0)).rgb;
         }
     }
 
-    const float4 avg      = totalRadiance * 0.25;
+    const float3 avg      = totalRadiance * 0.25;
     const float  mipValue = totalImportance * 0.25;
-    u_RadianceMap[tid.xy] = float4(avg.rgb, mipValue);
+    u_RadianceMap[tid.xy] = float4(avg, mipValue);
     u_ImportanceMap[tid.xy] = mipValue;
 }
 

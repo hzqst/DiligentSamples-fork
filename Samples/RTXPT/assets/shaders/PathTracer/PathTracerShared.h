@@ -9,7 +9,7 @@ static const uint kSubInstanceFlagSkinned = 0x2u;
 // clamps the area->solid-angle conversion for near-grazing / very close emissive-triangle samples.
 static const float kMaxSolidAnglePdf = 1e10;
 
-// Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 48 bytes).
+// Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 64 bytes).
 struct PathTracerConstants
 {
     uint bounceCount;       // Maximum number of secondary bounces; 0 means primary-ray only.
@@ -22,8 +22,13 @@ struct PathTracerConstants
     float environmentIntensity;  // Scales the procedural-sky environment radiance.
     float lightIntensityScale;   // Scales analytic (punctual) light radiance.
 
-    uint  maxNEEBounceCount;      // Limits NEE work to the first N path bounces to avoid TDR-heavy dispatches.
-    uint  analyticLightCount;     // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
+    uint  maxNEEBounceCount;   // Limits NEE work to the first N path bounces.
+    uint  analyticLightCount;  // CPU-side count of valid analytic lights; the dummy light is not sampled.
+    uint  NEEType;             // G5: 0=Uniform, 1=Power+, 2=NEE-AT (deferred/disabled in UI).
+    uint  NEECandidateSamples; // G5: RIS candidate count per full sample.
+
+    uint  NEEFullSamples;         // G5: visibility-tested full samples.
+    uint  NEEMISType;             // G5 UI parity: 0=Full; approximate modes remain disabled in this plan.
     float fireflyFilterThreshold; // G1 adaptive firefly filter: soft-cap level; 0 disables the filter entirely.
     float exposureScale;          // Scene camera exposure multiplier applied before the in-raygen ACES curve.
 };

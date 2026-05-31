@@ -69,12 +69,17 @@ struct PathTracerConstants
     float  environmentIntensity  = 1.0f; // Scales the procedural-sky environment radiance.
     float  lightIntensityScale   = 1.0f; // Scales analytic (punctual) light radiance.
 
-    Uint32 maxNEEBounceCount      = 16;   // Default covers the full bounce budget (NEE at every vertex); a lower value is an optional perf/TDR clamp.
-    Uint32 analyticLightCount     = 0;    // CPU-side count of valid analytic lights; the uploaded dummy light is not sampled.
-    float  fireflyFilterThreshold = 0.0f; // G1 adaptive firefly filter: soft-cap level; 0 disables the filter (set from UI each frame).
-    float  exposureScale          = 1.0f; // Scene camera exposure multiplier applied before the in-raygen ACES curve.
+    Uint32 maxNEEBounceCount  = 16; // NEE budget clamp; default covers the full bounce budget.
+    Uint32 analyticLightCount = 0;  // CPU-side valid analytic lights; the dummy binding light is not sampled.
+    Uint32 NEEType            = 1;  // G5: 0=Uniform, 1=Power+, 2=NEE-AT (deferred/disabled in UI).
+    Uint32 NEECandidateSamples = 5; // G5: RIS candidate count per full sample.
+
+    Uint32 NEEFullSamples          = 1;    // G5: visibility-tested full samples.
+    Uint32 NEEMISType              = 0;    // G5 UI parity: 0=Full; approximate modes remain disabled in this plan.
+    float  fireflyFilterThreshold  = 0.0f; // G1 adaptive firefly filter; 0 disables the filter.
+    float  exposureScale           = 1.0f; // Scene camera exposure multiplier before in-raygen ACES.
 };
-static_assert(sizeof(PathTracerConstants) == 48, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(PathTracerConstants) == 64, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
 // (D:/RTXPT-fork/Rtxpt/SampleUI.h). These fields back the present-but-disabled placeholder
@@ -111,7 +116,7 @@ struct SampleConstants
     float4              viewportSizeAndFrameIndex = float4{0, 0, 0, 0};
     PathTracerConstants ptConsts                  = {};
 };
-static_assert(sizeof(SampleConstants) == 208, "SampleConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(SampleConstants) == 224, "SampleConstants layout must match PathTracer/PathTracerShared.h");
 
 class RTXPTSample final : public SampleBase
 {

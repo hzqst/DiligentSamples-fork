@@ -29,6 +29,7 @@
 
 #include "DebugUtilities.hpp"
 #include "FileSystem.hpp"
+#include "TextureUtilities.h"
 #include "PBR_Renderer.hpp"
 
 #include "imgui.h"
@@ -67,18 +68,10 @@ bool IsEnvironmentFile(const std::filesystem::path& Path)
     return Ext == ".hdr" || Ext == ".exr" || Ext == ".dds" || Ext == ".ktx" || Ext == ".ktx2";
 }
 
-bool EnvMapSettingsChanged(const RTXPTEnvMapSettings& Lhs, const RTXPTEnvMapSettings& Rhs)
+bool EnvMapSourceChanged(const RTXPTEnvMapSettings& Lhs, const RTXPTEnvMapSettings& Rhs)
 {
-    return Lhs.Enabled != Rhs.Enabled ||
-        Lhs.SourceRelativePath != Rhs.SourceRelativePath ||
-        Lhs.RadianceScale.x != Rhs.RadianceScale.x ||
-        Lhs.RadianceScale.y != Rhs.RadianceScale.y ||
-        Lhs.RadianceScale.z != Rhs.RadianceScale.z ||
-        Lhs.Intensity != Rhs.Intensity ||
-        Lhs.RotationRadians != Rhs.RotationRadians ||
-        Lhs.TargetCubeResolution != Rhs.TargetCubeResolution ||
-        Lhs.ImportanceMapResolution != Rhs.ImportanceMapResolution ||
-        Lhs.CompressionQuality != Rhs.CompressionQuality;
+    return Lhs.SourceRelativePath != Rhs.SourceRelativePath ||
+        Lhs.TargetCubeResolution != Rhs.TargetCubeResolution;
 }
 
 bool CreateCubeTexture(IRenderDevice* pDevice, const char* Name, Uint32 Size, Uint32 Color,
@@ -209,41 +202,53 @@ bool RTXPTEnvMapBaker::CreateResources(IRenderDevice* pDevice, IDeviceContext*, 
     return CreateSamplers(pDevice) && CreateFallbackTextures(pDevice);
 }
 
-bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext*, IEngineFactory*,
-                              const std::string&, const RTXPTEnvMapSettings& Settings, bool ForceRebuild, bool)
+bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory,
+                              const std::string& AssetsRoot, const RTXPTEnvMapSettings& Settings, bool ForceRebuild, bool ComputeSupported)
 {
-    if (pDevice == nullptr)
+    if (pDevice == nullptr || pContext == nullptr || pEngineFactory == nullptr)
     {
         m_Stats.Ready     = false;
-        m_Stats.LastError = "RTXPT EnvMapBaker update requires a render device";
+        m_Stats.LastError = "RTXPT EnvMapBaker update requires a render device, device context, and engine factory";
         LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
         return false;
     }
 
-    if (!m_EnvironmentSampler || !m_ImportanceSampler || !m_EnvironmentMapSRV || !m_ImportanceMapSRV)
+    if (!m_EnvironmentSampler || !m_ImportanceSampler || !m_FallbackEnvironmentMap || !m_FallbackDiffuseIrradiance ||
+        !m_FallbackImportanceMap || !m_FallbackRadianceMap || !m_FallbackBRDFLUT)
     {
-        if (!CreateResources(pDevice, nullptr, nullptr, true))
+        if (!CreateResources(pDevice, pContext, pEngineFactory, ComputeSupported))
             return false;
     }
 
-    const bool Changed = ForceRebuild || EnvMapSettingsChanged(m_LastSettings, Settings);
-    if (Changed)
-        ++m_Stats.Version;
+    const bool SourceChanged = ForceRebuild || !m_Stats.Ready || !m_SourceTexture || !m_SourceSRV ||
+        !m_EnvironmentMapSRV || !m_DiffuseIrradianceSRV || !m_BRDFLUTSRV ||
+        EnvMapSourceChanged(m_LastSettings, Settings);
+    bool       UpdateOk     = true;
+    if (SourceChanged)
+    {
+        UpdateOk = LoadSourceTexture(pDevice, AssetsRoot, Settings) &&
+            PrecomputeCubemap(pDevice, pContext, Settings);
+        if (UpdateOk)
+        {
+            m_LastSettings = Settings;
+            ++m_Stats.Version;
+            const bool KeepFallbackLoadError = !IsProceduralSkyPath(Settings.SourceRelativePath) &&
+                m_Stats.Procedural && !m_Stats.LastError.empty();
+            if (!KeepFallbackLoadError)
+                m_Stats.LastError.clear();
+        }
+    }
+    else
+    {
+        m_LastSettings = Settings;
+    }
 
-    m_LastSettings           = Settings;
-    m_Stats.Ready = m_EnvironmentSampler && m_ImportanceSampler &&
-        m_EnvironmentMapSRV && m_DiffuseIrradianceSRV && m_ImportanceMapSRV && m_RadianceMapSRV && m_BRDFLUTSRV;
-    m_Stats.SourceLoaded    = m_Stats.Ready;
-    m_Stats.Procedural      = IsProceduralSkyPath(Settings.SourceRelativePath);
-    m_Stats.SourceName      = Settings.SourceRelativePath.empty() ? kProceduralSkyPath : Settings.SourceRelativePath;
-    m_Stats.CubeResolution  = kFallbackCubeSize;
-    m_Stats.CubeMipLevels   = 1;
-    m_Stats.ImportanceResolution = 1;
-    m_Stats.ImportanceMipLevels  = 1;
-    m_Stats.CompressedOutput     = false;
-    if (m_Stats.Ready)
-        m_Stats.LastError.clear();
-
+    m_Stats.CompressedOutput = false;
+    m_Stats.Ready            = UpdateOk &&
+        m_EnvironmentSampler && m_ImportanceSampler &&
+        m_EnvironmentMapSRV && m_DiffuseIrradianceSRV && m_BRDFLUTSRV &&
+        m_FallbackImportanceMap && m_FallbackRadianceMap &&
+        m_ImportanceMapSRV && m_RadianceMapSRV;
     UpdateConstants(Settings);
     return m_Stats.Ready;
 }
@@ -327,21 +332,157 @@ RTXPTEnvMapSettings RTXPTEnvMapBaker::MakeSceneDefaultSettings(const RTXPTSceneG
     return Settings;
 }
 
-bool RTXPTEnvMapBaker::LoadSourceTexture(IRenderDevice*, const std::string&, const RTXPTEnvMapSettings&)
+bool RTXPTEnvMapBaker::LoadSourceTexture(IRenderDevice* pDevice, const std::string& AssetsRoot, const RTXPTEnvMapSettings& Settings)
 {
-    m_Stats.LastError = "RTXPT EnvMapBaker texture source loading is deferred to a later task";
-    return false;
+    if (pDevice == nullptr)
+    {
+        m_Stats.Ready     = false;
+        m_Stats.LastError = "RTXPT EnvMapBaker source loading requires a render device";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        return false;
+    }
+
+    m_SourceTexture.Release();
+    m_SourceSRV.Release();
+    m_Stats.SourceLoaded = false;
+    m_Stats.Procedural   = IsProceduralSkyPath(Settings.SourceRelativePath);
+    m_Stats.SourceName   = m_Stats.Procedural ? kProceduralSkyPath : Settings.SourceRelativePath;
+
+    if (IsProceduralSkyPath(Settings.SourceRelativePath))
+    {
+        const bool Loaded = CreateProceduralSourceTexture(pDevice, Settings);
+        if (Loaded)
+            m_Stats.LastError.clear();
+        return Loaded;
+    }
+
+    std::string ResolvedPath = (std::filesystem::path{AssetsRoot} / Settings.SourceRelativePath).string();
+    FileSystem::CorrectSlashes(ResolvedPath);
+    ResolvedPath = FileSystem::SimplifyPath(ResolvedPath.c_str());
+
+    CreateTextureFromFile(ResolvedPath.c_str(), TextureLoadInfo{"RTXPT environment source"}, pDevice, &m_SourceTexture);
+    m_SourceSRV = m_SourceTexture ? m_SourceTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+    if (m_SourceTexture && m_SourceSRV)
+    {
+        m_Stats.SourceLoaded = true;
+        m_Stats.Procedural   = false;
+        m_Stats.SourceName   = Settings.SourceRelativePath;
+        m_Stats.LastError.clear();
+        return true;
+    }
+
+    const std::string LoadError = "Failed to load RTXPT environment source: " + ResolvedPath;
+    m_Stats.LastError           = LoadError;
+    LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+    m_Stats.Procedural = true;
+    m_Stats.SourceName = kProceduralSkyPath;
+
+    if (!CreateProceduralSourceTexture(pDevice, Settings))
+    {
+        if (!m_Stats.LastError.empty())
+            m_Stats.LastError = LoadError + " | " + m_Stats.LastError;
+        else
+            m_Stats.LastError = LoadError;
+        return false;
+    }
+
+    m_Stats.LastError = LoadError;
+    return true;
 }
 
-bool RTXPTEnvMapBaker::CreateProceduralSourceTexture(IRenderDevice*, const RTXPTEnvMapSettings&)
+bool RTXPTEnvMapBaker::CreateProceduralSourceTexture(IRenderDevice* pDevice, const RTXPTEnvMapSettings&)
 {
-    m_Stats.LastError = "RTXPT EnvMapBaker procedural source baking is deferred to a later task";
-    return false;
+    if (pDevice == nullptr)
+    {
+        m_Stats.Ready     = false;
+        m_Stats.LastError = "RTXPT EnvMapBaker procedural source creation requires a render device";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        return false;
+    }
+
+    m_SourceTexture.Release();
+    m_SourceSRV.Release();
+    m_Stats.SourceLoaded = false;
+    constexpr Uint32   Width = 512, Height = 256;
+    const float3       HorizonColor{0.48f, 0.58f, 0.68f};
+    const float3       ZenithColor{0.05f, 0.08f, 0.14f};
+    std::vector<float4> Texels(static_cast<size_t>(Width) * Height);
+
+    for (Uint32 Y = 0; Y < Height; ++Y)
+    {
+        const float T = static_cast<float>(Y) / static_cast<float>(Height - 1);
+        const float4 RowColor{
+            HorizonColor.x + (ZenithColor.x - HorizonColor.x) * T,
+            HorizonColor.y + (ZenithColor.y - HorizonColor.y) * T,
+            HorizonColor.z + (ZenithColor.z - HorizonColor.z) * T,
+            1.0f};
+        std::fill_n(Texels.data() + static_cast<size_t>(Y) * Width, Width, RowColor);
+    }
+    const TextureDesc Desc{"RTXPT EnvMapBaker procedural source", RESOURCE_DIM_TEX_2D, Width, Height, 1, TEX_FORMAT_RGBA32_FLOAT,
+                           1, 1, USAGE_IMMUTABLE, BIND_SHADER_RESOURCE};
+    TextureSubResData SubRes{Texels.data(), Uint64{Width} * sizeof(float4)};
+    TextureData       InitData{&SubRes, 1};
+    pDevice->CreateTexture(Desc, &InitData, &m_SourceTexture);
+    m_SourceSRV = m_SourceTexture ? m_SourceTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+    if (!m_SourceTexture || !m_SourceSRV)
+    {
+        m_Stats.Ready     = false;
+        m_Stats.LastError = "Failed to create RTXPT EnvMapBaker procedural source texture";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        m_SourceTexture.Release();
+        m_SourceSRV.Release();
+        return false;
+    }
+
+    m_Stats.SourceLoaded   = true;
+    m_Stats.Procedural     = true;
+    m_Stats.SourceName     = kProceduralSkyPath;
+    m_Stats.LastError.clear();
+    return true;
 }
 
-bool RTXPTEnvMapBaker::PrecomputeCubemap(IDeviceContext*, const RTXPTEnvMapSettings&)
+bool RTXPTEnvMapBaker::PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext* pContext, const RTXPTEnvMapSettings&)
 {
-    return m_EnvironmentMapSRV != nullptr;
+    if (pDevice == nullptr || pContext == nullptr || m_SourceSRV == nullptr)
+    {
+        m_Stats.Ready     = false;
+        m_Stats.LastError = "RTXPT EnvMapBaker precompute requires a render device, device context, and source texture";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        return false;
+    }
+
+    if (!m_IBLPrecompute)
+        m_IBLPrecompute = std::make_unique<PBR_Renderer>(pDevice, nullptr, pContext, PBR_Renderer::CreateInfo{});
+
+    m_IBLPrecompute->PrecomputeCubemaps(pContext, m_SourceSRV);
+    m_EnvironmentMapSRV    = m_IBLPrecompute->GetPrefilteredEnvMapSRV();
+    m_DiffuseIrradianceSRV = m_IBLPrecompute->GetIrradianceCubeSRV();
+    m_BRDFLUTSRV           = m_IBLPrecompute->GetPreintegratedGGX_SRV();
+
+    if (!m_EnvironmentMapSRV || !m_DiffuseIrradianceSRV || !m_BRDFLUTSRV)
+    {
+        m_Stats.Ready     = false;
+        m_Stats.LastError = "RTXPT EnvMapBaker precompute did not produce all IBL textures";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        return false;
+    }
+
+    const ITexture* pEnvTexture = m_EnvironmentMapSRV->GetTexture();
+    if (pEnvTexture == nullptr)
+    {
+        m_Stats.Ready     = false;
+        m_Stats.LastError = "RTXPT EnvMapBaker precompute produced an invalid environment texture";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        return false;
+    }
+
+    const TextureDesc& EnvDesc = pEnvTexture->GetDesc();
+    m_Stats.CubeResolution     = EnvDesc.Width;
+    m_Stats.CubeMipLevels      = EnvDesc.MipLevels;
+    m_Stats.BRDFLUTReady       = true;
+    m_Stats.ImportanceReady    = false;
+    m_Stats.CompressedOutput   = false;
+    return true;
 }
 
 bool RTXPTEnvMapBaker::CreateImportanceMaps(IRenderDevice*, IDeviceContext*, IEngineFactory*,
@@ -376,18 +517,18 @@ bool RTXPTEnvMapBaker::CreateFallbackTextures(IRenderDevice* pDevice)
     const bool RadianceOk = CreateRGBA8Texture(pDevice, "RTXPT EnvMapBaker fallback radiance map",
                                                BlackRGBA, m_FallbackRadianceMap, m_RadianceMapSRV);
     const bool BRDFOk = CreateRGBA8Texture(pDevice, "RTXPT EnvMapBaker fallback BRDF LUT",
-                                           WhiteRGBA, m_FallbackBRDFLUT, m_BRDFLUTSRV);
+                                            WhiteRGBA, m_FallbackBRDFLUT, m_BRDFLUTSRV);
 
     m_SourceSRV                 = m_EnvironmentMapSRV;
     m_Stats.Ready = m_EnvironmentSampler && m_ImportanceSampler &&
         EnvOk && DiffuseOk && ImportanceOk && RadianceOk && BRDFOk;
-    m_Stats.SourceLoaded       = m_Stats.Ready;
-    m_Stats.Procedural         = true;
-    m_Stats.ImportanceReady    = false;
-    m_Stats.BRDFLUTReady       = false;
-    m_Stats.CompressedOutput   = false;
-    m_Stats.CubeResolution     = kFallbackCubeSize;
-    m_Stats.CubeMipLevels      = 1;
+    m_Stats.SourceLoaded         = false;
+    m_Stats.Procedural           = true;
+    m_Stats.ImportanceReady      = false;
+    m_Stats.BRDFLUTReady         = false;
+    m_Stats.CompressedOutput     = false;
+    m_Stats.CubeResolution       = kFallbackCubeSize;
+    m_Stats.CubeMipLevels        = 1;
     m_Stats.ImportanceResolution = 1;
     m_Stats.ImportanceMipLevels  = 1;
     m_Stats.SourceName           = kProceduralSkyPath;

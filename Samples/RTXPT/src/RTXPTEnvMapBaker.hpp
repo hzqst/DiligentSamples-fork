@@ -122,7 +122,7 @@ public:
 private:
     bool LoadSourceTexture(IRenderDevice* pDevice, const std::string& AssetsRoot, const RTXPTEnvMapSettings& Settings);
     bool CreateProceduralSourceTexture(IRenderDevice* pDevice, const RTXPTEnvMapSettings& Settings);
-    bool PrecomputeCubemap(IDeviceContext* pContext, const RTXPTEnvMapSettings& Settings);
+    bool PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext* pContext, const RTXPTEnvMapSettings& Settings);
     bool CreateImportanceMaps(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory,
                               const RTXPTEnvMapSettings& Settings, bool ComputeSupported);
     bool CreateFallbackTextures(IRenderDevice* pDevice);

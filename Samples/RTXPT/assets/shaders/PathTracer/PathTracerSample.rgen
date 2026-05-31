@@ -211,6 +211,7 @@ void main()
     const uint maxNEEBounces  = min(g_Const.ptConsts.maxNEEBounceCount, maxBounces);
     const bool enableNEE      = g_Const.ptConsts.NEEEnabled != 0u;
     const bool enableEnvNEE   = enableNEE && ((g_Const.ptConsts.environmentNEEEnabled & 1u) != 0u);
+    const uint fullSamples    = min(32u, g_Const.ptConsts.NEEFullSamples);
     const float ffThreshold   = g_Const.ptConsts.fireflyFilterThreshold; // 0 disables the firefly filter.
 
     [loop]
@@ -252,7 +253,6 @@ void main()
         float3     surfaceEmission = payload.emission;
         if (prevDidEmissiveNEE && prevBsdfPdf > 0.0 && payload.emissiveLightPdf > 0.0)
         {
-            const uint fullSamples = min(32u, g_Const.ptConsts.NEEFullSamples);
             surfaceEmission *= PathTracer::ComputeBSDFMISForEmissiveTriangle(prevBsdfPdf, payload.emissiveLightPdf, fullSamples);
         }
         if (ffThreshold != 0.0)
@@ -307,7 +307,9 @@ void main()
         prevBsdfPdf        = pdf;
         prevNormal         = bsdfData.N;
         prevDidEnvNEE      = useNEE && enableEnvNEE;
-        prevDidEmissiveNEE = useNEE && sampledEmissiveNEE;
+        // Emissive MIS should depend on whether emissive NEE was available at the previous vertex,
+        // not on whether the stochastic reservoir happened to pick an emissive proxy on that bounce.
+        prevDidEmissiveNEE = useNEE && fullSamples > 0u && Bridge::getEmissiveTriangleCount() > 0u;
 
         rayOrigin = visibilityOrigin;
         rayDir    = nextDir;

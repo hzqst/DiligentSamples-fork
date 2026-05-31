@@ -142,6 +142,19 @@ struct PolymorphicLightInfo
     float4 spotAngles;
 };
 
+static const uint kLightProxyKindAnalytic       = 0u;
+static const uint kLightProxyKindEmissiveBucket = 1u;
+
+// Mirrors Diligent::RTXPTLightProxy in RTXPTLights.hpp (16 bytes).
+// prefixWeight is the inclusive cumulative weight after this proxy.
+struct RTXPTLightProxy
+{
+    float prefixWeight;
+    float weight;
+    uint  index;
+    uint  kind;
+};
+
 // Mirrors Diligent::EmissiveTriangle in RTXPTLights.hpp (total size 64 bytes). One world-space,
 // NEE-eligible emissive triangle (constant emitter). Stores base + two edges + radiance like
 // RTXPT-fork TriangleLight; the surface normal and area are recomputed on the fly.

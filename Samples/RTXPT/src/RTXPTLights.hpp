@@ -48,6 +48,18 @@ struct PolymorphicLightInfo
 };
 static_assert(sizeof(PolymorphicLightInfo) == 64, "PolymorphicLightInfo layout must match PathTracer/PathTracerShared.h");
 
+constexpr Uint32 kLightProxyKind_Analytic       = 0u;
+constexpr Uint32 kLightProxyKind_EmissiveBucket = 1u;
+
+struct RTXPTLightProxy
+{
+    float  prefixWeight = 0.0f;
+    float  weight       = 0.0f;
+    Uint32 index        = 0;
+    Uint32 kind         = kLightProxyKind_Analytic;
+};
+static_assert(sizeof(RTXPTLightProxy) == 16, "RTXPTLightProxy layout must match PathTracer/PathTracerShared.h");
+
 struct EmissiveTriangle
 {
     float4 base     = float4{0, 0, 0, 0};
@@ -61,6 +73,8 @@ struct RTXPTLightStats
 {
     Uint32      LightCount            = 0;
     Uint32      EmissiveTriangleCount = 0;
+    Uint32      LightProxyCount       = 0;
+    float       LightProxyTotalWeight = 0.0f;
     std::string LastError;
 };
 
@@ -74,16 +88,22 @@ public:
 
     const RTXPTLightStats& GetStats() const { return m_Stats; }
     IBuffer*               GetLightBuffer() const { return m_LightBuffer; }
+    IBuffer*               GetLightProxyBuffer() const { return m_LightProxyBuffer; }
     IBuffer*               GetEmissiveTriangleBuffer() const { return m_EmissiveTriangleBuffer; }
+    Uint32                 GetLightProxyCount() const { return m_Stats.LightProxyCount; }
     Uint32                 GetEmissiveTriangleCount() const { return m_Stats.EmissiveTriangleCount; }
 
 private:
     bool UploadLightBuffer(IRenderDevice* pDevice, std::vector<PolymorphicLightInfo>& Lights);
     bool UploadEmissiveTriangleBuffer(IRenderDevice* pDevice, Uint32 EmissiveTriangleCount);
+    bool UploadLightProxyBuffer(IRenderDevice* pDevice);
 
-    RefCntAutoPtr<IBuffer> m_LightBuffer;
-    RefCntAutoPtr<IBuffer> m_EmissiveTriangleBuffer;
-    RTXPTLightStats        m_Stats;
+    RefCntAutoPtr<IBuffer>         m_LightBuffer;
+    RefCntAutoPtr<IBuffer>         m_EmissiveTriangleBuffer;
+    RefCntAutoPtr<IBuffer>         m_LightProxyBuffer;
+    std::vector<PolymorphicLightInfo> m_AnalyticLights;
+    float                         m_EmissiveProxyWeight = 0.0f;
+    RTXPTLightStats               m_Stats;
 };
 
 } // namespace Diligent

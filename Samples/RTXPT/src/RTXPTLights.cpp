@@ -92,18 +92,35 @@ Uint32 GetPrimitiveTriangleCount(const GLTF::Primitive& Primitive)
     return Primitive.HasIndices() ? Primitive.IndexCount / 3u : Primitive.VertexCount / 3u;
 }
 
+float MaxRGB(const float3& V)
+{
+    return std::max(V.x, std::max(V.y, V.z));
+}
+
+float GetMaterialEmissionMagnitude(const GLTF::Material& Material, const RTXPTMaterialExtension* pExtension)
+{
+    if (pExtension != nullptr && pExtension->Loaded)
+        return MaxRGB(pExtension->EmissiveFactor);
+
+    return MaxRGB(Material.Attribs.EmissiveFactor);
+}
+
 } // namespace
 
 void RTXPTLights::Reset()
 {
     m_LightBuffer.Release();
     m_EmissiveTriangleBuffer.Release();
+    m_LightProxyBuffer.Release();
+    m_AnalyticLights.clear();
+    m_EmissiveProxyWeight = 0.0f;
     m_Stats = {};
 }
 
 bool RTXPTLights::UploadLightBuffer(IRenderDevice* pDevice, std::vector<PolymorphicLightInfo>& Lights)
 {
-    m_Stats.LightCount = static_cast<Uint32>(Lights.size());
+    m_AnalyticLights = Lights;
+    m_Stats.LightCount = static_cast<Uint32>(m_AnalyticLights.size());
     if (Lights.empty())
     {
         // Always upload at least one default (disabled) light so the shader-side bridge SRV is never null.
@@ -126,6 +143,57 @@ bool RTXPTLights::UploadLightBuffer(IRenderDevice* pDevice, std::vector<Polymorp
 
     VERIFY(m_LightBuffer, "Failed to create RTXPT light buffer");
     return m_LightBuffer != nullptr;
+}
+
+bool RTXPTLights::UploadLightProxyBuffer(IRenderDevice* pDevice)
+{
+    m_LightProxyBuffer.Release();
+    if (pDevice == nullptr)
+    {
+        m_Stats.LastError = "RTXPT light proxy buffer requires a render device";
+        LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
+        return false;
+    }
+
+    std::vector<RTXPTLightProxy> Proxies;
+    Proxies.reserve(m_AnalyticLights.size() + (m_Stats.EmissiveTriangleCount > 0 ? 1u : 0u));
+
+    float Prefix = 0.0f;
+    for (Uint32 LightIndex = 0; LightIndex < static_cast<Uint32>(m_AnalyticLights.size()); ++LightIndex)
+    {
+        const PolymorphicLightInfo& Light = m_AnalyticLights[LightIndex];
+        const float3 Radiance = float3{Light.colorIntensity.x, Light.colorIntensity.y, Light.colorIntensity.z} *
+            std::max(Light.colorIntensity.w, 0.0f);
+        const float Weight = std::max(1e-6f, MaxRGB(Radiance));
+        Prefix += Weight;
+        Proxies.push_back(RTXPTLightProxy{Prefix, Weight, LightIndex, kLightProxyKind_Analytic});
+    }
+
+    if (m_Stats.EmissiveTriangleCount > 0)
+    {
+        const float Weight = std::max(1e-6f, m_EmissiveProxyWeight);
+        Prefix += Weight;
+        Proxies.push_back(RTXPTLightProxy{Prefix, Weight, 0u, kLightProxyKind_EmissiveBucket});
+    }
+
+    m_Stats.LightProxyCount       = static_cast<Uint32>(Proxies.size());
+    m_Stats.LightProxyTotalWeight = Prefix;
+    if (Proxies.empty())
+        Proxies.emplace_back();
+
+    BufferDesc Desc;
+    Desc.Name              = "RTXPT light proxy buffer";
+    Desc.Usage             = USAGE_IMMUTABLE;
+    Desc.BindFlags         = BIND_SHADER_RESOURCE;
+    Desc.Mode              = BUFFER_MODE_STRUCTURED;
+    Desc.ElementByteStride = sizeof(RTXPTLightProxy);
+    Desc.Size              = sizeof(RTXPTLightProxy) * Proxies.size();
+
+    BufferData Data{Proxies.data(), Desc.Size};
+    pDevice->CreateBuffer(Desc, &Data, &m_LightProxyBuffer);
+
+    VERIFY(m_LightProxyBuffer, "Failed to create RTXPT light proxy buffer");
+    return m_LightProxyBuffer != nullptr;
 }
 
 bool RTXPTLights::UploadEmissiveTriangleBuffer(IRenderDevice* pDevice, Uint32 EmissiveTriangleCount)
@@ -227,6 +295,7 @@ bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSce
 {
     m_Stats.EmissiveTriangleCount = 0;
     m_Stats.LastError.clear();
+    m_EmissiveProxyWeight = 0.0f;
 
     Uint64 EmissiveTriangleCount = 0;
     for (Uint32 InstanceId = 0; InstanceId < SceneData.ModelInstances.size(); ++InstanceId)
@@ -260,19 +329,24 @@ bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSce
                 if (!RTXPTMaterialIsEmissiveAreaLight(Model.Materials[Primitive.MaterialId], pExtension))
                     continue;
 
-                EmissiveTriangleCount += GetPrimitiveTriangleCount(Primitive);
-                if (EmissiveTriangleCount > Uint64{std::numeric_limits<Uint32>::max()})
+                const Uint32 TriangleCount = GetPrimitiveTriangleCount(Primitive);
+                const Uint64 NewCount = EmissiveTriangleCount + TriangleCount;
+                if (NewCount > Uint64{std::numeric_limits<Uint32>::max()})
                 {
                     m_Stats.LastError = "RTXPT emissive triangle count exceeds Uint32";
                     LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
                     return false;
                 }
+
+                EmissiveTriangleCount = NewCount;
+                m_EmissiveProxyWeight += static_cast<float>(TriangleCount) *
+                    std::max(1e-6f, GetMaterialEmissionMagnitude(Model.Materials[Primitive.MaterialId], pExtension));
             }
         }
     }
 
     m_Stats.EmissiveTriangleCount = static_cast<Uint32>(EmissiveTriangleCount);
-    return UploadEmissiveTriangleBuffer(pDevice, m_Stats.EmissiveTriangleCount);
+    return UploadEmissiveTriangleBuffer(pDevice, m_Stats.EmissiveTriangleCount) && UploadLightProxyBuffer(pDevice);
 }
 
 } // namespace Diligent

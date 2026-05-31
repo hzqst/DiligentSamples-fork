@@ -7,6 +7,7 @@
 ConstantBuffer<SampleConstants>        g_Const;
 StructuredBuffer<SubInstanceData>      t_SubInstanceData;
 StructuredBuffer<PolymorphicLightInfo> t_Lights;
+StructuredBuffer<RTXPTLightProxy>      t_LightProxies;
 StructuredBuffer<EmissiveTriangle>     t_EmissiveTriangles;
 StructuredBuffer<GeometryVertexData>   t_VertexBuffer;
 StructuredBuffer<GeometryVertexData>   t_SkinnedVertexBuffer;
@@ -168,6 +169,22 @@ namespace Bridge
     EmissiveTriangle getEmissiveTriangle(uint index)
     {
         return t_EmissiveTriangles[index];
+    }
+
+    uint getLightProxyCount()
+    {
+        return getLightCount() + ((getEmissiveTriangleCount() > 0u) ? 1u : 0u);
+    }
+
+    RTXPTLightProxy getLightProxy(uint index)
+    {
+        return t_LightProxies[index];
+    }
+
+    float getLightProxyTotalWeight()
+    {
+        const uint proxyCount = getLightProxyCount();
+        return proxyCount > 0u ? getLightProxy(proxyCount - 1u).prefixWeight : 0.0;
     }
 } // namespace Bridge
 

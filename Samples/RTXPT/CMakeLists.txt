@@ -43,6 +43,8 @@ set(SHADERS
     assets/shaders/PathTracer/PathTracerShared.h
     assets/shaders/PathTracer/PathTracerBridge.hlsli
     assets/shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli
+    assets/shaders/PathTracer/Lighting/LightingConfig.h
+    assets/shaders/PathTracer/Lighting/LightingTypes.hlsli
     assets/shaders/PathTracer/Lighting/EnvMap.hlsli
     assets/shaders/PathTracer/Lighting/PolymorphicLight.hlsli
     assets/shaders/PathTracer/Lighting/LightSampler.hlsli

@@ -59,6 +59,7 @@ void main(inout PathPayload Payload,
     Payload.hitFlag     = 1u;
     Payload.hitDistance = RayTCurrent();
     Payload.emission    = float3(0.0, 0.0, 0.0);
+    Payload.emissiveLightPdf = 0.0;
 
     // Default to a barycentric debug color so we still see something if the bridge tables are unbound.
     float3 BaseColor   = float3(Attributes.barycentrics.x,
@@ -116,6 +117,26 @@ void main(inout PathPayload Payload,
 
         BaseColor        = Bridge::getBaseColor(material, texCoord).rgb;
         Payload.emission = Bridge::getEmission(material, texCoord);
+
+        // Precompute the emissive triangle's area-light solid-angle pdf so raygen can MIS-weight
+        // the BSDF-hit emission against emissive-triangle NEE. Only NEE-eligible constant emitters
+        // get a non-zero pdf; textured emissive surfaces stay BSDF-only for now.
+        if ((material.flags & kMaterialFlagEmissiveAreaLight) != 0u)
+        {
+            const float3 wp0   = mul(ObjectToWorld3x4(), float4(V0.position, 1.0));
+            const float3 wp1   = mul(ObjectToWorld3x4(), float4(V1.position, 1.0));
+            const float3 wp2   = mul(ObjectToWorld3x4(), float4(V2.position, 1.0));
+            const float3 ng    = cross(wp1 - wp0, wp2 - wp0);
+            const float  ngLen = length(ng);
+            const float  area  = 0.5 * ngLen;
+            if (area > 1e-9)
+            {
+                const float3 normal   = ng / ngLen;
+                const float  cosTheta  = abs(dot(normal, -RayDir));
+                if (cosTheta > 2e-9)
+                    Payload.emissiveLightPdf = min(kMaxSolidAnglePdf, (1.0 / area) * (RayTCurrent() * RayTCurrent()) / cosTheta);
+            }
+        }
     }
 
     Payload.worldPos    = WorldPos;
@@ -125,6 +146,7 @@ void main(inout PathPayload Payload,
     Payload.roughness   = Roughness;
 }
 
-// TODO(RTXPT-Port Phase 5.4): Emissive surfaces are gathered by BSDF sampling only; add emissive-triangle area-light NEE + MIS once an emissive light list exists.
+// TODO(RTXPT-Port Phase R2): Emissive triangles feed area-light NEE + MIS (constant emitters only). Textured
+// emissive triangles stay BSDF-only, and emitters are two-sided rather than RTXPT-fork's one-sided TriangleLight.
 
 #endif

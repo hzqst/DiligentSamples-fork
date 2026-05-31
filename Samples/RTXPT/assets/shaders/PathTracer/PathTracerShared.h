@@ -44,7 +44,7 @@ struct PrimaryPayload
     float4 ColorDepth;
 };
 
-// Reference path tracer payload (Phase 5.2 / 5.3). Size is 64 bytes (16 floats); do not grow without
+// Reference path tracer payload (Phase 5.2 / 5.3 / G4). Size is 80 bytes (20 floats); do not grow without
 // updating RTXPTRayTracingPass::Initialize MaxPayloadSize.
 //   hitFlag    : 1 on closest hit, 0 on miss.
 //   hitDistance: RayTCurrent() on hit; <= 0 on miss.
@@ -54,6 +54,7 @@ struct PrimaryPayload
 //   metallic   : glTF metallic value at the hit (factor * texture .b).
 //   emission   : RGB emission written by miss/emissive paths and accumulated by raygen.
 //   roughness  : glTF perceptual roughness at the hit (factor * texture .g).
+//   emissiveLightPdf: area-light solid-angle pdf for G4 emissive BSDF-hit MIS (0 when not applicable).
 struct PathPayload
 {
     float3 worldPos;
@@ -67,6 +68,11 @@ struct PathPayload
 
     float3 emission;
     float  roughness;
+
+    float emissiveLightPdf;
+    float _pad0;
+    float _pad1;
+    float _pad2;
 };
 
 // Mirrors Diligent::SubInstanceData in RTXPTAccelerationStructures.hpp.

@@ -24,6 +24,7 @@ namespace PathTracer
         payload.emission    = float3(0.0, 0.0, 0.0);
         payload.metallic    = 0.0;
         payload.roughness   = 1.0;
+        payload.emissiveLightPdf = 0.0;
         return payload;
     }
 

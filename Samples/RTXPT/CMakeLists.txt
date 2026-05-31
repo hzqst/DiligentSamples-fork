@@ -11,6 +11,7 @@ set(SOURCE
     src/RTXPTLights.cpp
     src/RTXPTLightsBaker.cpp
     src/RTXPTLightsBakerPass.cpp
+    src/RTXPTEnvMapBaker.cpp
     src/RTXPTAccelerationStructures.cpp
     src/RTXPTSkinnedGeometry.cpp
     src/RTXPTRenderTargets.cpp
@@ -29,6 +30,8 @@ set(INCLUDE
     src/RTXPTLights.hpp
     src/RTXPTLightsBaker.hpp
     src/RTXPTLightsBakerPass.hpp
+    src/RTXPTFrameConstants.hpp
+    src/RTXPTEnvMapBaker.hpp
     src/RTXPTAccelerationStructures.hpp
     src/RTXPTSkinnedGeometry.hpp
     src/RTXPTRenderTargets.hpp
@@ -83,5 +86,5 @@ target_link_libraries(RTXPT
 PRIVATE
     Diligent-AssetLoader
     Diligent-JSON
+    DiligentFX
 )
-

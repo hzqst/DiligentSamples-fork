@@ -45,7 +45,7 @@ struct RTXPTEnvMapConstants
     float4 ImportanceMetadata;
 };
 
-// Mirrors Diligent::SampleConstants in RTXPTSample.hpp (must keep order and layout in sync; total size 352 bytes).
+// Mirrors Diligent::SampleConstants in RTXPTFrameConstants.hpp (must keep order and layout in sync; total size 352 bytes).
 struct SampleConstants
 {
     float4x4            viewProj;

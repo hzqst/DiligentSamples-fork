@@ -9,7 +9,7 @@ if(TARGET Diligent-AssetLoader AND TARGET DiligentFX)
     add_subdirectory(Shadows)
 endif()
 
-if(TARGET Diligent-AssetLoader)
+if(TARGET Diligent-AssetLoader AND TARGET DiligentFX)
     add_subdirectory(RTXPT)
 endif()
 

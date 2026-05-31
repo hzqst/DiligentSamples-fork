@@ -35,6 +35,7 @@
 #include "RTXPTBlitPass.hpp"
 #include "RTXPTComputePass.hpp"
 #include "RTXPTEmissiveTrianglePass.hpp"
+#include "RTXPTFrameConstants.hpp"
 #include "RTXPTLights.hpp"
 #include "RTXPTLightsBaker.hpp"
 #include "RTXPTMaterials.hpp"
@@ -57,43 +58,6 @@ struct RTXPTFeatureCaps
     bool DXILCompiler                = false;
     bool SPIRVCompiler               = false;
 };
-
-struct PathTracerConstants
-{
-    Uint32 bounceCount       = 4;
-    Uint32 sampleIndex       = 0;
-    Uint32 resetAccumulation = 1;
-    Uint32 minBounceCount    = 0;
-
-    Uint32 NEEEnabled            = 1;    // Non-zero enables next-event estimation (direct light sampling).
-    Uint32 environmentNEEEnabled = 1;    // bit 0 enables environment NEE; bits 1..31 pack emissive triangle count (G4).
-    float  environmentIntensity  = 1.0f; // Scales the procedural-sky environment radiance.
-    float  lightIntensityScale   = 1.0f; // Scales analytic (punctual) light radiance.
-
-    Uint32 maxNEEBounceCount  = 16; // NEE budget clamp; default covers the full bounce budget.
-    Uint32 analyticLightCount = 0;  // CPU-side valid analytic lights; the dummy binding light is not sampled.
-    Uint32 NEEType            = 1;  // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
-    Uint32 NEECandidateSamples = 5; // G5: RIS candidate count per full sample.
-
-    Uint32 NEEFullSamples          = 1;    // G5: visibility-tested full samples.
-    Uint32 NEEMISType              = 0;    // G5 UI parity: 0=Full; approximate modes remain disabled in this plan.
-    float  fireflyFilterThreshold  = 0.0f; // G1 adaptive firefly filter; 0 disables the filter.
-    float  exposureScale           = 1.0f; // Scene camera exposure multiplier before in-raygen ACES.
-};
-static_assert(sizeof(PathTracerConstants) == 64, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
-
-struct RTXPTEnvMapConstants
-{
-    float4 LocalToWorld0      = float4{1, 0, 0, 0};
-    float4 LocalToWorld1      = float4{0, 1, 0, 0};
-    float4 LocalToWorld2      = float4{0, 0, 1, 0};
-    float4 WorldToLocal0      = float4{1, 0, 0, 0};
-    float4 WorldToLocal1      = float4{0, 1, 0, 0};
-    float4 WorldToLocal2      = float4{0, 0, 1, 0};
-    float4 ColorEnabled       = float4{1, 1, 1, 1}; // rgb = tint * intensity, w = enabled.
-    float4 ImportanceMetadata = float4{1, 1, 0, 0}; // xy = inv dim, z = base mip, w = importance enabled.
-};
-static_assert(sizeof(RTXPTEnvMapConstants) == 128, "RTXPTEnvMapConstants layout must match PathTracer/PathTracerShared.h");
 
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
 // (D:/RTXPT-fork/Rtxpt/SampleUI.h). Some fields back live controls now, while the rest
@@ -124,17 +88,6 @@ struct RTXPTReferenceUIState
     bool  EnableLDSamplerForBSDF          = true;  // Phase R5 (G9): low-discrepancy (Sobol/Owen) sampler.
     bool  EnvironmentMapEnabled           = false; // Phase R4 (G7): HDR env-map loading (procedural sky is always active).
 };
-
-struct SampleConstants
-{
-    float4x4            viewProj                  = float4x4::Identity();
-    float4x4            viewProjInv               = float4x4::Identity();
-    float4              cameraPositionAndTime     = float4{0, 0, 0, 0};
-    float4              viewportSizeAndFrameIndex = float4{0, 0, 0, 0};
-    PathTracerConstants ptConsts                  = {};
-    RTXPTEnvMapConstants envMap                   = {};
-};
-static_assert(sizeof(SampleConstants) == 352, "SampleConstants layout must match PathTracer/PathTracerShared.h");
 
 class RTXPTSample final : public SampleBase
 {

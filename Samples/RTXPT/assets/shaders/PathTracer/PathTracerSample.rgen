@@ -331,7 +331,7 @@ void main()
 }
 
 // TODO(RTXPT-Port Phase R6): Add transmission / nested dielectrics to the BSDF (currently opaque diffuse + GGX specular).
-// TODO(RTXPT-Port Phase R2/R3/R4): Add emissive-triangle area lights, light importance sampling / RIS, and HDR environment-map MIS (NEE currently uses uniform light selection + a procedural-sky cosine env sampler).
+// TODO(RTXPT-Port Phase R3/R4): Add light importance sampling / RIS (uniform analytic + emissive selection today) and HDR environment-map importance sampling + MIS (procedural-sky cosine env sampler today).
 // TODO(RTXPT-Port Phase 6): Move tone mapping from raygen into the dedicated post-process chain.
 
 #endif

@@ -107,6 +107,7 @@ Hard constraints:
 | `SampleCosineHemisphere` | `sampleCosineHemisphere` (style) | RTXPT-fork's local-frame helper differs; keep ours and record divergence |
 | (R1/G3 new) | `SampleGenerator_makeStateless` | stateless per-(pixel,vertex,sample) seed; mirrors RTXPT `UniformSampleSequenceGenerator::make`. Full Sobol/Owen deferred to R5 (G9) |
 | (R1/G3 new) | `kSampleEffect_*` | mirrors RTXPT `SampleGeneratorEffectSeed` (Base/ScatterBSDF/NextEventEstimation/NEELightSampler/RussianRoulette) |
+| (R2/G4 new) | `kSampleEffect_NEEEmissive` | fills the previously unused effect slot 4 for emissive-triangle NEE |
 
 ### T-C. Materials Layer (`Rendering/Materials/BxDF.hlsli`)
 
@@ -136,6 +137,10 @@ Hard constraints:
 | `RTXPTNormalizeDirection` | `tryNormalize` (style) | |
 | `RTXPTEvalAnalyticLight(Light, SurfacePos)` | `EvalAnalyticLight(light, surfacePos)` (style) | |
 | `RTXPTEvalSky(RayDir)` | `EnvMap::Eval(worldDir)` = RTXPT-fork | procedural sky wrapped in `namespace EnvMap` |
+| `TriangleLight` (struct) | `EmissiveTriangle` (R2/G4 backing layout) | base+edge1+edge2+radiance; normal/area recomputed |
+| `TriangleLight::CalcSample` | `PathTracer::SampleEmissiveNEE` | uniform triangle selection (RIS is R3) |
+| `SampleTriangleUniform` / `pdfAtoW` / `MAX_SOLID_ANGLE_PDF` | `SampleTriangleUniform` / `pdfAtoW` / `kMaxSolidAnglePdf` (style) | |
+| `LightsBaker` emissive triangle list | `RTXPTLights::UploadEmissiveTriangles` + `RTXPTEmissiveTrianglePass` (GPU build from current geometry) | minimal Diligent data path, not the baker |
 
 ### T-E. PathTracer Core (`PathTracer/PathTracer.hlsli`, `PathTracerHelpers.hlsli`, Raygen)
 
@@ -148,6 +153,7 @@ Hard constraints:
 | `RTXPTSampleAnalyticNEE(...)` | `PathTracer::SampleAnalyticNEE(...)` (style) | |
 | `RTXPTSampleEnvNEE(...)` | `PathTracer::SampleEnvironmentNEE(...)` (style) | |
 | `RTXPTBSDFSampledEnvMISWeight(...)` | `PathTracer::ComputeBSDFEnvMISWeight(...)` (style) | |
+| `ComputeBSDFMISForEmissiveTriangle` | raygen emissive BSDF-hit MIS (`payload.emissiveLightPdf` + power heuristic) | |
 | `ToneMapACES` | `ToneMapACES` (unchanged) | port-specific |
 
 Raygen locals become camelCase:
@@ -299,6 +305,7 @@ Raygen locals become camelCase:
 | `g_OutputColor` (rgen UAV) | `u_Output` | `RTXPTRayTracingPass.cpp` |
 | `g_AccumColor` | `u_AccumulationBuffer` | `RTXPTRayTracingPass.cpp` |
 | `g_Lights` | `t_Lights` | `RTXPTRayTracingPass.cpp` |
+| `g_EmissiveTriangles` | `t_EmissiveTriangles` | `RTXPTRayTracingPass.cpp`, `RTXPTLights.cpp` |
 | `g_SubInstanceData` | `t_SubInstanceData` | `RTXPTRayTracingPass.cpp` |
 | `g_VertexBuffer` | `t_VertexBuffer` | `RTXPTRayTracingPass.cpp` |
 | `g_IndexBuffer` | `t_IndexBuffer` | `RTXPTRayTracingPass.cpp` |
@@ -331,6 +338,11 @@ Raygen locals become camelCase:
   `ShadingData`/`StandardBSDFData` model.
 - `evalVisibilitySmithGGXCorrelated` returns `G/(4*NoV*NoL)`, not RTXPT-fork's
   bare masking `G`.
+- Emissive-triangle area lights (R2/G4) are **two-sided** (`abs(cosTheta)` in both the
+  NEE estimator and the BSDF-hit MIS), unlike RTXPT-fork's one-sided `TriangleLight`.
+  This preserves the port's pre-R2 two-sided emissive look and stays unbiased.
+  Textured-emissive triangles are excluded from NEE (BSDF-only) for now. Selection is
+  uniform (RIS/WRS is Phase R3). TODO: align one-sided + double-sided baker semantics.
 - Resource/global names follow the RTXPT-fork `t_/u_/s_/g_` prefix scheme, but
   the set here is the reference-mode subset only. `t_PTMaterialData` is the
   material-buffer resource/global name backed by the local `MaterialPTData`

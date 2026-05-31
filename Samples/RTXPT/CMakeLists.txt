@@ -45,6 +45,7 @@ set(SHADERS
     assets/shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli
     assets/shaders/PathTracer/Lighting/EnvMap.hlsli
     assets/shaders/PathTracer/Lighting/PolymorphicLight.hlsli
+    assets/shaders/PathTracer/Lighting/LightSampler.hlsli
     assets/shaders/PathTracer/Utils/SampleGenerators.hlsli
     assets/shaders/PathTracer/Rendering/Materials/BxDF.hlsli
     assets/shaders/PathTracer/PathTracerSample.rgen

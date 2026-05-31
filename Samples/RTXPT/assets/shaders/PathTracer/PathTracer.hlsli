@@ -4,9 +4,7 @@
 #include "PathTracerBridge.hlsli"
 #include "PathTracerHelpers.hlsli"
 #include "Lighting/EnvMap.hlsli"
-#include "Lighting/PolymorphicLight.hlsli"
-#include "Utils/SampleGenerators.hlsli"
-#include "Rendering/Materials/BxDF.hlsli"
+#include "Lighting/LightSampler.hlsli"
 
 static const float kVisibilityRayTMin = 1e-4;
 static const float kVisibilityRayTMax = 1e30;

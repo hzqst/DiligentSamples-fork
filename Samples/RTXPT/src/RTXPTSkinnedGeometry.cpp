@@ -35,61 +35,102 @@
 namespace Diligent
 {
 
-void RTXPTSkinnedGeometry::Reset()
+void RTXPTSkinnedSceneGeometry::Reset()
 {
     m_Nodes.clear();
     m_JointMatrices.clear();
-    m_SourceVertexBuffer.Release();
-    m_SourceSkinBuffer.Release();
+    m_AssetBindings.clear();
     m_SkinnedVertexBuffer.Release();
     m_JointMatrixBuffer.Release();
     m_SkinningConstantsCB.Release();
     m_PSO.Release();
-    m_SRB.Release();
     m_Stats = {};
 }
 
-void RTXPTSkinnedGeometry::BuildNodeTable(const GLTF::Model& Model, Uint32 SceneIndex)
+const RTXPTSkinnedSceneNodeGeometry* RTXPTSkinnedSceneGeometry::FindNode(RTXPTSceneId ModelAssetId,
+                                                                         RTXPTSceneId ModelInstanceId,
+                                                                         const GLTF::Node* pNode) const
 {
-    if (SceneIndex >= Model.Scenes.size())
-        return;
-
-    const GLTF::Scene& Scene            = Model.Scenes[SceneIndex];
-    Uint32             VertexBase       = 0;
-    Uint32             JointBase        = 0;
-    const Uint32       SourceVertexBase = Model.GetBaseVertex();
-
-    const IBuffer* pVertexBuffer    = Model.GetVertexBufferCount() > 0 ? Model.GetVertexBuffer(0) : nullptr;
-    const Uint64   VertexOffset     = Uint64{SourceVertexBase} * sizeof(RTXPTGeometryVertex);
-    const Uint32   ModelVertexCount = pVertexBuffer != nullptr && pVertexBuffer->GetDesc().Size > VertexOffset ?
-        static_cast<Uint32>((pVertexBuffer->GetDesc().Size - VertexOffset) / sizeof(RTXPTGeometryVertex)) :
-        0;
-
-    for (const GLTF::Node* pNode : Scene.LinearNodes)
+    for (const RTXPTSkinnedSceneNodeGeometry& Node : m_Nodes)
     {
-        if (pNode == nullptr || pNode->pMesh == nullptr || pNode->pSkin == nullptr)
-            continue;
-
-        const Uint32             JointCount = static_cast<Uint32>(pNode->pSkin->Joints.size());
-        RTXPTSkinnedNodeGeometry Node;
-        Node.pNode            = pNode;
-        Node.SourceVertexBase = SourceVertexBase;
-        Node.VertexBase       = VertexBase;
-        Node.VertexCount      = ModelVertexCount;
-        Node.JointBase        = JointBase;
-        Node.JointCount       = JointCount;
-        m_Nodes.push_back(Node);
-
-        VertexBase += ModelVertexCount;
-        JointBase += JointCount;
+        if (Node.ModelAssetId == ModelAssetId &&
+            Node.ModelInstanceId == ModelInstanceId &&
+            Node.pNode == pNode)
+        {
+            return &Node;
+        }
     }
-
-    m_Stats.SkinnedNodeCount   = static_cast<Uint32>(m_Nodes.size());
-    m_Stats.SkinnedVertexCount = VertexBase;
-    m_Stats.JointMatrixCount   = JointBase;
+    return nullptr;
 }
 
-bool RTXPTSkinnedGeometry::CreateBuffers(IRenderDevice* pDevice, IBuffer* pSourceVertexBuffer, IBuffer* pSourceSkinBuffer)
+bool RTXPTSkinnedSceneGeometry::BuildNodeTable(const RTXPTSceneGraphData& SceneData)
+{
+    Uint32 VertexBase = 0;
+    Uint32 JointBase  = 0;
+
+    for (Uint32 InstanceId = 0; InstanceId < SceneData.ModelInstances.size(); ++InstanceId)
+    {
+        const RTXPTModelInstance& Instance = SceneData.ModelInstances[InstanceId];
+        if (Instance.ModelAssetId >= SceneData.ModelAssets.size())
+        {
+            LOG_ERROR_MESSAGE("RTXPT skinned geometry has an invalid model asset id");
+            return false;
+        }
+
+        const RTXPTModelAsset& Asset = SceneData.ModelAssets[Instance.ModelAssetId];
+        if (!Asset.Model || Asset.SceneIndex >= Asset.Model->Scenes.size())
+        {
+            LOG_ERROR_MESSAGE("RTXPT skinned geometry has an invalid model asset");
+            return false;
+        }
+
+        const GLTF::Scene& Scene            = Asset.Model->Scenes[Asset.SceneIndex];
+        const Uint32       SourceVertexBase = Asset.Model->GetBaseVertex();
+        const IBuffer*     pVertexBuffer    = Asset.Model->GetVertexBufferCount() > 0 ? Asset.Model->GetVertexBuffer(0) : nullptr;
+        const Uint64       SourceOffset     = Uint64{SourceVertexBase} * sizeof(RTXPTGeometryVertex);
+        const Uint32       ModelVertexCount = pVertexBuffer != nullptr && pVertexBuffer->GetDesc().Size > SourceOffset ?
+            static_cast<Uint32>((pVertexBuffer->GetDesc().Size - SourceOffset) / sizeof(RTXPTGeometryVertex)) :
+            0;
+
+        bool InstanceHasSkin = false;
+        for (const GLTF::Node* pNode : Scene.LinearNodes)
+        {
+            if (pNode == nullptr || pNode->pMesh == nullptr || pNode->pSkin == nullptr)
+                continue;
+
+            if (Asset.Model->GetVertexBufferCount() <= 1 || ModelVertexCount == 0)
+            {
+                LOG_ERROR_MESSAGE("RTXPT skinned geometry requires source vertex and skin buffers");
+                return false;
+            }
+
+            RTXPTSkinnedSceneNodeGeometry Node;
+            Node.ModelAssetId    = Instance.ModelAssetId;
+            Node.ModelInstanceId = InstanceId;
+            Node.pNode           = pNode;
+            Node.SourceVertexBase = SourceVertexBase;
+            Node.VertexBase       = VertexBase;
+            Node.VertexCount      = ModelVertexCount;
+            Node.JointBase        = JointBase;
+            Node.JointCount       = static_cast<Uint32>(pNode->pSkin->Joints.size());
+            m_Nodes.push_back(Node);
+
+            VertexBase += Node.VertexCount;
+            JointBase += Node.JointCount;
+            InstanceHasSkin = true;
+        }
+
+        if (InstanceHasSkin)
+            ++m_Stats.SkinnedInstanceCount;
+    }
+
+    m_Stats.SkinningJobCount   = static_cast<Uint32>(m_Nodes.size());
+    m_Stats.SkinnedVertexCount = VertexBase;
+    m_Stats.JointMatrixCount   = JointBase;
+    return true;
+}
+
+bool RTXPTSkinnedSceneGeometry::CreateBuffers(IRenderDevice* pDevice)
 {
     const Uint32 VertexCountForBuffer = std::max<Uint32>(m_Stats.SkinnedVertexCount, 1);
 
@@ -107,15 +148,6 @@ bool RTXPTSkinnedGeometry::CreateBuffers(IRenderDevice* pDevice, IBuffer* pSourc
 
     if (m_Nodes.empty())
         return true;
-
-    if (pSourceVertexBuffer == nullptr || pSourceSkinBuffer == nullptr)
-    {
-        LOG_ERROR_MESSAGE("RTXPT skinned geometry requires source vertex and skin buffers");
-        return false;
-    }
-
-    m_SourceVertexBuffer = pSourceVertexBuffer;
-    m_SourceSkinBuffer   = pSourceSkinBuffer;
 
     BufferDesc JointDesc;
     JointDesc.Name              = "RTXPT skinned joint matrices";
@@ -138,13 +170,10 @@ bool RTXPTSkinnedGeometry::CreateBuffers(IRenderDevice* pDevice, IBuffer* pSourc
     ConstantsDesc.Size           = sizeof(SkinningConstants);
     pDevice->CreateBuffer(ConstantsDesc, nullptr, &m_SkinningConstantsCB);
     VERIFY(m_SkinningConstantsCB, "Failed to create RTXPT skinning constants");
-    if (!m_SkinningConstantsCB)
-        return false;
-
-    return true;
+    return m_SkinningConstantsCB != nullptr;
 }
 
-bool RTXPTSkinnedGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory* pEngineFactory)
+bool RTXPTSkinnedSceneGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory* pEngineFactory)
 {
     if (m_Nodes.empty())
         return true;
@@ -177,8 +206,8 @@ bool RTXPTSkinnedGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
         .AddVariable(SHADER_TYPE_COMPUTE, "cbSkinningConstants", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_COMPUTE, "t_SourceVertices", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_COMPUTE, "t_SourceSkinData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "t_SourceVertices", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE)
+        .AddVariable(SHADER_TYPE_COMPUTE, "t_SourceSkinData", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_JointMatrices", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_SkinnedVertices", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
@@ -198,29 +227,74 @@ bool RTXPTSkinnedGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory
 
     const bool Bound =
         SetStatic("cbSkinningConstants", m_SkinningConstantsCB) &&
-        SetStatic("t_SourceVertices", m_SourceVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE)) &&
-        SetStatic("t_SourceSkinData", m_SourceSkinBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE)) &&
         SetStatic("t_JointMatrices", m_JointMatrixBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE)) &&
         SetStatic("u_SkinnedVertices", m_SkinnedVertexBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
-    VERIFY(Bound, "Failed to bind RTXPT skinned vertex build resources");
-    if (!Bound)
-        return false;
+    VERIFY(Bound, "Failed to bind RTXPT skinned vertex build static resources");
+    return Bound;
+}
 
-    m_PSO->CreateShaderResourceBinding(&m_SRB, true);
-    VERIFY(m_SRB, "Failed to create RTXPT skinned vertex build SRB");
-    if (!m_SRB)
-        return false;
+bool RTXPTSkinnedSceneGeometry::CreateAssetBindings(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData)
+{
+    (void)pDevice;
+    m_AssetBindings.assign(SceneData.ModelAssets.size(), {});
+    for (Uint32 AssetId = 0; AssetId < SceneData.ModelAssets.size(); ++AssetId)
+    {
+        const RTXPTModelAsset& Asset = SceneData.ModelAssets[AssetId];
+        if (!Asset.Model)
+            continue;
+
+        bool AssetHasSkinnedNode = false;
+        for (const RTXPTSkinnedSceneNodeGeometry& Node : m_Nodes)
+        {
+            if (Node.ModelAssetId == AssetId)
+            {
+                AssetHasSkinnedNode = true;
+                break;
+            }
+        }
+        if (!AssetHasSkinnedNode)
+            continue;
+
+        if (Asset.Model->GetVertexBufferCount() <= 1)
+        {
+            LOG_ERROR_MESSAGE("RTXPT skinned scene asset is missing source vertex or skin buffers");
+            return false;
+        }
+
+        RTXPTSkinnedSceneAssetBinding& Binding = m_AssetBindings[AssetId];
+        Binding.ModelAssetId          = AssetId;
+        Binding.pSourceVertexBuffer   = Asset.Model->GetVertexBuffer(0);
+        Binding.pSourceSkinBuffer     = Asset.Model->GetVertexBuffer(1);
+        if (Binding.pSourceVertexBuffer == nullptr || Binding.pSourceSkinBuffer == nullptr)
+        {
+            LOG_ERROR_MESSAGE("RTXPT skinned scene asset is missing source vertex or skin buffers");
+            return false;
+        }
+
+        m_PSO->CreateShaderResourceBinding(&Binding.pSRB, true);
+        VERIFY(Binding.pSRB, "Failed to create RTXPT skinned vertex build SRB");
+        if (!Binding.pSRB)
+            return false;
+
+        IShaderResourceVariable* pSourceVertices = Binding.pSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "t_SourceVertices");
+        IShaderResourceVariable* pSourceSkinData = Binding.pSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "t_SourceSkinData");
+        if (pSourceVertices == nullptr || pSourceSkinData == nullptr)
+        {
+            UNEXPECTED("Failed to find RTXPT skinned source buffer variables");
+            return false;
+        }
+
+        pSourceVertices->Set(Binding.pSourceVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+        pSourceSkinData->Set(Binding.pSourceSkinBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+    }
 
     return true;
 }
 
-bool RTXPTSkinnedGeometry::Initialize(IRenderDevice*     pDevice,
-                                      IEngineFactory*    pEngineFactory,
-                                      const GLTF::Model& Model,
-                                      Uint32             SceneIndex,
-                                      IBuffer*           pSourceVertexBuffer,
-                                      IBuffer*           pSourceSkinBuffer,
-                                      bool               ComputeSupported)
+bool RTXPTSkinnedSceneGeometry::Initialize(IRenderDevice*             pDevice,
+                                           IEngineFactory*            pEngineFactory,
+                                           const RTXPTSceneGraphData& SceneData,
+                                           bool                       ComputeSupported)
 {
     Reset();
 
@@ -230,13 +304,10 @@ bool RTXPTSkinnedGeometry::Initialize(IRenderDevice*     pDevice,
         return false;
     }
 
-    BuildNodeTable(Model, SceneIndex);
-    if (!m_Nodes.empty() && (pSourceVertexBuffer == nullptr || pSourceSkinBuffer == nullptr))
-    {
-        LOG_ERROR_MESSAGE("RTXPT skinned geometry requires source vertex and skin buffers");
+    if (!BuildNodeTable(SceneData))
         return false;
-    }
-    if (!CreateBuffers(pDevice, pSourceVertexBuffer, pSourceSkinBuffer))
+
+    if (!CreateBuffers(pDevice))
         return false;
 
     if (m_Nodes.empty())
@@ -254,22 +325,29 @@ bool RTXPTSkinnedGeometry::Initialize(IRenderDevice*     pDevice,
     if (!CreatePipeline(pDevice, pEngineFactory))
         return false;
 
+    if (!CreateAssetBindings(pDevice, SceneData))
+        return false;
+
     m_Stats.Ready = true;
     return true;
 }
 
-bool RTXPTSkinnedGeometry::UploadJointMatrices(IDeviceContext* pContext, const GLTF::ModelTransforms& Transforms)
+bool RTXPTSkinnedSceneGeometry::UploadJointMatrices(IDeviceContext* pContext, const RTXPTSceneGraphData& SceneData)
 {
     m_JointMatrices.assign(std::max<Uint32>(m_Stats.JointMatrixCount, 1), float4x4::Identity());
 
-    for (const RTXPTSkinnedNodeGeometry& Node : m_Nodes)
+    for (const RTXPTSkinnedSceneNodeGeometry& Node : m_Nodes)
     {
-        if (Node.pNode == nullptr || Node.pNode->SkinTransformsIndex < 0)
+        if (Node.ModelInstanceId >= SceneData.ModelInstances.size() ||
+            Node.pNode == nullptr ||
+            Node.pNode->SkinTransformsIndex < 0)
         {
             LOG_ERROR_MESSAGE("RTXPT skinned node is missing skin transform data");
             return false;
         }
 
+        const RTXPTModelInstance& Instance  = SceneData.ModelInstances[Node.ModelInstanceId];
+        const GLTF::ModelTransforms& Transforms = Instance.Transforms;
         const Uint32 SkinIndex = static_cast<Uint32>(Node.pNode->SkinTransformsIndex);
         if (SkinIndex >= Transforms.Skins.size())
         {
@@ -297,7 +375,7 @@ bool RTXPTSkinnedGeometry::UploadJointMatrices(IDeviceContext* pContext, const G
     return true;
 }
 
-bool RTXPTSkinnedGeometry::Update(IDeviceContext* pContext, const GLTF::ModelTransforms& Transforms)
+bool RTXPTSkinnedSceneGeometry::Update(IDeviceContext* pContext, const RTXPTSceneGraphData& SceneData)
 {
     m_Stats.LastDispatchExecuted = false;
 
@@ -313,13 +391,19 @@ bool RTXPTSkinnedGeometry::Update(IDeviceContext* pContext, const GLTF::ModelTra
         return false;
     }
 
-    if (!UploadJointMatrices(pContext, Transforms))
+    if (!UploadJointMatrices(pContext, SceneData))
         return false;
 
     pContext->SetPipelineState(m_PSO);
 
-    for (const RTXPTSkinnedNodeGeometry& Node : m_Nodes)
+    for (const RTXPTSkinnedSceneNodeGeometry& Node : m_Nodes)
     {
+        if (Node.ModelAssetId >= m_AssetBindings.size() || !m_AssetBindings[Node.ModelAssetId].pSRB)
+        {
+            LOG_ERROR_MESSAGE("RTXPT skinned geometry is missing an asset binding");
+            return false;
+        }
+
         SkinningConstants Constants;
         Constants.SourceVertexBase = Node.SourceVertexBase;
         Constants.DestVertexBase   = Node.VertexBase;
@@ -335,7 +419,8 @@ bool RTXPTSkinnedGeometry::Update(IDeviceContext* pContext, const GLTF::ModelTra
             *Mapped = Constants;
         }
 
-        pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        pContext->CommitShaderResources(m_AssetBindings[Node.ModelAssetId].pSRB,
+                                        RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
         DispatchComputeAttribs DispatchAttribs;
         DispatchAttribs.ThreadGroupCountX = (Node.VertexCount + 127u) / 128u;

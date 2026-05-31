@@ -516,14 +516,30 @@ void RTXPTScene::CacheSceneData()
     m_ModelPath  = pAsset->ResolvedPath;
     m_Transforms = pInstance != nullptr ? pInstance->Transforms : pAsset->StaticTransforms;
 
-    const GLTF::Scene& Scene = pAsset->Model->Scenes[pAsset->SceneIndex];
-    m_MeshNodeCount          = CountMeshNodes(Scene);
-    m_PrimitiveCount         = CountPrimitives(Scene);
-    m_MaterialCount          = static_cast<Uint32>(pAsset->Model->Materials.size());
-    m_LightCount             = CountLightNodes(Scene);
-    m_GeometryStats          = ComputeGeometryStats(Scene, *pAsset->Model);
-    m_AnimationIndex         = m_GeometryStats.HasAnimations ? 0 : -1;
-    m_GeometryDirty          = m_GeometryStats.HasSkinnedGeometry;
+    m_MeshNodeCount  = 0;
+    m_PrimitiveCount = 0;
+    m_MaterialCount  = 0;
+    m_LightCount     = static_cast<Uint32>(m_SceneGraph.Lights.size());
+    m_GeometryStats  = {};
+    for (const RTXPTModelAsset& Asset : m_SceneGraph.ModelAssets)
+    {
+        if (!Asset.Model || Asset.SceneIndex >= Asset.Model->Scenes.size())
+            continue;
+
+        const GLTF::Scene& Scene = Asset.Model->Scenes[Asset.SceneIndex];
+        m_MeshNodeCount += CountMeshNodes(Scene);
+        m_PrimitiveCount += CountPrimitives(Scene);
+        m_MaterialCount += static_cast<Uint32>(Asset.Model->Materials.size());
+
+        const RTXPTSceneGeometryStats AssetStats = ComputeGeometryStats(Scene, *Asset.Model);
+        m_GeometryStats.HasAnimations |= AssetStats.HasAnimations;
+        m_GeometryStats.HasSkinnedGeometry |= AssetStats.HasSkinnedGeometry;
+        m_GeometryStats.SkinnedNodeCount += AssetStats.SkinnedNodeCount;
+        m_GeometryStats.SkinnedPrimitiveCount += AssetStats.SkinnedPrimitiveCount;
+        m_GeometryStats.SkinnedVertexCount += AssetStats.SkinnedVertexCount;
+    }
+    m_AnimationIndex = m_GeometryStats.HasAnimations ? 0 : -1;
+    m_GeometryDirty  = m_GeometryStats.HasSkinnedGeometry;
 
     m_VertexStride0 = 0;
     if (pAsset->Model->GetVertexBufferCount() > 0)
@@ -754,31 +770,48 @@ void RTXPTScene::Update(double CurrTime, double ElapsedTime)
         return;
     }
 
-    RTXPTModelInstance& Instance = m_SceneGraph.ModelInstances.front();
-    if (Instance.ModelAssetId >= m_SceneGraph.ModelAssets.size())
+    bool GeometryDirty = false;
+    for (RTXPTModelInstance& Instance : m_SceneGraph.ModelInstances)
     {
-        m_GeometryDirty = false;
-        return;
+        if (Instance.ModelAssetId >= m_SceneGraph.ModelAssets.size())
+            continue;
+
+        RTXPTModelAsset& Asset = m_SceneGraph.ModelAssets[Instance.ModelAssetId];
+        if (!Asset.Model)
+            continue;
+
+        if (Instance.Animation.Enabled && !Asset.Model->Animations.empty())
+        {
+            if (Instance.Animation.AnimationIndex < 0)
+                Instance.Animation.AnimationIndex = 0;
+
+            if (Instance.Animation.AnimationIndex < 0 ||
+                static_cast<Uint32>(Instance.Animation.AnimationIndex) >= Asset.Model->Animations.size())
+            {
+                Instance.Animation.AnimationIndex = 0;
+            }
+
+            const GLTF::Animation& Animation = Asset.Model->Animations[static_cast<Uint32>(Instance.Animation.AnimationIndex)];
+            const float            Duration  = std::max(Animation.End - Animation.Start, 1e-5f);
+            Instance.Animation.Time += static_cast<float>(ElapsedTime) * Instance.Animation.PlaySpeed;
+            const float WrappedTime = Animation.Start + std::fmod(Instance.Animation.Time + Instance.Animation.TimeOffset, Duration);
+
+            Asset.Model->ComputeTransforms(Asset.SceneIndex,
+                                           Instance.Transforms,
+                                           Instance.GlobalTransform,
+                                           Instance.Animation.AnimationIndex,
+                                           WrappedTime);
+            GeometryDirty = true;
+        }
+        else if (Instance.Transforms.NodeGlobalMatrices.empty())
+        {
+            Asset.Model->ComputeTransforms(Asset.SceneIndex, Instance.Transforms, Instance.GlobalTransform);
+        }
     }
 
-    RTXPTModelAsset& Asset = m_SceneGraph.ModelAssets[Instance.ModelAssetId];
-    if (!Asset.Model || m_AnimationIndex < 0 || !m_GeometryStats.HasSkinnedGeometry)
-    {
-        m_GeometryDirty = false;
-        return;
-    }
-
-    if (m_AnimationIndex >= static_cast<Int32>(Asset.Model->Animations.size()))
-        m_AnimationIndex = 0;
-
-    const GLTF::Animation& Animation = Asset.Model->Animations[static_cast<Uint32>(m_AnimationIndex)];
-    const float            Duration  = std::max(Animation.End - Animation.Start, 1e-5f);
-    m_AnimationTime += static_cast<float>(ElapsedTime);
-    const float WrappedTime = Animation.Start + std::fmod(m_AnimationTime, Duration);
-
-    Asset.Model->ComputeTransforms(Asset.SceneIndex, Instance.Transforms, Instance.GlobalTransform, m_AnimationIndex, WrappedTime);
-    m_Transforms    = Instance.Transforms;
-    m_GeometryDirty = true;
+    if (!m_SceneGraph.ModelInstances.empty())
+        m_Transforms = m_SceneGraph.ModelInstances.front().Transforms;
+    m_GeometryDirty = GeometryDirty;
 }
 
 bool RTXPTScene::HasValidContent() const

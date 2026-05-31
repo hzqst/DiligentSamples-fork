@@ -144,7 +144,7 @@ private:
     RTXPTMaterials              m_Materials;
     RTXPTLights                 m_Lights;
     RTXPTAccelerationStructures m_AccelerationStructures;
-    RTXPTSkinnedGeometry        m_SkinnedGeometry;
+    RTXPTSkinnedSceneGeometry   m_SkinnedGeometry;
     RTXPTRenderTargets          m_RenderTargets;
     RTXPTRayTracingPass         m_RayTracingPass;
     RTXPTComputePass            m_DebugComputePass;

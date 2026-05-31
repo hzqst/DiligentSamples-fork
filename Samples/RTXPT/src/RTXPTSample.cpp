@@ -230,27 +230,23 @@ bool RTXPTSample::RebuildSceneDependentResources()
     }
 
     bool ResourcesReady = true;
+    const RTXPTSceneGraphData& SceneData = m_Scene.GetSceneGraphData();
     if (m_Scene.HasSkinnedGeometry() && m_Scene.HasAnimation())
     {
         // Seed the initial animated pose before scene-dependent resources snapshot transforms.
         m_Scene.Update(0.0, 0.0);
     }
 
-    const RTXPTSceneGraphData& SceneData = m_Scene.GetSceneGraphData();
     ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData);
     ResourcesReady &= m_Lights.Upload(m_pDevice, SceneData);
 
-    ResourcesReady &=
-        m_SkinnedGeometry.Initialize(m_pDevice,
-                                     m_pEngineFactory,
-                                     *pModel,
-                                     m_Scene.GetSceneIndex(),
-                                     m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
-                                     m_Scene.GetSkinningBuffer(m_pDevice, m_pImmediateContext),
-                                     m_FeatureCaps.ComputeShaders);
+    ResourcesReady &= m_SkinnedGeometry.Initialize(m_pDevice,
+                                                   m_pEngineFactory,
+                                                   SceneData,
+                                                   m_FeatureCaps.ComputeShaders);
 
     if (m_SkinnedGeometry.HasSkinnedGeometry() && m_SkinnedGeometry.IsReady())
-        ResourcesReady &= m_SkinnedGeometry.Update(m_pImmediateContext, m_Scene.GetTransforms());
+        ResourcesReady &= m_SkinnedGeometry.Update(m_pImmediateContext, SceneData);
 
     ResourcesReady &=
         m_AccelerationStructures.BuildScene(m_pDevice,
@@ -598,7 +594,8 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
     m_Scene.Update(CurrTime, ElapsedTime);
     if (m_Scene.IsGeometryDirty() && m_SkinnedGeometry.HasSkinnedGeometry() && m_SkinnedGeometry.IsReady())
     {
-        const bool SkinningExecuted = m_SkinnedGeometry.Update(m_pImmediateContext, m_Scene.GetTransforms());
+        const RTXPTSceneGraphData& SceneData = m_Scene.GetSceneGraphData();
+        const bool SkinningExecuted = m_SkinnedGeometry.Update(m_pImmediateContext, SceneData);
         const bool ASUpdated =
             SkinningExecuted &&
             m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, m_SkinnedGeometry, m_Scene.GetTransforms());

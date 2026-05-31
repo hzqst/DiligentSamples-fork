@@ -527,16 +527,19 @@ bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLi
         Control.BakerPadding[BaseIndex + 2] = FloatAsUint(Value.z);
         Control.BakerPadding[BaseIndex + 3] = FloatAsUint(Value.w);
     };
-    WriteFloat4(72u, Settings.EnvMapParams.Transform.Row0);
-    WriteFloat4(76u, Settings.EnvMapParams.Transform.Row1);
-    WriteFloat4(80u, Settings.EnvMapParams.Transform.Row2);
-    WriteFloat4(84u, Settings.EnvMapParams.InvTransform.Row0);
-    WriteFloat4(88u, Settings.EnvMapParams.InvTransform.Row1);
-    WriteFloat4(92u, Settings.EnvMapParams.InvTransform.Row2);
-    Control.BakerPadding[96]           = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.x);
-    Control.BakerPadding[97]           = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.y);
-    Control.BakerPadding[98]           = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.z);
-    Control.BakerPadding[99]           = FloatAsUint(Settings.EnvMapParams.Enabled);
+    constexpr Uint32 EnvMapParamsBase = 88u;
+    constexpr Uint32 EnvMapColorBase  = EnvMapParamsBase + 24u;
+    // EnvMapParams follows the scalar controls, frustum planes, and frustum corners in LightsBakerConstants.
+    WriteFloat4(EnvMapParamsBase + 0u, Settings.EnvMapParams.Transform.Row0);
+    WriteFloat4(EnvMapParamsBase + 4u, Settings.EnvMapParams.Transform.Row1);
+    WriteFloat4(EnvMapParamsBase + 8u, Settings.EnvMapParams.Transform.Row2);
+    WriteFloat4(EnvMapParamsBase + 12u, Settings.EnvMapParams.InvTransform.Row0);
+    WriteFloat4(EnvMapParamsBase + 16u, Settings.EnvMapParams.InvTransform.Row1);
+    WriteFloat4(EnvMapParamsBase + 20u, Settings.EnvMapParams.InvTransform.Row2);
+    Control.BakerPadding[EnvMapColorBase + 0u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.x);
+    Control.BakerPadding[EnvMapColorBase + 1u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.y);
+    Control.BakerPadding[EnvMapColorBase + 2u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.z);
+    Control.BakerPadding[EnvMapColorBase + 3u] = FloatAsUint(Settings.EnvMapParams.Enabled);
 
     BufferDesc Desc;
     Desc.Name              = "RTXPT LightsBaker control buffer";

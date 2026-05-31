@@ -40,10 +40,10 @@ namespace Diligent
 namespace
 {
 
-constexpr float kDefaultCameraNearPlane      = 1.0f;
-constexpr float kMinClipPlaneSeparation      = 1e-3f;
-constexpr const char* kPreferredSceneName    = "bistro-programmer-art.scene.json";
-constexpr const char* kSceneFileSuffix       = ".scene.json";
+constexpr float       kDefaultCameraNearPlane = 1.0f;
+constexpr float       kMinClipPlaneSeparation = 1e-3f;
+constexpr const char* kPreferredSceneName     = "bistro-programmer-art.scene.json";
+constexpr const char* kSceneFileSuffix        = ".scene.json";
 
 RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
 {
@@ -94,12 +94,12 @@ std::vector<std::string> EnumerateSceneFiles(const std::string& AssetsRoot)
 {
     std::vector<std::string> SceneFiles;
 
-    std::error_code Error;
+    std::error_code             Error;
     const std::filesystem::path RootPath{AssetsRoot};
     if (!std::filesystem::is_directory(RootPath, Error))
         return SceneFiles;
 
-    std::filesystem::directory_iterator It{RootPath, Error};
+    std::filesystem::directory_iterator       It{RootPath, Error};
     const std::filesystem::directory_iterator End;
     while (!Error && It != End)
     {
@@ -279,7 +279,7 @@ bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload
     m_CurrentSceneName = SceneName;
     ResetSceneDependentResources();
 
-    const bool SceneLoaded = m_Scene.LoadScene(m_pDevice, m_pImmediateContext, m_AssetsRoot, SceneName);
+    const bool SceneLoaded    = m_Scene.LoadScene(m_pDevice, m_pImmediateContext, m_AssetsRoot, SceneName);
     const bool ResourcesReady = SceneLoaded && RebuildSceneDependentResources();
     if (!SceneLoaded)
         CreatePhase4Passes();

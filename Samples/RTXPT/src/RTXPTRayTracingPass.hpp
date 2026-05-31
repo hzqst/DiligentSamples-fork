@@ -46,19 +46,19 @@ namespace Diligent
 
 struct RTXPTRayTracingPassStats
 {
-    bool        Ready                 = false;
-    bool        LastTraceExecuted     = false;
-    bool        MaterialBridgeBound   = false;
-    bool        SubInstanceBound      = false;
-    bool        LightBridgeBound      = false;
-    bool        VertexBufferBound     = false;
+    bool        Ready                    = false;
+    bool        LastTraceExecuted        = false;
+    bool        MaterialBridgeBound      = false;
+    bool        SubInstanceBound         = false;
+    bool        LightBridgeBound         = false;
+    bool        VertexBufferBound        = false;
     bool        SkinnedVertexBufferBound = false;
-    bool        IndexBufferBound      = false;
-    bool        AccumulationBound     = false;
-    bool        MaterialTexturesBound = false;
-    bool        AnyHitEnabled         = false;
-    Uint32      MaterialTextureCount  = 0;
-    Uint32      TraceCount            = 0;
+    bool        IndexBufferBound         = false;
+    bool        AccumulationBound        = false;
+    bool        MaterialTexturesBound    = false;
+    bool        AnyHitEnabled            = false;
+    Uint32      MaterialTextureCount     = 0;
+    Uint32      TraceCount               = 0;
     std::string DisabledReason;
     std::string LastError;
 };

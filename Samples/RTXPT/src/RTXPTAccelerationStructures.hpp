@@ -78,14 +78,14 @@ class RTXPTAccelerationStructures
 public:
     void Reset();
 
-    bool BuildScene(IRenderDevice*                 pDevice,
-                    IDeviceContext*                pContext,
-                    const GLTF::Model&             Model,
-                    Uint32                         SceneIndex,
-                    VALUE_TYPE                     IndexType,
-                    const GLTF::ModelTransforms&   Transforms,
-                    const RTXPTSkinnedGeometry*    pSkinnedGeometry,
-                    bool                           RayTracingSupported);
+    bool BuildScene(IRenderDevice*               pDevice,
+                    IDeviceContext*              pContext,
+                    const GLTF::Model&           Model,
+                    Uint32                       SceneIndex,
+                    VALUE_TYPE                   IndexType,
+                    const GLTF::ModelTransforms& Transforms,
+                    const RTXPTSkinnedGeometry*  pSkinnedGeometry,
+                    bool                         RayTracingSupported);
 
     bool BuildStaticScene(IRenderDevice*               pDevice,
                           IDeviceContext*              pContext,
@@ -120,8 +120,8 @@ private:
         std::vector<std::string>           GeometryNames;
         std::vector<BLASBuildTriangleData> TriangleData;
         const GLTF::Node*                  pNode                 = nullptr;
-        Uint32                             GeometryCount = 0;
-        bool                               Dynamic       = false;
+        Uint32                             GeometryCount         = 0;
+        bool                               Dynamic               = false;
         Uint32                             SkinningDispatchCount = 0;
         Uint32                             InstanceIndex         = 0;
     };

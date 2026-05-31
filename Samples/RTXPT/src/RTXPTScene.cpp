@@ -443,9 +443,9 @@ bool RTXPTScene::LoadSceneCameras(const std::string& ScenePath)
     RTXPTSceneCamera CameraDefaults;
     if (!m_Cameras.empty())
     {
-        CameraDefaults.VerticalFov = m_Cameras.front().VerticalFov;
-        CameraDefaults.NearPlane   = m_Cameras.front().NearPlane;
-        CameraDefaults.FarPlane    = m_Cameras.front().FarPlane;
+        CameraDefaults.VerticalFov           = m_Cameras.front().VerticalFov;
+        CameraDefaults.NearPlane             = m_Cameras.front().NearPlane;
+        CameraDefaults.FarPlane              = m_Cameras.front().FarPlane;
         CameraDefaults.HasExplicitClipPlanes = m_Cameras.front().HasExplicitClipPlanes;
     }
     AppendAnimatedCameras(SceneJson, CameraDefaults, m_Cameras);
@@ -453,7 +453,7 @@ bool RTXPTScene::LoadSceneCameras(const std::string& ScenePath)
     return !m_Cameras.empty();
 }
 
-bool RTXPTScene::LoadScene(IRenderDevice*      pDevice,
+bool RTXPTScene::LoadScene(IRenderDevice*     pDevice,
                            IDeviceContext*    pContext,
                            const std::string& AssetsRoot,
                            const std::string& SceneName)

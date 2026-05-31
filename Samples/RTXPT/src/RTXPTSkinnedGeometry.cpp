@@ -61,8 +61,8 @@ void RTXPTSkinnedGeometry::BuildNodeTable(const GLTF::Model& Model, Uint32 Scene
     const IBuffer* pVertexBuffer    = Model.GetVertexBufferCount() > 0 ? Model.GetVertexBuffer(0) : nullptr;
     const Uint64   VertexOffset     = Uint64{SourceVertexBase} * sizeof(RTXPTGeometryVertex);
     const Uint32   ModelVertexCount = pVertexBuffer != nullptr && pVertexBuffer->GetDesc().Size > VertexOffset ?
-          static_cast<Uint32>((pVertexBuffer->GetDesc().Size - VertexOffset) / sizeof(RTXPTGeometryVertex)) :
-          0;
+        static_cast<Uint32>((pVertexBuffer->GetDesc().Size - VertexOffset) / sizeof(RTXPTGeometryVertex)) :
+        0;
 
     for (const GLTF::Node* pNode : Scene.LinearNodes)
     {

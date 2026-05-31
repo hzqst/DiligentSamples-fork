@@ -275,15 +275,15 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
     if (!FullPathTracer)
     {
-        m_Stats.MaterialBridgeBound   = true;
-        m_Stats.SubInstanceBound      = true;
-        m_Stats.LightBridgeBound      = true;
-        m_Stats.VertexBufferBound     = true;
+        m_Stats.MaterialBridgeBound      = true;
+        m_Stats.SubInstanceBound         = true;
+        m_Stats.LightBridgeBound         = true;
+        m_Stats.VertexBufferBound        = true;
         m_Stats.SkinnedVertexBufferBound = true;
-        m_Stats.IndexBufferBound      = true;
-        m_Stats.MaterialTexturesBound = true;
-        m_Stats.MaterialTextureCount  = 0;
-        m_Stats.AnyHitEnabled         = false;
+        m_Stats.IndexBufferBound         = true;
+        m_Stats.MaterialTexturesBound    = true;
+        m_Stats.MaterialTextureCount     = 0;
+        m_Stats.AnyHitEnabled            = false;
     }
 
     IDeviceObject* pMaterialsView   = pMaterialBuffer != nullptr ? pMaterialBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
@@ -325,7 +325,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_VertexBuffer", pVertexView, "vertex buffer");
         m_Stats.SkinnedVertexBufferBound =
             SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
-        m_Stats.IndexBufferBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_IndexBuffer", m_IndexBufferView, "index buffer");
+        m_Stats.IndexBufferBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_IndexBuffer", m_IndexBufferView, "index buffer");
 
         if (UseTextures)
         {

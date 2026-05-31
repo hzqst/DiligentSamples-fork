@@ -379,7 +379,7 @@ bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, 
         {
             if (!SourceLoadError.empty())
                 m_Stats.LastError = SourceLoadError;
-            else
+            else if (m_Stats.ImportanceReady)
                 m_Stats.LastError.clear();
         }
     }

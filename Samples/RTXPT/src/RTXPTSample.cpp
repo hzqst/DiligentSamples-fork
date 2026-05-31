@@ -356,10 +356,16 @@ bool RTXPTSample::RebuildSceneDependentResources()
                                             m_FeatureCaps.RayTracing);
 
     if (ResourcesReady)
+    {
         m_Scene.ClearGeometryDirty();
-    CreatePhase4Passes();
-    if (ResourcesReady)
+        CreatePhase4Passes();
         ResourcesReady &= BuildEmissiveTriangles();
+    }
+    else
+    {
+        m_RayTracingPass.Reset();
+        m_EmissiveTrianglePass.Reset();
+    }
     return ResourcesReady;
 }
 
@@ -607,6 +613,8 @@ bool RTXPTSample::UpdateLightsBaker(bool ResetFeedback)
     const bool Updated = m_LightsBaker.UpdateBegin(m_pDevice, m_Lights, BakerSettings);
     if (Updated)
         m_LightsBakerSettingsDirty = false;
+    else
+        m_LightsBakerSettingsDirty = true;
     return Updated;
 }
 
@@ -868,10 +876,19 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
         RequestAccumulationReset("Window resized");
         if (m_Scene.HasValidContent())
         {
-            UpdateEnvMapBaker(false);
-            m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, Width, Height, m_FeatureCaps.ComputeShaders);
-            UpdateLightsBaker(true);
-            CreatePhase4Passes();
+            const bool EnvUpdated           = UpdateEnvMapBaker(false);
+            const bool LightsResourcesReady =
+                m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, Width, Height, m_FeatureCaps.ComputeShaders);
+            const bool LightsUpdated = LightsResourcesReady && UpdateLightsBaker(true);
+            if (EnvUpdated && LightsUpdated)
+                CreatePhase4Passes();
+            else
+            {
+                if (!LightsResourcesReady)
+                    m_LightsBakerSettingsDirty = true;
+                m_RayTracingPass.Reset();
+                m_EmissiveTrianglePass.Reset();
+            }
         }
     }
 }

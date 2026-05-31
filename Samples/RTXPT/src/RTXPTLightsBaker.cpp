@@ -182,6 +182,7 @@ bool RTXPTLightsBaker::CreateResources(IRenderDevice* pDevice, IEngineFactory* p
 
 bool RTXPTLightsBaker::UpdateBegin(IRenderDevice* pDevice, const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings)
 {
+    m_Stats.Ready = false;
     m_ControlBuffer.Release();
     m_LightProxyCounters.Release();
     m_LightSamplingProxies.Release();

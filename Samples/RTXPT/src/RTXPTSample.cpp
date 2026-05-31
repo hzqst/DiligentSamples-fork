@@ -898,6 +898,13 @@ void RTXPTSample::UpdateUI()
         if (m_AvailableScenes.empty())
             ImGui::TextWrapped("No RTXPT scene files found under assets root: %s", m_AssetsRoot.c_str());
 
+        const RTXPTSceneGeometryStats& GeometryStats = m_Scene.GetGeometryStats();
+        ImGui::BeginDisabled(!GeometryStats.HasAnimations);
+        ResetOnChange(ImGui::Checkbox("Enable animations", &m_EnableSceneAnimations), "Scene animations toggled");
+        ImGui::EndDisabled();
+        if (!GeometryStats.HasAnimations)
+            PlaceholderTooltip("This scene does not contain animations.");
+
         ImGui::Text("Scene: %s", m_Scene.HasValidContent() ? "loaded" : "missing");
         ImGui::Text("Scene file: %s", m_Scene.GetLoadedSceneName().empty() ? "none" : m_Scene.GetLoadedSceneName().c_str());
         ImGui::Text("Model path: %s", m_Scene.GetModelPath().empty() ? "none" : m_Scene.GetModelPath().c_str());
@@ -958,7 +965,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Primitives: %u", m_Scene.GetPrimitiveCount());
         ImGui::Text("Materials: %u", m_Materials.GetStats().MaterialCount);
         ImGui::Text("Lights: %u", m_Lights.GetStats().LightCount);
-        const RTXPTSceneGeometryStats& GeometryStats = m_Scene.GetGeometryStats();
         ImGui::Text("Animations: %s", GeometryStats.HasAnimations ? "yes" : "no");
         ImGui::Text("Skinned nodes: %u", GeometryStats.SkinnedNodeCount);
         ImGui::Text("Skinned primitives: %u", GeometryStats.SkinnedPrimitiveCount);

@@ -173,6 +173,7 @@ private:
     bool                        m_HasLastCameraMatrices    = false;
     bool                        m_LightsBakerSettingsDirty = false;
     bool                        m_EnvMapBakerDirty         = true;
+    bool                        m_EnvMapBakerSettingsDirty = true;
 };
 
 } // namespace Diligent

@@ -257,7 +257,8 @@ void RTXPTSample::ApplySceneEnvironmentSettings()
         }
     }
 
-    m_EnvMapBakerDirty = true;
+    m_EnvMapBakerDirty         = true;
+    m_EnvMapBakerSettingsDirty = true;
 }
 
 void RTXPTSample::ResetSceneDependentResources()
@@ -284,6 +285,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_EmissiveTrianglesDirty = true;
     m_LightsBakerSettingsDirty = false;
     m_EnvMapBakerDirty         = true;
+    m_EnvMapBakerSettingsDirty = true;
 }
 
 bool RTXPTSample::UpdateEnvMapBaker(bool ForceRebuild)
@@ -300,7 +302,10 @@ bool RTXPTSample::UpdateEnvMapBaker(bool ForceRebuild)
                                               m_AssetsRoot, m_EnvMapSettings, ForceRebuild || m_EnvMapBakerDirty,
                                               m_FeatureCaps.ComputeShaders);
     if (Updated)
+    {
         m_EnvMapBakerDirty = false;
+        m_EnvMapBakerSettingsDirty = false;
+    }
     return Updated;
 }
 
@@ -828,14 +833,17 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
         }
     }
 
-    if (m_EnvMapBakerDirty && UpdateEnvMapBaker(true))
+    bool RecreatePhase4Passes = false;
+    if ((m_EnvMapBakerDirty || m_EnvMapBakerSettingsDirty) && UpdateEnvMapBaker(m_EnvMapBakerDirty))
     {
         m_LightsBakerSettingsDirty = true;
-        CreatePhase4Passes();
         RequestAccumulationReset("Environment map changed");
     }
 
     if (m_LightsBakerSettingsDirty && UpdateLightsBaker(true))
+        RecreatePhase4Passes = true;
+
+    if (RecreatePhase4Passes)
         CreatePhase4Passes();
 
     UpdateFrameConstants(CurrTime);
@@ -1063,7 +1071,8 @@ void RTXPTSample::UpdateUI()
         ImGui::EndDisabled();
         PlaceholderTooltip("HDR environment-map loading lands in Phase R4; a procedural sky is always active.");
 
-        ResetOnChange(ImGui::SliderFloat("Intensity", &m_EnvIntensity, 0.0f, 5.0f), "Environment intensity changed");
+        if (ResetOnChange(ImGui::SliderFloat("Intensity", &m_EnvIntensity, 0.0f, 5.0f), "Environment intensity changed"))
+            m_EnvMapBakerSettingsDirty = true;
 
         ImGui::Unindent(Indent);
     }

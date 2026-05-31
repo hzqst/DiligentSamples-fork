@@ -49,6 +49,25 @@ float LightTypeToShaderValue(GLTF::Light::TYPE Type)
     }
 }
 
+float DegreesToRadians(float AngleInDegrees)
+{
+    return AngleInDegrees * (PI_F / 180.0f);
+}
+
+float ReadRTXPTSpotAngleRadians(const nlohmann::json& Json, const char* DegreesKey, const char* LegacyRadiansKey, float DefaultDegrees = 0.0f)
+{
+    const auto DegreesIt = Json.find(DegreesKey);
+    if (DegreesIt != Json.end() && DegreesIt->is_number())
+        return DegreesToRadians(DegreesIt->get<float>());
+
+    // Legacy fallback keeps the old glTF-style cone field names in their original units.
+    const auto LegacyIt = Json.find(LegacyRadiansKey);
+    if (LegacyIt != Json.end() && LegacyIt->is_number())
+        return LegacyIt->get<float>();
+
+    return DegreesToRadians(DefaultDegrees);
+}
+
 PolymorphicLightInfo MakeLightData(const GLTF::Light& Light, const float4x4& NodeTransform)
 {
     PolymorphicLightInfo Data;
@@ -142,8 +161,8 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& Scen
                                       -LightMeta.GlobalTransform._32,
                                       -LightMeta.GlobalTransform._33,
                                       0.0f};
-        Light.spotAngles     = float4{ReadRTXPTOptionalFloat(LightMeta.RawJson, "innerConeAngle", 0.0f),
-                                      ReadRTXPTOptionalFloat(LightMeta.RawJson, "outerConeAngle", 0.0f),
+        Light.spotAngles     = float4{ReadRTXPTSpotAngleRadians(LightMeta.RawJson, "innerAngle", "innerConeAngle"),
+                                      ReadRTXPTSpotAngleRadians(LightMeta.RawJson, "outerAngle", "outerConeAngle"),
                                       0.0f,
                                       0.0f};
 

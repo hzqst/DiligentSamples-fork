@@ -51,6 +51,7 @@ struct RTXPTRayTracingPassStats
     bool        MaterialBridgeBound      = false;
     bool        SubInstanceBound         = false;
     bool        LightBridgeBound         = false;
+    bool        LightProxyBridgeBound    = false;
     bool        EmissiveLightBridgeBound = false;
     bool        VertexBufferBound        = false;
     bool        SkinnedVertexBufferBound = false;
@@ -75,6 +76,7 @@ public:
                     IBuffer*              pMaterialBuffer,
                     IBuffer*              pSubInstanceBuffer,
                     IBuffer*              pLightBuffer,
+                    IBuffer*              pLightProxyBuffer,
                     IBuffer*              pEmissiveTriangleBuffer,
                     IBuffer*              pVertexBuffer,
                     IBuffer*              pSkinnedVertexBuffer,

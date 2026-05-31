@@ -67,6 +67,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                                      IBuffer*              pMaterialBuffer,
                                      IBuffer*              pSubInstanceBuffer,
                                      IBuffer*              pLightBuffer,
+                                     IBuffer*              pLightProxyBuffer,
                                      IBuffer*              pEmissiveTriangleBuffer,
                                      IBuffer*              pVertexBuffer,
                                      IBuffer*              pSkinnedVertexBuffer,
@@ -224,6 +225,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             .AddVariable(HitStages, "t_SkinnedVertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(HitStages, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(SHADER_TYPE_RAY_GEN, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(SHADER_TYPE_RAY_GEN, "t_LightProxies", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
     }
 
@@ -274,6 +276,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         m_Stats.MaterialBridgeBound      = true;
         m_Stats.SubInstanceBound         = true;
         m_Stats.LightBridgeBound         = true;
+        m_Stats.LightProxyBridgeBound    = true;
         m_Stats.EmissiveLightBridgeBound = true;
         m_Stats.VertexBufferBound        = true;
         m_Stats.SkinnedVertexBufferBound = true;
@@ -286,6 +289,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     IDeviceObject* pMaterialsView   = pMaterialBuffer != nullptr ? pMaterialBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pSubInstanceView = pSubInstanceBuffer != nullptr ? pSubInstanceBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pLightsView      = pLightBuffer != nullptr ? pLightBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+    IDeviceObject* pLightProxyView  = pLightProxyBuffer != nullptr ? pLightProxyBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pEmissiveView =
         pEmissiveTriangleBuffer != nullptr ? pEmissiveTriangleBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pVertexView =
@@ -319,6 +323,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         m_Stats.MaterialBridgeBound = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_PTMaterialData", pMaterialsView, "material buffer");
         m_Stats.SubInstanceBound    = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
         m_Stats.LightBridgeBound    = SetStatic(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer");
+        m_Stats.LightProxyBridgeBound =
+            SetStatic(SHADER_TYPE_RAY_GEN, "t_LightProxies", pLightProxyView, "light proxy buffer");
         m_Stats.EmissiveLightBridgeBound =
             SetStatic(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer");
         m_Stats.VertexBufferBound   = SetStatic(SHADER_TYPE_RAY_CLOSEST_HIT, "t_VertexBuffer", pVertexView, "vertex buffer");
@@ -342,7 +348,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     }
 
     if (!m_Stats.MaterialBridgeBound || !m_Stats.SubInstanceBound || !m_Stats.LightBridgeBound ||
-        !m_Stats.EmissiveLightBridgeBound ||
+        !m_Stats.LightProxyBridgeBound || !m_Stats.EmissiveLightBridgeBound ||
         !m_Stats.VertexBufferBound || !m_Stats.SkinnedVertexBufferBound || !m_Stats.IndexBufferBound)
         return false;
 

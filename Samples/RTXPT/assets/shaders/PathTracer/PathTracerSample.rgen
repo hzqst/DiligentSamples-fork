@@ -211,7 +211,6 @@ void main()
     const uint maxNEEBounces  = min(g_Const.ptConsts.maxNEEBounceCount, maxBounces);
     const bool enableNEE      = g_Const.ptConsts.NEEEnabled != 0u;
     const bool enableEnvNEE   = enableNEE && ((g_Const.ptConsts.environmentNEEEnabled & 1u) != 0u);
-    const uint emissiveCount  = Bridge::getEmissiveTriangleCount();
     const float ffThreshold   = g_Const.ptConsts.fireflyFilterThreshold; // 0 disables the firefly filter.
 
     [loop]
@@ -251,10 +250,10 @@ void main()
 
         // Accumulate emissive surfaces hit by BSDF sampling, MIS-weighted against emissive-triangle NEE (G4).
         float3     surfaceEmission = payload.emission;
-        if (prevDidEmissiveNEE && prevBsdfPdf > 0.0 && payload.emissiveLightPdf > 0.0 && emissiveCount > 0u)
+        if (prevDidEmissiveNEE && prevBsdfPdf > 0.0 && payload.emissiveLightPdf > 0.0)
         {
-            const float lightPdf = (1.0 / float(emissiveCount)) * payload.emissiveLightPdf;
-            surfaceEmission *= PowerHeuristic(1.0, prevBsdfPdf, 1.0, lightPdf);
+            const uint fullSamples = min(32u, g_Const.ptConsts.NEEFullSamples);
+            surfaceEmission *= PathTracer::ComputeBSDFMISForEmissiveTriangle(prevBsdfPdf, payload.emissiveLightPdf, fullSamples);
         }
         if (ffThreshold != 0.0)
             surfaceEmission = FireflyFilter(surfaceEmission, ffThreshold, fireflyFilterK);
@@ -269,12 +268,12 @@ void main()
         const float3 visibilityOrigin = payload.worldPos + bsdfData.N * bias;
 
         const bool useNEE = enableNEE && bounce < maxNEEBounces;
+        bool       sampledEmissiveNEE = false;
         if (useNEE)
         {
             SampleGenerator sgNEELight = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NEELightSampler);
-            pathRadiance += throughput * PathTracer::SampleAnalyticNEE(bsdfData, payload.worldPos, visibilityOrigin, wo, sgNEELight, fireflyFilterK);
-            SampleGenerator sgEmissive = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NEEEmissive);
-            pathRadiance += throughput * PathTracer::SampleEmissiveNEE(bsdfData, payload.worldPos, visibilityOrigin, wo, sgEmissive, fireflyFilterK);
+            pathRadiance += throughput * PathTracer::SampleDirectLightNEE(bsdfData, payload.worldPos, visibilityOrigin,
+                                                                          wo, sgNEELight, fireflyFilterK, sampledEmissiveNEE);
             if (enableEnvNEE)
             {
                 SampleGenerator sgEnvNEE = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NextEventEstimation);
@@ -308,7 +307,7 @@ void main()
         prevBsdfPdf        = pdf;
         prevNormal         = bsdfData.N;
         prevDidEnvNEE      = useNEE && enableEnvNEE;
-        prevDidEmissiveNEE = useNEE && (emissiveCount > 0u);
+        prevDidEmissiveNEE = useNEE && sampledEmissiveNEE;
 
         rayOrigin = visibilityOrigin;
         rayDir    = nextDir;

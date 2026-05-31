@@ -33,7 +33,19 @@ struct PathTracerConstants
     float exposureScale;          // Scene camera exposure multiplier applied before the in-raygen ACES curve.
 };
 
-// Mirrors Diligent::SampleConstants in RTXPTSample.hpp (must keep order and layout in sync).
+struct RTXPTEnvMapConstants
+{
+    float4 LocalToWorld0;
+    float4 LocalToWorld1;
+    float4 LocalToWorld2;
+    float4 WorldToLocal0;
+    float4 WorldToLocal1;
+    float4 WorldToLocal2;
+    float4 ColorEnabled;
+    float4 ImportanceMetadata;
+};
+
+// Mirrors Diligent::SampleConstants in RTXPTSample.hpp (must keep order and layout in sync; total size 352 bytes).
 struct SampleConstants
 {
     float4x4            viewProj;
@@ -41,6 +53,7 @@ struct SampleConstants
     float4              cameraPositionAndTime;
     float4              viewportSizeAndFrameIndex;
     PathTracerConstants ptConsts;
+    RTXPTEnvMapConstants envMap;
 };
 
 // Primary ray payload (Phase 5.1 compatibility - kept for the bridge sanity helpers).

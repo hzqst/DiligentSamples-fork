@@ -82,6 +82,19 @@ struct PathTracerConstants
 };
 static_assert(sizeof(PathTracerConstants) == 64, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 
+struct RTXPTEnvMapConstants
+{
+    float4 LocalToWorld0      = float4{1, 0, 0, 0};
+    float4 LocalToWorld1      = float4{0, 1, 0, 0};
+    float4 LocalToWorld2      = float4{0, 0, 1, 0};
+    float4 WorldToLocal0      = float4{1, 0, 0, 0};
+    float4 WorldToLocal1      = float4{0, 1, 0, 0};
+    float4 WorldToLocal2      = float4{0, 0, 1, 0};
+    float4 ColorEnabled       = float4{1, 1, 1, 1}; // rgb = tint * intensity, w = enabled.
+    float4 ImportanceMetadata = float4{1, 1, 0, 0}; // xy = inv dim, z = base mip, w = importance enabled.
+};
+static_assert(sizeof(RTXPTEnvMapConstants) == 128, "RTXPTEnvMapConstants layout must match PathTracer/PathTracerShared.h");
+
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
 // (D:/RTXPT-fork/Rtxpt/SampleUI.h). Some fields back live controls now, while the rest
 // remain placeholders for later phases (R4/R5/R6 or the separate tone-mapping Phase 6).
@@ -119,8 +132,9 @@ struct SampleConstants
     float4              cameraPositionAndTime     = float4{0, 0, 0, 0};
     float4              viewportSizeAndFrameIndex = float4{0, 0, 0, 0};
     PathTracerConstants ptConsts                  = {};
+    RTXPTEnvMapConstants envMap                   = {};
 };
-static_assert(sizeof(SampleConstants) == 224, "SampleConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(SampleConstants) == 352, "SampleConstants layout must match PathTracer/PathTracerShared.h");
 
 class RTXPTSample final : public SampleBase
 {

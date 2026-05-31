@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "Buffer.h"
 #include "GLTFLoader.hpp"
 #include "RefCntAutoPtr.hpp"
@@ -33,6 +35,8 @@
 
 namespace Diligent
 {
+
+struct RTXPTSceneGraphData;
 
 struct PolymorphicLightInfo
 {
@@ -53,11 +57,14 @@ class RTXPTLights
 public:
     void Reset();
     bool Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const GLTF::ModelTransforms& Transforms);
+    bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
 
     const RTXPTLightStats& GetStats() const { return m_Stats; }
     IBuffer*               GetLightBuffer() const { return m_LightBuffer; }
 
 private:
+    bool UploadLightBuffer(IRenderDevice* pDevice, std::vector<PolymorphicLightInfo>& Lights);
+
     RefCntAutoPtr<IBuffer> m_LightBuffer;
     RTXPTLightStats        m_Stats;
 };

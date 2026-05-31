@@ -40,6 +40,8 @@
 namespace Diligent
 {
 
+struct RTXPTSceneGraphData;
+
 // GPU material record consumed by the reference path tracer (mirrors MaterialPTData in PathTracer/PathTracerShared.h).
 // One entry per GLTF material; the closest-hit / any-hit shaders index it via SubInstanceData::MaterialID.
 // All texture indices/slices reference the shared bindless material-texture table (one entry per GLTF texture).
@@ -101,6 +103,7 @@ class RTXPTMaterials
 public:
     void Reset();
     bool Upload(IRenderDevice* pDevice, const GLTF::Model& Model);
+    bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
 
     const RTXPTMaterialStats& GetStats() const { return m_Stats; }
     IBuffer*                  GetMaterialBuffer() const { return m_MaterialBuffer; }
@@ -112,6 +115,9 @@ public:
     IDeviceObject* const* GetTextureBindings() const { return m_TextureBindings.empty() ? nullptr : m_TextureBindings.data(); }
 
 private:
+    void AppendTextureViews(const GLTF::Model& Model, std::vector<Uint32>& TextureRemap);
+    bool CreateMaterialBuffer(IRenderDevice* pDevice, const std::vector<MaterialPTData>& MaterialData);
+
     RefCntAutoPtr<IBuffer>                   m_MaterialBuffer;
     std::vector<RefCntAutoPtr<ITextureView>> m_TextureViews;
     std::vector<IDeviceObject*>              m_TextureBindings;

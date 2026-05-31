@@ -236,11 +236,9 @@ bool RTXPTSample::RebuildSceneDependentResources()
         m_Scene.Update(0.0, 0.0);
     }
 
-    ResourcesReady &= m_Materials.Upload(m_pDevice, *pModel);
-    if (m_Scene.GetSceneIndex() < pModel->Scenes.size())
-        ResourcesReady &= m_Lights.Upload(m_pDevice, pModel->Scenes[m_Scene.GetSceneIndex()], m_Scene.GetTransforms());
-    else
-        m_Lights.Reset();
+    const RTXPTSceneGraphData& SceneData = m_Scene.GetSceneGraphData();
+    ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData);
+    ResourcesReady &= m_Lights.Upload(m_pDevice, SceneData);
 
     ResourcesReady &=
         m_SkinnedGeometry.Initialize(m_pDevice,

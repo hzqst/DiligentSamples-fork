@@ -25,6 +25,9 @@
  */
 
 #include "RTXPTLights.hpp"
+#include "RTXPTSceneGraph.hpp"
+#include "RTXPTSceneJson.hpp"
+
 #include "DebugUtilities.hpp"
 
 #include <vector>
@@ -56,6 +59,12 @@ PolymorphicLightInfo MakeLightData(const GLTF::Light& Light, const float4x4& Nod
     return Data;
 }
 
+float ReadRTXPTLightIntensity(const nlohmann::json& Json)
+{
+    return ReadRTXPTOptionalFloat(Json, "intensity",
+                                  ReadRTXPTOptionalFloat(Json, "irradiance", 1.0f));
+}
+
 } // namespace
 
 void RTXPTLights::Reset()
@@ -64,22 +73,8 @@ void RTXPTLights::Reset()
     m_Stats = {};
 }
 
-bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const GLTF::ModelTransforms& Transforms)
+bool RTXPTLights::UploadLightBuffer(IRenderDevice* pDevice, std::vector<PolymorphicLightInfo>& Lights)
 {
-    Reset();
-
-    std::vector<PolymorphicLightInfo> Lights;
-    for (const GLTF::Node* pNode : Scene.LinearNodes)
-    {
-        if (pNode == nullptr || pNode->pLight == nullptr)
-            continue;
-
-        if (pNode->Index < 0 || static_cast<size_t>(pNode->Index) >= Transforms.NodeGlobalMatrices.size())
-            continue;
-
-        Lights.emplace_back(MakeLightData(*pNode->pLight, Transforms.NodeGlobalMatrices[pNode->Index]));
-    }
-
     m_Stats.LightCount = static_cast<Uint32>(Lights.size());
     if (Lights.empty())
     {
@@ -102,10 +97,69 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const
     pDevice->CreateBuffer(Desc, &Data, &m_LightBuffer);
 
     VERIFY(m_LightBuffer, "Failed to create RTXPT light buffer");
-    if (!m_LightBuffer)
-        return false;
+    return m_LightBuffer != nullptr;
+}
 
-    return true;
+bool RTXPTLights::Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const GLTF::ModelTransforms& Transforms)
+{
+    Reset();
+
+    std::vector<PolymorphicLightInfo> Lights;
+    for (const GLTF::Node* pNode : Scene.LinearNodes)
+    {
+        if (pNode == nullptr || pNode->pLight == nullptr)
+            continue;
+
+        if (pNode->Index < 0 || static_cast<size_t>(pNode->Index) >= Transforms.NodeGlobalMatrices.size())
+            continue;
+
+        Lights.emplace_back(MakeLightData(*pNode->pLight, Transforms.NodeGlobalMatrices[pNode->Index]));
+    }
+
+    return UploadLightBuffer(pDevice, Lights);
+}
+
+bool RTXPTLights::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData)
+{
+    Reset();
+
+    std::vector<PolymorphicLightInfo> Lights;
+    for (const RTXPTSceneLightMetadata& LightMeta : SceneData.Lights)
+    {
+        if (LightMeta.Type == "EnvironmentLight")
+            continue;
+
+        PolymorphicLightInfo Light;
+        float                Color[3] = {1.0f, 1.0f, 1.0f};
+        ReadRTXPTFloatArray(LightMeta.RawJson, "color", Color, 3);
+
+        Light.colorIntensity = float4{Color[0], Color[1], Color[2], ReadRTXPTLightIntensity(LightMeta.RawJson)};
+        Light.positionRange  = float4{LightMeta.GlobalTransform._41,
+                                      LightMeta.GlobalTransform._42,
+                                      LightMeta.GlobalTransform._43,
+                                      ReadRTXPTOptionalFloat(LightMeta.RawJson, "range", 0.0f)};
+        Light.directionType  = float4{-LightMeta.GlobalTransform._31,
+                                      -LightMeta.GlobalTransform._32,
+                                      -LightMeta.GlobalTransform._33,
+                                      0.0f};
+        Light.spotAngles     = float4{ReadRTXPTOptionalFloat(LightMeta.RawJson, "innerConeAngle", 0.0f),
+                                      ReadRTXPTOptionalFloat(LightMeta.RawJson, "outerConeAngle", 0.0f),
+                                      0.0f,
+                                      0.0f};
+
+        if (LightMeta.Type == "DirectionalLight")
+            Light.directionType.w = 0.0f;
+        else if (LightMeta.Type == "PointLight")
+            Light.directionType.w = 1.0f;
+        else if (LightMeta.Type == "SpotLight")
+            Light.directionType.w = 2.0f;
+        else
+            continue;
+
+        Lights.emplace_back(Light);
+    }
+
+    return UploadLightBuffer(pDevice, Lights);
 }
 
 } // namespace Diligent

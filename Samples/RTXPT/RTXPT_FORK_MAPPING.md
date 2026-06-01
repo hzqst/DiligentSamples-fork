@@ -402,6 +402,18 @@ Raygen locals become camelCase:
 | `PathTracerSample.rgen` interior-list loop | `PathTracer.hlsli::HandleHit` | Diligent raygen loop owns path state; rejected hits do not consume bounce count |
 | `PathTracerAnyHit.rahit` stochastic alpha blend | `PathTracerMaterialSpecializations.hlsl::ANYHIT_ENTRY` | Diligent extends the alpha-test any-hit path with material-flagged stochastic alpha blend; any-hit also stays texture-optional |
 
+## Phase R7 - Shadow/AA Polish
+
+| Diligent port | RTXPT-fork source | R7 notes |
+|---|---|---|
+| `PathTracerHelpers.hlsli::ComputeRayOrigin` | `PathTracer/PathTracerHelpers.hlsli::ComputeRayOrigin` | Same robust offset algorithm, expressed without RTXPT-fork's `select()` helper |
+| `PathTracerHelpers.hlsli::ComputeLowGrazingAngleFalloff` | `PathTracer/PathTracerHelpers.hlsli::ComputeLowGrazingAngleFalloff` | Same direct-light shadow terminator fadeout formula |
+| `PathTracer::MakeVisibilityOrigin` | `PathTracer/PathTracerNEE.hlsli::ComputeVisibilityRay` | Diligent keeps visibility tracing in raygen helpers; face-normal side is still selected by the shading normal |
+| `PathPayload.vertexNormal` | `Scene/ShadingData.hlsli::vertexN` | Closest-hit payload carries the corrected pre-normal-map vertex normal because Diligent does not materialize `ShadingData` |
+| `MaterialPTData.shadowNoLFadeout` | `Materials/MaterialPT.h::ShadowNoLFadeout` | Stored in existing Diligent padding at offset 136; material record stays 144 bytes |
+| `PathTracerCameraData` + `ComputeRayThinlens` | `PathTracerShared.h::PathTracerCameraData` + `PathTracerHelpers.hlsli::ComputeRayThinlens` | Same camera basis and thin-lens math; Diligent stores the camera block at top-level `SampleConstants.camera` |
+| `RTXPTSample` UI labels `Aperture` / `Focal Distance` | `SampleUI.cpp` camera section | Same labels, defaults, and clamp ranges; aperture 0 is the default pinhole path |
+
 ## Skinned glTF Current Geometry
 
 The Diligent RTXPT port uses a Diligent-native current-geometry path for skinned glTF:

@@ -58,7 +58,7 @@ float2 SampleConcentricDisk(float2 sample)
 float3 ComputeNonNormalizedRayDirPinhole(PathTracerCameraData data, uint2 pixel, float2 jitter)
 {
     const float2 p   = (float2(pixel) + float2(0.5, 0.5) + jitter) / float2(data.ViewportSize);
-    const float2 ndc = float2(2.0, -2.0) * p + float2(-1.0, 1.0);
+    const float2 ndc = p * 2.0 - 1.0;
     return ndc.x * data.CameraU + ndc.y * data.CameraV + data.CameraW;
 }
 

@@ -4,7 +4,7 @@
 // Diligent RTXPT stateless sample helpers.
 // Low-discrepancy math and constants are aligned with the RTXPT-fork reference.
 
-#include "Utils/SampleGenerators.hlsli"
+#include "SampleGenerators.hlsli"
 
 #ifndef SOBOL_MAX_DIMENSIONS
 #    define SOBOL_MAX_DIMENSIONS 5

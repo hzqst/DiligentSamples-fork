@@ -166,6 +166,7 @@ RaytracingAccelerationStructure                t_SceneBVH;
 
 VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   u_Output;
 VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
+static const float kSpecularRoughnessThreshold = 0.25;
 
 static float3 ToneMapACES(float3 x)
 {
@@ -218,6 +219,7 @@ void main()
     const uint fullSamples    = min(32u, g_Const.ptConsts.NEEFullSamples);
     const float ffThreshold   = g_Const.ptConsts.fireflyFilterThreshold; // 0 disables the firefly filter.
     uint diffuseBounces       = 0u;
+    bool terminateAtNextEndpoint = false;
 
     [loop]
     for (uint bounce = 0u; bounce < maxBounces; ++bounce)
@@ -263,6 +265,9 @@ void main()
             surfaceEmission = FireflyFilter(surfaceEmission, ffThreshold, fireflyFilterK);
         pathRadiance += throughput * surfaceEmission;
 
+        if (terminateAtNextEndpoint)
+            break;
+
         // Build the glTF metallic-roughness surface the closest-hit filled in, then add explicit direct lighting
         // before importance-sampling the GGX BSDF for the next direction.
         const float3    wo       = -rayDir;
@@ -305,11 +310,14 @@ void main()
             break;
 
         throughput *= weight;
-        if ((lobe & kBSDFLobeDiffuseReflection) != 0u)
+        const bool isDiffuseBounce =
+            ((lobe & kBSDFLobeDiffuseReflection) != 0u) ||
+            bsdfData.roughness > kSpecularRoughnessThreshold;
+        if (isDiffuseBounce)
         {
             ++diffuseBounces;
             if (diffuseBounces > g_Const.ptConsts.diffuseBounceCount)
-                break;
+                terminateAtNextEndpoint = true;
         }
 
         // G1: shrink the firefly K by the spread implied by this scatter (pdf) and the sampled lobe (lobeP).

@@ -398,9 +398,13 @@ bool RTXPTEnvMapBaker::InfoGUI(float Indent)
 {
     ImGui::Indent(Indent);
     ImGui::Text("Ready: %s", m_Stats.Ready ? "yes" : "no");
-    ImGui::Text("Source: %s", m_Stats.SourceName.empty() ? "<none>" : m_Stats.SourceName.c_str());
-    ImGui::Text("Cube: %u px, %u mip(s)", m_Stats.CubeResolution, m_Stats.CubeMipLevels);
-    ImGui::Text("Importance: %s", m_Stats.ImportanceReady ? "ready" : "fallback");
+    ImGui::Text("Source: %s", m_Stats.SourceName.empty() ? "none" : m_Stats.SourceName.c_str());
+    ImGui::Text("Procedural: %s", m_Stats.Procedural ? "yes" : "no");
+    ImGui::Text("Cubemap: %u (%u mips)", m_Stats.CubeResolution, m_Stats.CubeMipLevels);
+    ImGui::Text("Diffuse irradiance: %s", m_DiffuseIrradianceSRV ? "ready" : "missing");
+    ImGui::Text("Importance: %s %u (%u mips)", m_Stats.ImportanceReady ? "ready" : "missing",
+                m_Stats.ImportanceResolution, m_Stats.ImportanceMipLevels);
+    ImGui::Text("BRDF LUT: %s", m_Stats.BRDFLUTReady ? "ready" : "missing");
     if (!m_Stats.LastError.empty())
         ImGui::TextWrapped("EnvMapBaker error: %s", m_Stats.LastError.c_str());
     ImGui::Unindent(Indent);
@@ -411,9 +415,11 @@ bool RTXPTEnvMapBaker::DebugGUI(float Indent)
 {
     ImGui::Indent(Indent);
     ImGui::Text("Version: %llu", static_cast<unsigned long long>(m_Stats.Version));
-    ImGui::Text("Procedural: %s", m_Stats.Procedural ? "yes" : "no");
-    ImGui::Text("BRDF LUT: %s", m_Stats.BRDFLUTReady ? "ready" : "fallback");
     ImGui::Text("Compressed output: %s", m_Stats.CompressedOutput ? "yes" : "no");
+    ImGui::Text("Environment SRV: %s", m_EnvironmentMapSRV ? "bound" : "missing");
+    ImGui::Text("Diffuse irradiance SRV: %s", m_DiffuseIrradianceSRV ? "bound" : "missing");
+    ImGui::Text("Importance SRV: %s", m_ImportanceMapSRV ? "bound" : "missing");
+    ImGui::Text("Radiance SRV: %s", m_RadianceMapSRV ? "bound" : "missing");
     ImGui::Unindent(Indent);
     return false;
 }

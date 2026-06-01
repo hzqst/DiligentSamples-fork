@@ -1091,14 +1091,63 @@ void RTXPTSample::UpdateUI()
     {
         ImGui::Indent(Indent);
 
-        // HDR env-map loading: Phase R4 (G7). A procedural sky is always active.
-        ImGui::BeginDisabled(true);
-        ImGui::Checkbox("Enabled", &m_ReferenceUI.EnvironmentMapEnabled);
-        ImGui::EndDisabled();
-        PlaceholderTooltip("HDR environment-map loading lands in Phase R4; a procedural sky is always active.");
-
-        if (ResetOnChange(ImGui::SliderFloat("Intensity", &m_EnvIntensity, 0.0f, 5.0f), "Environment intensity changed"))
+        if (ResetOnChange(ImGui::Checkbox("Enabled", &m_ReferenceUI.EnvironmentMapEnabled), "Environment map toggled"))
             m_EnvMapBakerSettingsDirty = true;
+
+        const char* EnvPreview = "none";
+        if (!m_EnvMapSources.empty())
+        {
+            const int ClampedSource = std::clamp(m_SelectedEnvMapSource, 0, static_cast<int>(m_EnvMapSources.size()) - 1);
+            EnvPreview               = m_EnvMapSources[static_cast<size_t>(ClampedSource)].DisplayName.c_str();
+        }
+
+        if (ImGui::BeginCombo("Source", EnvPreview))
+        {
+            for (size_t Index = 0; Index < m_EnvMapSources.size(); ++Index)
+            {
+                const bool Selected = static_cast<int>(Index) == m_SelectedEnvMapSource;
+                if (ImGui::Selectable(m_EnvMapSources[Index].DisplayName.c_str(), Selected))
+                {
+                    m_SelectedEnvMapSource               = static_cast<int>(Index);
+                    m_EnvMapSettings.SourceRelativePath   = m_EnvMapSources[Index].RelativePath;
+                    m_EnvMapBakerDirty                    = true;
+                    m_EnvMapBakerSettingsDirty            = true;
+                    RequestAccumulationReset("Environment source changed");
+                }
+                if (Selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        if (ResetOnChange(ImGui::SliderFloat("Intensity", &m_EnvIntensity, 0.0f, 20.0f), "Environment intensity changed"))
+            m_EnvMapBakerSettingsDirty = true;
+
+        if (ResetOnChange(ImGui::SliderFloat("Rotation", &m_EnvMapSettings.RotationRadians, -PI_F, PI_F), "Environment rotation changed"))
+            m_EnvMapBakerSettingsDirty = true;
+
+        int CubeResolution = static_cast<int>(m_EnvMapSettings.TargetCubeResolution);
+        if (ResetOnChange(ImGui::SliderInt("Cube resolution", &CubeResolution, 256, 4096), "Environment cube resolution changed"))
+        {
+            m_EnvMapSettings.TargetCubeResolution = static_cast<Uint32>(CubeResolution);
+            m_EnvMapBakerDirty                    = true;
+            m_EnvMapBakerSettingsDirty            = true;
+            RequestAccumulationReset("Environment cube resolution changed");
+        }
+
+        const bool VulkanBackend = m_pDevice->GetDeviceInfo().Type == RENDER_DEVICE_TYPE_VULKAN;
+        ImGui::BeginDisabled(VulkanBackend);
+        if (ImGui::Combo("BC6H compression", &m_EnvMapSettings.CompressionQuality, "Off\0Fast\0Quality\0\0"))
+        {
+            m_EnvMapBakerDirty         = true;
+            m_EnvMapBakerSettingsDirty = true;
+            RequestAccumulationReset("Environment compression changed");
+        }
+        ImGui::EndDisabled();
+        if (VulkanBackend)
+            PlaceholderTooltip("BC6H output compression remains disabled on Vulkan until the Diligent compute-copy path is validated.");
+
+        m_EnvMapBaker.InfoGUI(Indent);
 
         ImGui::Unindent(Indent);
     }
@@ -1243,6 +1292,10 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
         ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
         ImGui::Text("Environment bridge: %s", RTPassStats.EnvironmentBridgeBound ? "bound" : "missing");
+        const RTXPTEnvMapBakerStats& EnvStats = m_EnvMapBaker.GetStats();
+        ImGui::Text("EnvMapBaker: %s", EnvStats.Ready ? "ready" : "not ready");
+        ImGui::Text("Env source: %s", EnvStats.SourceName.empty() ? "none" : EnvStats.SourceName.c_str());
+        ImGui::Text("Env importance: %s", EnvStats.ImportanceReady ? "ready" : "missing");
         const RTXPTLightsBakerStats& BakerStats = m_LightsBaker.GetStats();
         ImGui::Text("LightsBaker lights: %u", BakerStats.TotalLightCount);
         ImGui::Text("LightsBaker proxies: %u", BakerStats.SamplingProxyCount);
@@ -1250,6 +1303,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("LightsBaker feedback: %s", BakerStats.FeedbackReady ? "ready" : "missing");
         ImGui::Text("LightsBaker update: %u", BakerStats.UpdateCounter);
         ImGui::Text("LightsBaker bridge: %s", RTPassStats.LightsBakerBridgeBound ? "bound" : "missing");
+        m_EnvMapBaker.DebugGUI(Indent);
         ImGui::Text("Emissive triangle pass: %s", m_EmissiveTrianglePass.IsReady() ? "ready" : "not ready");
         ImGui::Text("Emissive triangle dispatch count: %u", m_EmissiveTrianglePass.GetStats().DispatchCount);
         if (!m_EmissiveTrianglePass.GetStats().DisabledReason.empty())

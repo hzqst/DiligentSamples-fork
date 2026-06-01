@@ -6,7 +6,9 @@
 
 #include "Utils/SampleGenerators.hlsli"
 
-#define SOBOL_MAX_DIMENSIONS 5
+#ifndef SOBOL_MAX_DIMENSIONS
+#    define SOBOL_MAX_DIMENSIONS 5
+#endif
 
 struct SampleGeneratorVertexBase
 {
@@ -16,7 +18,7 @@ struct SampleGeneratorVertexBase
     static SampleGeneratorVertexBase make(uint2 pixelCoord, uint vertexIndex, uint sampleIndex)
     {
         SampleGeneratorVertexBase Base;
-        Base.baseHash    = Hash32Combine(Hash32(vertexIndex + 0x035F9F29u), (pixelCoord.x << 16) | (pixelCoord.y & 0xffffu));
+        Base.baseHash    = SampleGenerator_makeVertexBaseHash(pixelCoord, vertexIndex);
         Base.sampleIndex = sampleIndex;
         return Base;
     }
@@ -121,10 +123,13 @@ struct UniformSampleSequenceGenerator
         CurrentHash = Hash32Combine(CurrentHash, ActiveIndex);
 
         [unroll]
-        for (uint Counter = 0; Counter < count; ++Counter)
+        for (uint Counter = 0u; Counter < 4u; ++Counter)
         {
-            CurrentHash      = Hash32(CurrentHash);
-            Samples[Counter] = Hash32ToFloat(CurrentHash);
+            if (Counter < count)
+            {
+                CurrentHash      = Hash32(CurrentHash);
+                Samples[Counter] = Hash32ToFloat(CurrentHash);
+            }
         }
         return Samples;
     }
@@ -142,20 +147,23 @@ struct SampleSequenceGenerator
         const uint ActiveIndex = base.sampleIndex * (uint)subSampleCount + (uint)subSampleIndex;
 
         [unroll]
-        for (uint Dimension = 0; Dimension < count; ++Dimension)
+        for (uint Counter = 0u; Counter < 4u; ++Counter)
         {
-            const uint ShuffleSeed   = Hash32Combine(CurrentHash, 0u);
-            const uint DimSeed       = Hash32Combine(CurrentHash, 1u + Dimension);
-            const uint ShuffledIndex = bhos_owen_scramble(ActiveIndex, ShuffleSeed);
+            if (Counter < count)
+            {
+                const uint ShuffleSeed   = Hash32Combine(CurrentHash, 0u);
+                const uint DimSeed       = Hash32Combine(CurrentHash, 1u + Counter);
+                const uint ShuffledIndex = bhos_owen_scramble(ActiveIndex, ShuffleSeed);
 
-            uint DimSample;
-            if (Dimension == 0u)
-                DimSample = bhos_reverse_bits(ShuffledIndex);
-            else
-                DimSample = bhos_sobol(ShuffledIndex, Dimension);
+                uint DimSample;
+                if (Counter == 0u)
+                    DimSample = bhos_reverse_bits(ShuffledIndex);
+                else
+                    DimSample = bhos_sobol(ShuffledIndex, Counter);
 
-            DimSample          = bhos_owen_scramble(DimSample, DimSeed);
-            Samples[Dimension] = Hash32ToFloat(DimSample);
+                DimSample        = bhos_owen_scramble(DimSample, DimSeed);
+                Samples[Counter] = Hash32ToFloat(DimSample);
+            }
         }
         return Samples;
     }

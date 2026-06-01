@@ -35,6 +35,11 @@ SampleGenerator SampleGenerator_make(uint2 pixelPos, uint frameSeed)
     return sg;
 }
 
+uint SampleGenerator_makeVertexBaseHash(uint2 pixelPos, uint vertexIndex)
+{
+    return Hash32Combine(Hash32(vertexIndex + 0x035F9F29u), (pixelPos.x << 16) | (pixelPos.y & 0xffffu));
+}
+
 // Per-effect decorrelation salts. Mirror RTXPT-fork's SampleGeneratorEffectSeed
 // (D:/RTXPT-fork/Rtxpt/Shaders/PathTracer/Utils/SampleGenerators.hlsli:16).
 static const uint kSampleEffect_Base                = 0u;
@@ -46,12 +51,12 @@ static const uint kSampleEffect_RussianRoulette     = 6u;
 
 // Stateless per-(pixel, vertex, sample) seeding (G3): each path vertex + effect draws a decorrelated
 // sequence, so bounces and dimensions no longer share one forward hash chain. Mirrors RTXPT-fork's
-// UniformSampleSequenceGenerator::make (StatelessSampleGenerators.hlsli:191). Full Sobol/Owen
-// low-discrepancy sampling is deferred to Phase R5 (G9).
+// UniformSampleSequenceGenerator::make. Use StatelessSampleGenerators.hlsli for Sobol/Owen
+// low-discrepancy sequence generation.
 SampleGenerator SampleGenerator_makeStateless(uint2 pixelPos, uint vertexIndex, uint sampleIndex, uint effectSeed)
 {
     SampleGenerator sg;
-    const uint      baseHash = Hash32Combine(Hash32(vertexIndex + 0x035F9F29u), (pixelPos.x << 16) | (pixelPos.y & 0xffffu));
+    const uint      baseHash = SampleGenerator_makeVertexBaseHash(pixelPos, vertexIndex);
     uint            h        = Hash32Combine(baseHash, effectSeed);
     h                        = Hash32Combine(h, sampleIndex);
     sg.State                 = h;

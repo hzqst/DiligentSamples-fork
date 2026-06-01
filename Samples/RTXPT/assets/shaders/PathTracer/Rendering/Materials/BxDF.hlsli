@@ -2,38 +2,53 @@
 #define __BXDF_HLSLI__
 
 // glTF 2.0 metallic-roughness Cook-Torrance BSDF for the reference path tracer.
-// Two lobes: Lambertian diffuse + GGX specular. Evaluation and importance sampling live here so
-// raygen only needs base color / metallic / roughness / shading normal from the payload.
+// Diffuse and GGX lobes are evaluated here so raygen only needs base color,
+// metallic, roughness, and shading normal from the payload.
 
 #include "../../Utils/SampleGenerators.hlsli"
 
-static const float K_PI                = 3.14159265358979323846;
-static const float K_1_PI              = 0.31830988618379067154;
-// Clamp roughness away from a perfect mirror: a zero-roughness GGX lobe is a delta we cannot importance sample.
-static const float kMinRoughness       = 0.045;
+static const float K_PI   = 3.14159265358979323846;
+static const float K_1_PI = 0.31830988618379067154;
+
+static const float kMinCosTheta = 1e-6;
+static const float kMinGGXAlpha = 0.0064;
+
+static const uint kBSDFLobeDiffuseReflection  = 0x01u;
+static const uint kBSDFLobeSpecularReflection = 0x02u;
+static const uint kBSDFLobeDeltaReflection    = 0x04u;
+static const uint kBSDFLobeDelta              = kBSDFLobeDeltaReflection;
 
 // Shading inputs resolved into the form the lobes consume.
 struct StandardBSDFData
 {
-    float3 N;        // shading normal (world space, unit)
-    float3 diffuse;  // Lambertian albedo (base color scaled by (1 - metallic))
-    float3 specular; // specular reflectance at normal incidence
-    float  alpha;    // GGX alpha = roughness^2
+    float3 N;
+    float3 diffuse;
+    float3 specular;
+    float  roughness;
+    float  alpha;
 };
 
-StandardBSDFData MakeStandardBSDFData(float3 N, float3 BaseColor, float Metallic, float Roughness)
+StandardBSDFData MakeStandardBSDFData(float3 N, float3 baseColor, float metallic, float roughness)
 {
-    const float R = clamp(Roughness, kMinRoughness, 1.0);
+    const float r     = saturate(roughness);
+    const float alpha = r * r;
 
     StandardBSDFData bsdfData;
-    bsdfData.N        = N;
-    bsdfData.alpha    = R * R;
-    bsdfData.diffuse  = BaseColor * (1.0 - Metallic);
-    bsdfData.specular = lerp(float3(0.04, 0.04, 0.04), BaseColor, Metallic);
+    bsdfData.N         = N;
+    bsdfData.roughness = r;
+    bsdfData.alpha     = (alpha < kMinGGXAlpha) ? 0.0 : max(alpha, kMinGGXAlpha);
+    bsdfData.diffuse   = baseColor * (1.0 - metallic);
+    bsdfData.specular  = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
     return bsdfData;
 }
 
 float3 evalFresnelSchlick(float3 f0, float3 f90, float cosTheta)
+{
+    const float f = pow(saturate(1.0 - cosTheta), 5.0);
+    return f0 + (f90 - f0) * f;
+}
+
+float evalFresnelSchlick(float f0, float f90, float cosTheta)
 {
     const float f = pow(saturate(1.0 - cosTheta), 5.0);
     return f0 + (f90 - f0) * f;
@@ -70,7 +85,65 @@ float getSpecularProbability(StandardBSDFData bsdfData, float3 wo)
     return clamp(specLum / max(specLum + diffLum, 1e-4), 0.1, 0.9);
 }
 
-// Evaluate f(Wo,Wi) * NoL and the single-sample MIS pdf for the given (unit, away-from-surface) directions.
+float3 evalDiffuseFrostbiteWeight(float3 albedo, float roughness, float3 wi, float3 wo)
+{
+    const float3 h            = normalize(wi + wo);
+    const float  woDotH       = saturate(dot(wo, h));
+    const float  energyBias   = lerp(0.0, 0.5, roughness);
+    const float  energyFactor = lerp(1.0, 1.0 / 1.51, roughness);
+    const float  fd90         = energyBias + 2.0 * woDotH * woDotH * roughness;
+    const float  wiScatter    = evalFresnelSchlick(1.0, fd90, wi.z);
+    const float  woScatter    = evalFresnelSchlick(1.0, fd90, wo.z);
+    return albedo * wiScatter * woScatter * energyFactor;
+}
+
+float EmsApprox(float r2, float NdV)
+{
+    const float r4  = r2 * r2;
+    const float nv0 = 0.2 * r2;
+    const float nv1 = 0.32 * r2 + 1.94 * r4;
+    return lerp(nv0, nv1, NdV);
+}
+
+float3 MultiScatterSpecularApprox(float alpha, float NdV, float3 F0)
+{
+    return 1.0 + F0 * EmsApprox(alpha, NdV);
+}
+
+float evalPdfGGX_BVNDF(float alphaValue, float3 wiLocal, float3 hLocal)
+{
+    const float2 alpha = alphaValue.xx;
+    const float  ndf   = evalNdfGGX(alphaValue, hLocal.z);
+    const float2 ai    = alpha * wiLocal.xy;
+    const float  len2  = dot(ai, ai);
+    const float  t     = sqrt(len2 + wiLocal.z * wiLocal.z);
+    const float  a     = saturate(min(alpha.x, alpha.y));
+    const float  s     = 1.0 + length(wiLocal.xy);
+    const float  a2    = a * a;
+    const float  s2    = s * s;
+    const float  k     = (1.0 - a2) * s2 / max(s2 + a2 * wiLocal.z * wiLocal.z, 1e-7);
+    return ndf / max(2.0 * (k * wiLocal.z + t), 1e-7);
+}
+
+float3 sampleGGX_BVNDF(float alphaValue, float3 wiLocal, float2 rand)
+{
+    const float2 alpha    = alphaValue.xx;
+    const float3 iStd     = normalize(float3(wiLocal.xy * alpha, wiLocal.z));
+    const float  phi      = 2.0 * K_PI * rand.x;
+    const float  a        = saturate(min(alpha.x, alpha.y));
+    const float  s        = 1.0 + length(wiLocal.xy);
+    const float  a2       = a * a;
+    const float  s2       = s * s;
+    const float  k        = (1.0 - a2) * s2 / max(s2 + a2 * wiLocal.z * wiLocal.z, 1e-7);
+    const float  b        = (wiLocal.z > 0.0) ? k * iStd.z : iStd.z;
+    const float  z        = mad(1.0 - rand.y, 1.0 + b, -b);
+    const float  sinTheta = sqrt(saturate(1.0 - z * z));
+    const float3 oStd     = float3(sinTheta * cos(phi), sinTheta * sin(phi), z);
+    const float3 mStd     = iStd + oStd;
+    return normalize(float3(mStd.xy * alpha, mStd.z));
+}
+
+// Evaluate f(Wo,Wi) * NoL and the single-sample MIS pdf for the given unit directions.
 // specProb is the probability the sampler used to pick the specular lobe.
 void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, out float3 f, out float pdf)
 {
@@ -79,75 +152,83 @@ void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, o
 
     const float NdotL = dot(bsdfData.N, wi);
     const float NdotV = dot(bsdfData.N, wo);
-    if (NdotL <= 0.0 || NdotV <= 0.0)
+    if (min(NdotL, NdotV) < kMinCosTheta)
         return;
-
-    const float3 h     = normalize(wo + wi);
-    const float  NdotH = saturate(dot(bsdfData.N, h));
-    const float  VdotH = saturate(dot(wo, h));
-
-    const float  d       = evalNdfGGX(bsdfData.alpha, NdotH);
-    const float  vis     = evalVisibilitySmithGGXCorrelated(bsdfData.alpha, NdotV, NdotL);
-    const float3 fresnel = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), VdotH);
-    const float3 spec    = d * vis * fresnel; // vis already carries 1 / (4 NdotV NdotL)
-
-    const float3 diff = bsdfData.diffuse * K_1_PI * (1.0 - fresnel);
-
-    f = (diff + spec) * NdotL;
-
-    const float pdfDiffuse  = NdotL * K_1_PI;
-    const float pdfSpecular = d * NdotH / max(4.0 * VdotH, 1e-7);
-    pdf = specProb * pdfSpecular + (1.0 - specProb) * pdfDiffuse;
-}
-
-// Importance-sample an incident direction Wi. Returns false for invalid samples.
-// Weight = f(Wo,Wi) * NoL / pdf is the throughput multiplier the path tracer applies.
-bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, inout SampleGenerator sg,
-                out float3 wi, out float3 weight, out float pdf, out float lobeP)
-{
-    wi     = float3(0.0, 0.0, 0.0);
-    weight = float3(0.0, 0.0, 0.0);
-    pdf    = 0.0;
-    lobeP  = 0.0;
-
-    const float NdotV = dot(bsdfData.N, wo);
-    if (NdotV <= 0.0)
-        return false;
-
-    // Pick the lobe from the Fresnel-weighted specular vs diffuse luminance, clamped so neither lobe starves.
-    const float specProb = getSpecularProbability(bsdfData, wo);
 
     float3 tangent;
     float3 bitangent;
     BranchlessONB(bsdfData.N, tangent, bitangent);
 
-    const float2 rand2 = sampleNext2D(sg);
-    const float  lobe  = sampleNext1D(sg);
+    const float3 woLocal = float3(dot(wo, tangent), dot(wo, bitangent), NdotV);
+    const float3 wiLocal = float3(dot(wi, tangent), dot(wi, bitangent), NdotL);
+    const float3 hLocal  = normalize(woLocal + wiLocal);
+    const float  VdotH   = saturate(dot(woLocal, hLocal));
 
-    if (lobe < specProb)
+    const float  d          = evalNdfGGX(bsdfData.alpha, hLocal.z);
+    const float  vis        = evalVisibilitySmithGGXCorrelated(bsdfData.alpha, NdotV, NdotL);
+    const float3 fresnel    = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), VdotH);
+    const float3 msSpecular = MultiScatterSpecularApprox(bsdfData.alpha, NdotV, bsdfData.specular);
+    const float3 spec       = d * vis * fresnel * msSpecular;
+
+    const float3 diff = evalDiffuseFrostbiteWeight(bsdfData.diffuse, bsdfData.roughness, wiLocal, woLocal) * K_1_PI;
+
+    f = (diff + spec) * NdotL;
+
+    const float pdfDiffuse  = NdotL * K_1_PI;
+    const float pdfSpecular = (bsdfData.alpha == 0.0) ? 0.0 : evalPdfGGX_BVNDF(bsdfData.alpha, woLocal, hLocal);
+    pdf                    = specProb * pdfSpecular + (1.0 - specProb) * pdfDiffuse;
+}
+
+// Importance-sample an incident direction Wi. preGeneratedSample.xy samples the chosen lobe,
+// and preGeneratedSample.z selects between diffuse and specular reflection.
+bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, float3 preGeneratedSample,
+                out float3 wi, out float3 weight, out float pdf, out uint lobe, out float lobeP)
+{
+    wi     = float3(0.0, 0.0, 0.0);
+    weight = float3(0.0, 0.0, 0.0);
+    pdf    = 0.0;
+    lobe   = 0u;
+    lobeP  = 0.0;
+
+    const float NdotV = dot(bsdfData.N, wo);
+    if (NdotV < kMinCosTheta)
+        return false;
+
+    const float specProb = getSpecularProbability(bsdfData, wo);
+
+    if (preGeneratedSample.z < specProb)
     {
         lobeP = specProb;
-        // GGX half-vector (NDF) sampling in the local frame, then reflect Wo about H.
-        const float a    = bsdfData.alpha;
-        const float phi  = 2.0 * K_PI * rand2.x;
-        const float cosT = sqrt((1.0 - rand2.y) / max(1.0 + (a * a - 1.0) * rand2.y, 1e-7));
-        const float sinT = sqrt(max(0.0, 1.0 - cosT * cosT));
 
-        const float3 hLocal = float3(sinT * cos(phi), sinT * sin(phi), cosT);
-        const float3 h      = normalize(tangent * hLocal.x + bitangent * hLocal.y + bsdfData.N * hLocal.z);
-        wi                  = reflect(-wo, h);
-        if (dot(bsdfData.N, wi) <= 0.0)
-            return false;
+        if (bsdfData.alpha == 0.0)
+        {
+            wi     = reflect(-wo, bsdfData.N);
+            weight = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), NdotV) / specProb;
+            pdf    = 0.0;
+            lobe   = kBSDFLobeDeltaReflection;
+            return true;
+        }
+
+        float3 tangent;
+        float3 bitangent;
+        BranchlessONB(bsdfData.N, tangent, bitangent);
+
+        const float3 woLocal = float3(dot(wo, tangent), dot(wo, bitangent), NdotV);
+        const float3 hLocal  = sampleGGX_BVNDF(bsdfData.alpha, woLocal, preGeneratedSample.xy);
+        const float3 h       = normalize(tangent * hLocal.x + bitangent * hLocal.y + bsdfData.N * hLocal.z);
+        wi                   = reflect(-wo, h);
+        lobe                 = kBSDFLobeSpecularReflection;
     }
     else
     {
         lobeP = 1.0 - specProb;
-        // Cosine-weighted diffuse hemisphere sample.
         float pdfUnused;
-        wi = sampleCosineHemisphere(rand2, bsdfData.N, pdfUnused);
-        if (dot(bsdfData.N, wi) <= 0.0)
-            return false;
+        wi   = sampleCosineHemisphere(preGeneratedSample.xy, bsdfData.N, pdfUnused);
+        lobe = kBSDFLobeDiffuseReflection;
     }
+
+    if (dot(bsdfData.N, wi) < kMinCosTheta)
+        return false;
 
     float3 f;
     EvalBSDF(bsdfData, wo, wi, specProb, f, pdf);

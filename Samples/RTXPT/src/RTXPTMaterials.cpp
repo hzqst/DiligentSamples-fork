@@ -136,7 +136,7 @@ void FillMaterialPTDataFromGLTF(const GLTF::Material& Material, MaterialPTData& 
         }
     }
 
-    if (Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_BLEND)
+    if (RTXPTMaterialIsAlphaBlended(Material, nullptr))
         Data.flags |= kMaterialFlag_AlphaBlend;
 
     if (RTXPTMaterialIsAlphaTested(Material) && (Data.flags & kMaterialFlag_HasBaseColorTexture) != 0u)
@@ -409,6 +409,10 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
                 if (!Ext.EnableOcclusionRoughnessMetallicTexture)
                     Data.flags &= ~kMaterialFlag_HasMetallicRoughnessTexture;
             }
+
+            Data.flags &= ~kMaterialFlag_AlphaBlend;
+            if (RTXPTMaterialIsAlphaBlended(Material, pExtension))
+                Data.flags |= kMaterialFlag_AlphaBlend;
 
             Data.flags &= ~kMaterialFlag_AlphaTested;
             if (RTXPTMaterialIsAlphaTested(Material, pExtension, (Data.flags & kMaterialFlag_HasBaseColorTexture) != 0u))

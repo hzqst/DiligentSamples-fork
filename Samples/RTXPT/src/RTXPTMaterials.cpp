@@ -103,6 +103,42 @@ void FillMaterialPTDataFromGLTF(const GLTF::Material& Material, MaterialPTData& 
         Data.normalTextureSlice = Material.GetTextureAttrib(GLTF::DefaultNormalTextureAttribId).TextureSlice;
     }
 
+    Data.ior = 1.5f;
+
+    if (Material.Transmission != nullptr)
+    {
+        Data.transmissionFactor = std::clamp(Material.Transmission->Factor, 0.0f, 1.0f);
+        if (Data.transmissionFactor > 0.0f)
+            Data.flags |= kMaterialFlag_HasTransmission;
+
+        const int TransmissionTextureId = Material.GetTextureId(GLTF::DefaultTransmissionTextureAttribId);
+        if (TransmissionTextureId >= 0)
+        {
+            Data.flags |= kMaterialFlag_HasTransmissionTexture;
+            Data.transmissionTextureIndex = static_cast<Uint32>(TransmissionTextureId);
+            Data.transmissionTextureSlice = Material.GetTextureAttrib(GLTF::DefaultTransmissionTextureAttribId).TextureSlice;
+        }
+    }
+
+    if (Material.Volume != nullptr)
+    {
+        Data.flags |= kMaterialFlag_HasVolume;
+        Data.thicknessFactor           = std::max(Material.Volume->ThicknessFactor, 0.0f);
+        Data.volumeAttenuationColor    = Material.Volume->AttenuationColor;
+        Data.volumeAttenuationDistance = std::max(Material.Volume->AttenuationDistance, 0.0f);
+
+        const int ThicknessTextureId = Material.GetTextureId(GLTF::DefaultThicknessTextureAttribId);
+        if (ThicknessTextureId >= 0)
+        {
+            Data.flags |= kMaterialFlag_HasThicknessTexture;
+            Data.thicknessTextureIndex = static_cast<Uint32>(ThicknessTextureId);
+            Data.thicknessTextureSlice = Material.GetTextureAttrib(GLTF::DefaultThicknessTextureAttribId).TextureSlice;
+        }
+    }
+
+    if (Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_BLEND)
+        Data.flags |= kMaterialFlag_AlphaBlend;
+
     if (RTXPTMaterialIsAlphaTested(Material) && (Data.flags & kMaterialFlag_HasBaseColorTexture) != 0u)
         Data.flags |= kMaterialFlag_AlphaTested;
 
@@ -131,6 +167,8 @@ void RemapMaterialTextureIndices(MaterialPTData& Data, const std::vector<Uint32>
     RemapTextureIndex(kMaterialFlag_HasEmissiveTexture, Data.flags, Data.emissiveTextureIndex, TextureRemap);
     RemapTextureIndex(kMaterialFlag_HasMetallicRoughnessTexture, Data.flags, Data.metallicRoughnessTextureIndex, TextureRemap);
     RemapTextureIndex(kMaterialFlag_HasNormalTexture, Data.flags, Data.normalTextureIndex, TextureRemap);
+    RemapTextureIndex(kMaterialFlag_HasTransmissionTexture, Data.flags, Data.transmissionTextureIndex, TextureRemap);
+    RemapTextureIndex(kMaterialFlag_HasThicknessTexture, Data.flags, Data.thicknessTextureIndex, TextureRemap);
 
     if ((Data.flags & kMaterialFlag_HasBaseColorTexture) == 0u)
         Data.flags &= ~kMaterialFlag_AlphaTested;
@@ -313,6 +351,38 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
                 Data.alphaCutoff                  = Ext.AlphaCutoff;
                 Data.metallicFactor               = Ext.MetallicFactor;
                 Data.roughnessFactor              = Ext.RoughnessFactor;
+                Data.transmissionFactor           = std::clamp(Ext.TransmissionFactor, 0.0f, 1.0f);
+                Data.diffuseTransmissionFactor    = std::clamp(Ext.DiffuseTransmissionFactor, 0.0f, 1.0f);
+                Data.ior                          = std::max(Ext.IoR, 1.0f);
+                Data.thicknessFactor              = std::max(Ext.ThicknessFactor, 0.0f);
+                Data.volumeAttenuationColor       = Ext.VolumeAttenuationColor;
+                Data.volumeAttenuationDistance    = std::max(Ext.VolumeAttenuationDistance, 0.0f);
+                Data.nestedPriority               = static_cast<Uint32>(std::clamp(Ext.NestedPriority, 0, 14));
+
+                if (Ext.EnableTransmission || Data.transmissionFactor > 0.0f || Data.diffuseTransmissionFactor > 0.0f)
+                    Data.flags |= kMaterialFlag_HasTransmission;
+                else
+                {
+                    Data.flags &= ~kMaterialFlag_HasTransmission;
+                    Data.flags &= ~kMaterialFlag_HasTransmissionTexture;
+                }
+
+                if (Ext.ThinSurface)
+                    Data.flags |= kMaterialFlag_ThinSurface;
+                else
+                    Data.flags &= ~kMaterialFlag_ThinSurface;
+
+                if (Data.thicknessFactor > 0.0f ||
+                    Data.volumeAttenuationDistance < 3.402823466e+38f ||
+                    Data.volumeAttenuationColor.x != 1.0f ||
+                    Data.volumeAttenuationColor.y != 1.0f ||
+                    Data.volumeAttenuationColor.z != 1.0f)
+                    Data.flags |= kMaterialFlag_HasVolume;
+                else
+                {
+                    Data.flags &= ~kMaterialFlag_HasVolume;
+                    Data.flags &= ~kMaterialFlag_HasThicknessTexture;
+                }
                 if (!Ext.EnableBaseTexture)
                     Data.flags &= ~kMaterialFlag_HasBaseColorTexture;
                 if (!Ext.EnableEmissiveTexture)

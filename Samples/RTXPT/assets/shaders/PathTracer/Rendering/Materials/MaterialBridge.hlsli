@@ -96,6 +96,30 @@ namespace Bridge
         n.xy *= material.normalScale;
         return normalize(n);
     }
+
+    float getTransmission(MaterialPTData material, float2 uv)
+    {
+        float transmission = material.transmissionFactor;
+        if ((material.flags & kMaterialFlagHasTransmissionTexture) != 0u)
+            transmission *= sampleMaterialTexture(material.transmissionTextureIndex, material.transmissionTextureSlice, uv).r;
+        return saturate(transmission);
+    }
+
+    float getDiffuseTransmission(MaterialPTData material, float2 uv)
+    {
+        float transmission = material.diffuseTransmissionFactor;
+        if ((material.flags & kMaterialFlagHasTransmissionTexture) != 0u)
+            transmission *= sampleMaterialTexture(material.transmissionTextureIndex, material.transmissionTextureSlice, uv).r;
+        return saturate(transmission);
+    }
+
+    float getThickness(MaterialPTData material, float2 uv)
+    {
+        float thickness = material.thicknessFactor;
+        if ((material.flags & kMaterialFlagHasThicknessTexture) != 0u)
+            thickness *= sampleMaterialTexture(material.thicknessTextureIndex, material.thicknessTextureSlice, uv).g;
+        return max(thickness, 0.0);
+    }
 #else
     // Factor-only fallback (bindless material textures unavailable): no texture sampling, never alpha tested.
     float4 getBaseColor(MaterialPTData material, float2 uv) { return material.baseColorFactor; }
@@ -103,7 +127,25 @@ namespace Bridge
     bool   alphaTestPasses(MaterialPTData material, float2 uv) { return true; }
     float2 getMetallicRoughness(MaterialPTData material, float2 uv) { return float2(material.metallicFactor, material.roughnessFactor); }
     float3 getTangentNormal(MaterialPTData material, float2 uv) { return float3(0.0, 0.0, 1.0); }
+    float  getTransmission(MaterialPTData material, float2 uv) { return saturate(material.transmissionFactor); }
+    float  getDiffuseTransmission(MaterialPTData material, float2 uv) { return saturate(material.diffuseTransmissionFactor); }
+    float  getThickness(MaterialPTData material, float2 uv) { return max(material.thicknessFactor, 0.0); }
 #endif
+
+    float loadIoR(uint materialID)
+    {
+        const uint count = getMaterialCount();
+        if (materialID >= count)
+            return 1.0;
+
+        MaterialPTData material = getMaterial(materialID);
+        return max(material.ior, 1.0);
+    }
+
+    bool isThinSurface(MaterialPTData material)
+    {
+        return (material.flags & kMaterialFlagThinSurface) != 0u || (material.flags & kMaterialFlagHasTransmission) == 0u;
+    }
 } // namespace Bridge
 
 // TODO(RTXPT-Port Phase 5.3): Honor TextureShaderAttribs UV selectors / wrap modes / atlas transform (currently assumes TEXCOORD_0 + wrap + slice).

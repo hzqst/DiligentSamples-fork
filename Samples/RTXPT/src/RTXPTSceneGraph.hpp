@@ -91,6 +91,11 @@ struct RTXPTMaterialExtension
     float  TransmissionFactor                      = 0.0f;
     float  IoR                                     = 1.5f;
     bool   ThinSurface                             = false;
+    float  DiffuseTransmissionFactor               = 0.0f;
+    float  ThicknessFactor                         = 0.0f;
+    float3 VolumeAttenuationColor                  = float3{1, 1, 1};
+    float  VolumeAttenuationDistance               = 3.402823466e+38f;
+    int    NestedPriority                          = 14;
     bool   SkipRender                              = false;
 };
 

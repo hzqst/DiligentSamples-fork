@@ -69,18 +69,54 @@ struct MaterialPTData
     float  normalTextureSlice            = 0.0f;
     float  normalScale                   = 1.0f;
 
-    float _padding0 = 0.0f;
-    float _padding1 = 0.0f;
-    float _padding2 = 0.0f;
-    float _padding3 = 0.0f;
+    float transmissionFactor        = 0.0f; // offset 80
+    float diffuseTransmissionFactor = 0.0f; // offset 84
+    float ior                       = 1.5f; // offset 88
+    float thicknessFactor           = 0.0f; // offset 92
+
+    float3 volumeAttenuationColor    = float3{1, 1, 1};  // offset 96
+    float  volumeAttenuationDistance = 3.402823466e+38f; // offset 108
+
+    Uint32 transmissionTextureIndex = 0;    // offset 112
+    float  transmissionTextureSlice = 0.0f; // offset 116
+    Uint32 thicknessTextureIndex    = 0;    // offset 120
+    float  thicknessTextureSlice    = 0.0f; // offset 124
+
+    // RTXPT-fork authored priority: 0 is the special highest-priority value; 14 is the default/max authored value.
+    Uint32 nestedPriority = 14; // offset 128
+    Uint32 _paddingR6_0   = 0;
+    float  _paddingR6_1   = 0.0f;
+    float  _paddingR6_2   = 0.0f;
 };
-static_assert(sizeof(MaterialPTData) == 96, "MaterialPTData layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(MaterialPTData) == 144, "MaterialPTData layout must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, metallicRoughnessTextureIndex) == 60,
               "MaterialPTData metallicRoughnessTextureIndex offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, normalTextureIndex) == 68,
               "MaterialPTData normalTextureIndex offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, normalScale) == 76,
               "MaterialPTData normalScale offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, transmissionFactor) == 80,
+              "MaterialPTData transmissionFactor offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, diffuseTransmissionFactor) == 84,
+              "MaterialPTData diffuseTransmissionFactor offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, ior) == 88,
+              "MaterialPTData ior offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, thicknessFactor) == 92,
+              "MaterialPTData thicknessFactor offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, volumeAttenuationColor) == 96,
+              "MaterialPTData volumeAttenuationColor offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, volumeAttenuationDistance) == 108,
+              "MaterialPTData volumeAttenuationDistance offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, transmissionTextureIndex) == 112,
+              "MaterialPTData transmissionTextureIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, transmissionTextureSlice) == 116,
+              "MaterialPTData transmissionTextureSlice offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, thicknessTextureIndex) == 120,
+              "MaterialPTData thicknessTextureIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, thicknessTextureSlice) == 124,
+              "MaterialPTData thicknessTextureSlice offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, nestedPriority) == 128,
+              "MaterialPTData nestedPriority offset must match PathTracer/PathTracerShared.h");
 
 // Flag bits for MaterialPTData::flags. Keep in sync with kMaterialFlag* in PathTracer/PathTracerShared.h.
 constexpr Uint32 kMaterialFlag_HasBaseColorTexture         = 0x1u;
@@ -89,6 +125,12 @@ constexpr Uint32 kMaterialFlag_HasEmissiveTexture          = 0x4u;
 constexpr Uint32 kMaterialFlag_HasMetallicRoughnessTexture = 0x8u;
 constexpr Uint32 kMaterialFlag_HasNormalTexture            = 0x10u;
 constexpr Uint32 kMaterialFlag_EmissiveAreaLight           = 0x20u;
+constexpr Uint32 kMaterialFlag_HasTransmission             = 0x40u;
+constexpr Uint32 kMaterialFlag_HasTransmissionTexture      = 0x80u;
+constexpr Uint32 kMaterialFlag_HasVolume                   = 0x100u;
+constexpr Uint32 kMaterialFlag_HasThicknessTexture         = 0x200u;
+constexpr Uint32 kMaterialFlag_ThinSurface                 = 0x400u;
+constexpr Uint32 kMaterialFlag_AlphaBlend                  = 0x800u;
 
 // A material is alpha tested only when it uses ALPHA_MODE_MASK and actually has a base-color texture to
 // sample the alpha from. This compatibility overload preserves the single-GLTF path behavior.
@@ -105,6 +147,11 @@ bool                          RTXPTMaterialIsAlphaTested(const GLTF::Material&  
                                                          bool                          HasBaseColorTexture);
 bool                          RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&         Material,
                                                                const RTXPTMaterialExtension* pExtension);
+bool                          RTXPTMaterialIsAlphaBlended(const GLTF::Material&         Material,
+                                                          const RTXPTMaterialExtension* pExtension);
+bool                          RTXPTMaterialNeedsAnyHit(const GLTF::Material&         Material,
+                                                       const RTXPTMaterialExtension* pExtension,
+                                                       bool                          HasBaseColorTexture);
 
 struct RTXPTMaterialStats
 {

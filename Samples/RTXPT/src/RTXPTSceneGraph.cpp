@@ -6,6 +6,7 @@
 
 #include "RTXPTSceneGraph.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "FileSystem.hpp"
@@ -64,6 +65,15 @@ RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string&    FilePat
     Ext.AlphaCutoff        = ReadRTXPTOptionalFloat(Json, "AlphaCutoff", Ext.AlphaCutoff);
     Ext.TransmissionFactor = ReadRTXPTOptionalFloat(Json, "TransmissionFactor", Ext.TransmissionFactor);
     Ext.IoR                = ReadRTXPTOptionalFloat(Json, "IoR", Ext.IoR);
+
+    Ext.DiffuseTransmissionFactor = ReadRTXPTOptionalFloat(Json, "DiffuseTransmissionFactor", Ext.DiffuseTransmissionFactor);
+    Ext.ThicknessFactor           = ReadRTXPTOptionalFloat(Json, "ThicknessFactor", Ext.ThicknessFactor);
+    Ext.VolumeAttenuationDistance = ReadRTXPTOptionalFloat(Json, "VolumeAttenuationDistance", Ext.VolumeAttenuationDistance);
+    Ext.NestedPriority            = std::clamp(Json.value("NestedPriority", Ext.NestedPriority), 0, 14);
+
+    float VolumeColor[3] = {Ext.VolumeAttenuationColor.x, Ext.VolumeAttenuationColor.y, Ext.VolumeAttenuationColor.z};
+    if (ReadRTXPTFloatArray(Json, "VolumeAttenuationColor", VolumeColor, 3))
+        Ext.VolumeAttenuationColor = float3{VolumeColor[0], VolumeColor[1], VolumeColor[2]};
 
     Ext.EnableAlphaTesting                      = Json.value("EnableAlphaTesting", Ext.EnableAlphaTesting);
     Ext.EnableBaseTexture                       = Json.value("EnableBaseTexture", Ext.EnableBaseTexture);

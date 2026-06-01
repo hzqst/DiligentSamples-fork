@@ -113,7 +113,7 @@ struct SubInstanceData
     uint _padding1;
 };
 
-// Mirrors Diligent::MaterialPTData in RTXPTMaterials.hpp (must keep order/size in sync; total size 96 bytes).
+// Mirrors Diligent::MaterialPTData in RTXPTMaterials.hpp (must keep order/size in sync; total size 144 bytes).
 struct MaterialPTData
 {
     float4 baseColorFactor; // offset 0
@@ -136,10 +136,24 @@ struct MaterialPTData
     float normalTextureSlice;            // offset 72
     float normalScale;                   // offset 76
 
-    float _padding0; // offset 80
-    float _padding1; // offset 84
-    float _padding2; // offset 88
-    float _padding3; // offset 92
+    float transmissionFactor;        // offset 80
+    float diffuseTransmissionFactor; // offset 84
+    float ior;                       // offset 88
+    float thicknessFactor;           // offset 92
+
+    float3 volumeAttenuationColor;    // offset 96
+    float  volumeAttenuationDistance; // offset 108
+
+    uint  transmissionTextureIndex; // offset 112
+    float transmissionTextureSlice; // offset 116
+    uint  thicknessTextureIndex;    // offset 120
+    float thicknessTextureSlice;    // offset 124
+
+    // RTXPT-fork authored priority: 0 is the special highest-priority value; 14 is the default/max authored value.
+    uint  nestedPriority; // offset 128
+    uint  _paddingR6_0;
+    float _paddingR6_1;
+    float _paddingR6_2;
 };
 
 // Mirrors the kMaterialFlag_* constants in RTXPTMaterials.hpp.
@@ -149,6 +163,12 @@ static const uint kMaterialFlagHasEmissiveTexture          = 0x4u;
 static const uint kMaterialFlagHasMetallicRoughnessTexture = 0x8u;
 static const uint kMaterialFlagHasNormalTexture            = 0x10u;
 static const uint kMaterialFlagEmissiveAreaLight           = 0x20u;
+static const uint kMaterialFlagHasTransmission             = 0x40u;
+static const uint kMaterialFlagHasTransmissionTexture      = 0x80u;
+static const uint kMaterialFlagHasVolume                   = 0x100u;
+static const uint kMaterialFlagHasThicknessTexture         = 0x200u;
+static const uint kMaterialFlagThinSurface                 = 0x400u;
+static const uint kMaterialFlagAlphaBlend                  = 0x800u;
 
 // Mirrors Diligent::PolymorphicLightInfo in RTXPTLights.hpp.
 struct PolymorphicLightInfo

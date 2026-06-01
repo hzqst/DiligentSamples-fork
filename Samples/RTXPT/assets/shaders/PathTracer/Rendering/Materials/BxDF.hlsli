@@ -59,7 +59,7 @@ float evalNdfGGX(float alpha, float cosTheta)
 {
     const float A2 = alpha * alpha;
     const float D  = (cosTheta * cosTheta) * (A2 - 1.0) + 1.0;
-    return A2 / max(K_PI * D * D, 1e-7);
+    return A2 / (K_PI * D * D);
 }
 
 // Smith height-correlated visibility term = G / (4 * NoV * NoL).
@@ -110,32 +110,32 @@ float3 MultiScatterSpecularApprox(float alpha, float NdV, float3 F0)
     return 1.0 + F0 * EmsApprox(alpha, NdV);
 }
 
-float evalPdfGGX_BVNDF(float alphaValue, float3 wiLocal, float3 hLocal)
+float evalPdfGGX_BVNDF(float alphaValue, float3 viewLocal, float3 hLocal)
 {
     const float2 alpha = alphaValue.xx;
     const float  ndf   = evalNdfGGX(alphaValue, hLocal.z);
-    const float2 ai    = alpha * wiLocal.xy;
+    const float2 ai    = alpha * viewLocal.xy;
     const float  len2  = dot(ai, ai);
-    const float  t     = sqrt(len2 + wiLocal.z * wiLocal.z);
+    const float  t     = sqrt(len2 + viewLocal.z * viewLocal.z);
     const float  a     = saturate(min(alpha.x, alpha.y));
-    const float  s     = 1.0 + length(wiLocal.xy);
+    const float  s     = 1.0 + length(viewLocal.xy);
     const float  a2    = a * a;
     const float  s2    = s * s;
-    const float  k     = (1.0 - a2) * s2 / max(s2 + a2 * wiLocal.z * wiLocal.z, 1e-7);
-    return ndf / max(2.0 * (k * wiLocal.z + t), 1e-7);
+    const float  k     = (1.0 - a2) * s2 / max(s2 + a2 * viewLocal.z * viewLocal.z, 1e-7);
+    return ndf / max(2.0 * (k * viewLocal.z + t), 1e-7);
 }
 
-float3 sampleGGX_BVNDF(float alphaValue, float3 wiLocal, float2 rand)
+float3 sampleGGX_BVNDF(float alphaValue, float3 viewLocal, float2 rand)
 {
     const float2 alpha    = alphaValue.xx;
-    const float3 iStd     = normalize(float3(wiLocal.xy * alpha, wiLocal.z));
+    const float3 iStd     = normalize(float3(viewLocal.xy * alpha, viewLocal.z));
     const float  phi      = 2.0 * K_PI * rand.x;
     const float  a        = saturate(min(alpha.x, alpha.y));
-    const float  s        = 1.0 + length(wiLocal.xy);
+    const float  s        = 1.0 + length(viewLocal.xy);
     const float  a2       = a * a;
     const float  s2       = s * s;
-    const float  k        = (1.0 - a2) * s2 / max(s2 + a2 * wiLocal.z * wiLocal.z, 1e-7);
-    const float  b        = (wiLocal.z > 0.0) ? k * iStd.z : iStd.z;
+    const float  k        = (1.0 - a2) * s2 / max(s2 + a2 * viewLocal.z * viewLocal.z, 1e-7);
+    const float  b        = (viewLocal.z > 0.0) ? k * iStd.z : iStd.z;
     const float  z        = mad(1.0 - rand.y, 1.0 + b, -b);
     const float  sinTheta = sqrt(saturate(1.0 - z * z));
     const float3 oStd     = float3(sinTheta * cos(phi), sinTheta * sin(phi), z);
@@ -164,11 +164,15 @@ void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, o
     const float3 hLocal  = normalize(woLocal + wiLocal);
     const float  VdotH   = saturate(dot(woLocal, hLocal));
 
-    const float  d          = evalNdfGGX(bsdfData.alpha, hLocal.z);
-    const float  vis        = evalVisibilitySmithGGXCorrelated(bsdfData.alpha, NdotV, NdotL);
-    const float3 fresnel    = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), VdotH);
-    const float3 msSpecular = MultiScatterSpecularApprox(bsdfData.alpha, NdotV, bsdfData.specular);
-    const float3 spec       = d * vis * fresnel * msSpecular;
+    float3 spec = float3(0.0, 0.0, 0.0);
+    if (bsdfData.alpha != 0.0)
+    {
+        const float  d          = evalNdfGGX(bsdfData.alpha, hLocal.z);
+        const float  vis        = evalVisibilitySmithGGXCorrelated(bsdfData.alpha, NdotV, NdotL);
+        const float3 fresnel    = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), VdotH);
+        const float3 msSpecular = MultiScatterSpecularApprox(bsdfData.alpha, NdotV, bsdfData.specular);
+        spec                    = d * vis * fresnel * msSpecular;
+    }
 
     const float3 diff = evalDiffuseFrostbiteWeight(bsdfData.diffuse, bsdfData.roughness, wiLocal, woLocal) * K_1_PI;
 
@@ -204,6 +208,7 @@ bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, float3 preGeneratedSample,
         {
             wi     = reflect(-wo, bsdfData.N);
             weight = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), NdotV) / specProb;
+            // Delta events use pdf == 0 as a sentinel; weight includes specProb selection compensation.
             pdf    = 0.0;
             lobe   = kBSDFLobeDeltaReflection;
             return true;

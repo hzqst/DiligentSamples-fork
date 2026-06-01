@@ -3,6 +3,7 @@
 
 #include "../../Config.h"
 #include "../../PathTracerShared.h"
+#include "../../Scene/Material/HomogeneousVolumeData.hlsli"
 
 StructuredBuffer<MaterialPTData> t_PTMaterialData;
 
@@ -140,6 +141,27 @@ namespace Bridge
 
         MaterialPTData material = getMaterial(materialID);
         return max(material.ior, 1.0);
+    }
+
+    HomogeneousVolumeData loadHomogeneousVolumeData(uint materialID)
+    {
+        HomogeneousVolumeData volume;
+        volume.sigmaS = float3(0.0, 0.0, 0.0);
+        volume.sigmaA = float3(0.0, 0.0, 0.0);
+        volume.g      = 0.0;
+
+        const uint count = getMaterialCount();
+        if (materialID >= count)
+            return volume;
+
+        MaterialPTData material = getMaterial(materialID);
+        if ((material.flags & kMaterialFlagHasVolume) == 0u)
+            return volume;
+
+        const float3 attenuationColor = clamp(material.volumeAttenuationColor, 1e-7, 1.0);
+        const float  attenuationDistance = max(material.volumeAttenuationDistance, 1e-30);
+        volume.sigmaA = -log(attenuationColor) / attenuationDistance.xxx;
+        return volume;
     }
 
     bool isThinSurface(MaterialPTData material)

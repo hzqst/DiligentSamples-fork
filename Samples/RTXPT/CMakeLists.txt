@@ -52,7 +52,13 @@ set(SHADERS
     assets/shaders/PathTracer/PathTracerHelpers.hlsli
     assets/shaders/PathTracer/PathTracerShared.h
     assets/shaders/PathTracer/PathTracerBridge.hlsli
+    assets/shaders/PathTracer/PathTracerNestedDielectrics.hlsli
     assets/shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli
+    assets/shaders/PathTracer/Rendering/Materials/LobeType.hlsli
+    assets/shaders/PathTracer/Rendering/Materials/InteriorList.hlsli
+    assets/shaders/PathTracer/Scene/Material/MaterialData.hlsli
+    assets/shaders/PathTracer/Scene/Material/HomogeneousVolumeData.hlsli
+    assets/shaders/PathTracer/Rendering/Volumes/HomogeneousVolumeSampler.hlsli
     assets/shaders/PathTracer/Lighting/LightingConfig.h
     assets/shaders/PathTracer/Lighting/LightingTypes.hlsli
     assets/shaders/PathTracer/Lighting/EnvMap.hlsli

@@ -5,6 +5,8 @@
 #include "PathTracerHelpers.hlsli"
 #include "Lighting/EnvMap.hlsli"
 #include "Lighting/LightSampler.hlsli"
+#include "Rendering/Volumes/HomogeneousVolumeSampler.hlsli"
+#include "PathTracerNestedDielectrics.hlsli"
 
 static const float kVisibilityRayTMin = 1e-4;
 static const float kVisibilityRayTMax = 1e30;

@@ -163,9 +163,9 @@ const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphDat
     return &SceneData.MaterialExtensions[ExtensionIdx];
 }
 
-bool RTXPTMaterialHasBaseColorTexture(const GLTF::Model&             Model,
-                                      const GLTF::Material&          Material,
-                                      const RTXPTMaterialExtension*  pExtension)
+bool RTXPTMaterialHasBaseColorTexture(const GLTF::Model&            Model,
+                                      const GLTF::Material&         Material,
+                                      const RTXPTMaterialExtension* pExtension)
 {
     if (pExtension != nullptr && pExtension->Loaded && !pExtension->EnableBaseTexture)
         return false;
@@ -182,9 +182,9 @@ bool RTXPTMaterialHasBaseColorTexture(const GLTF::Model&             Model,
     return pSRV != nullptr;
 }
 
-bool RTXPTMaterialIsAlphaTested(const GLTF::Material&          Material,
-                                const RTXPTMaterialExtension*  pExtension,
-                                bool                           HasBaseColorTexture)
+bool RTXPTMaterialIsAlphaTested(const GLTF::Material&         Material,
+                                const RTXPTMaterialExtension* pExtension,
+                                bool                          HasBaseColorTexture)
 {
     if (!HasBaseColorTexture)
         return false;
@@ -308,11 +308,11 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
             if (pExtension != nullptr && pExtension->Loaded)
             {
                 const RTXPTMaterialExtension& Ext = *pExtension;
-                Data.baseColorFactor             = Ext.BaseColorFactor;
-                Data.emissiveFactor              = Ext.EmissiveFactor;
-                Data.alphaCutoff                 = Ext.AlphaCutoff;
-                Data.metallicFactor              = Ext.MetallicFactor;
-                Data.roughnessFactor             = Ext.RoughnessFactor;
+                Data.baseColorFactor              = Ext.BaseColorFactor;
+                Data.emissiveFactor               = Ext.EmissiveFactor;
+                Data.alphaCutoff                  = Ext.AlphaCutoff;
+                Data.metallicFactor               = Ext.MetallicFactor;
+                Data.roughnessFactor              = Ext.RoughnessFactor;
                 if (!Ext.EnableBaseTexture)
                     Data.flags &= ~kMaterialFlag_HasBaseColorTexture;
                 if (!Ext.EnableEmissiveTexture)

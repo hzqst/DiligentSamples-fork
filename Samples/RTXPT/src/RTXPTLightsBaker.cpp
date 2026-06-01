@@ -43,47 +43,47 @@ namespace Diligent
 namespace
 {
 
-constexpr Uint32 kProxyRatio     = 12u;
-constexpr Uint32 kMinProxyCount  = 1u;
-constexpr Uint32 kLocalProxyCount = 128u;
-constexpr Uint32 kTileSize        = 8u;
+constexpr Uint32 kProxyRatio                        = 12u;
+constexpr Uint32 kMinProxyCount                     = 1u;
+constexpr Uint32 kLocalProxyCount                   = 128u;
+constexpr Uint32 kTileSize                          = 8u;
 constexpr float  kDistantVsLocalImportanceBaseScale = 0.0002f;
 
 struct RTXPTLightingControlDataCPU
 {
-    Uint32 TotalLightCount = 0;
-    Uint32 EnvmapQuadNodeCount = 0;
-    Uint32 AnalyticLightCount = 0;
-    Uint32 TriangleLightCount = 0;
-    Uint32 SamplingProxyCount = 0;
-    Uint32 HistoricTotalLightCount = 0;
+    Uint32 TotalLightCount                    = 0;
+    Uint32 EnvmapQuadNodeCount                = 0;
+    Uint32 AnalyticLightCount                 = 0;
+    Uint32 TriangleLightCount                 = 0;
+    Uint32 SamplingProxyCount                 = 0;
+    Uint32 HistoricTotalLightCount            = 0;
     Uint32 LastFrameTemporalFeedbackAvailable = 0;
-    Uint32 LastFrameLocalSamplesAvailable = 0;
-    Uint32 ProxyBuildTaskCount = 0;
-    Uint32 WeightsSumUINT = 0;
-    Uint32 ImportanceSamplingType = 1;
-    Uint32 _padding0 = 0;
-    Uint32 TemporalFeedbackRequired = 0;
-    Uint32 TotalMaxFeedbackCount = 0;
-    float  GlobalFeedbackUseWeight = 0.75f;
-    float  LocalToGlobalSampleRatio = 0.65f;
-    Uint32 TileBufferHeight = 0;
-    float  ScreenSpaceVsWorldSpaceThreshold = 0.3f;
-    Uint32 LocalSamplingResolution[2] = {};
-    Uint32 LocalSamplingTileJitter[2] = {};
-    Uint32 LocalSamplingTileJitterPrev[2] = {};
-    Uint32 ValidFeedbackCount = 0;
-    Uint32 _padding1 = 0;
-    Uint32 _padding2 = 0;
-    Uint32 _padding3 = 0;
-    Uint32 BakerPadding[464 / 4] = {};
+    Uint32 LastFrameLocalSamplesAvailable     = 0;
+    Uint32 ProxyBuildTaskCount                = 0;
+    Uint32 WeightsSumUINT                     = 0;
+    Uint32 ImportanceSamplingType             = 1;
+    Uint32 _padding0                          = 0;
+    Uint32 TemporalFeedbackRequired           = 0;
+    Uint32 TotalMaxFeedbackCount              = 0;
+    float  GlobalFeedbackUseWeight            = 0.75f;
+    float  LocalToGlobalSampleRatio           = 0.65f;
+    Uint32 TileBufferHeight                   = 0;
+    float  ScreenSpaceVsWorldSpaceThreshold   = 0.3f;
+    Uint32 LocalSamplingResolution[2]         = {};
+    Uint32 LocalSamplingTileJitter[2]         = {};
+    Uint32 LocalSamplingTileJitterPrev[2]     = {};
+    Uint32 ValidFeedbackCount                 = 0;
+    Uint32 _padding1                          = 0;
+    Uint32 _padding2                          = 0;
+    Uint32 _padding3                          = 0;
+    Uint32 BakerPadding[464 / 4]              = {};
 };
 static_assert(sizeof(RTXPTLightingControlDataCPU) == 112 + 464, "LightingControlData CPU mirror must match LightingTypes.hlsli");
 
 float EstimateAnalyticWeight(const PolymorphicLightInfo& Light)
 {
-    const float Luma = Light.colorType.x * 0.2126f + Light.colorType.y * 0.7152f + Light.colorType.z * 0.0722f;
-    const float Radius = std::max(Light.positionRadius.w, 0.0f);
+    const float Luma             = Light.colorType.x * 0.2126f + Light.colorType.y * 0.7152f + Light.colorType.z * 0.0722f;
+    const float Radius           = std::max(Light.positionRadius.w, 0.0f);
     const float AreaOrSolidAngle = Light.colorType.w == 2.0f ?
         std::max(Light.shaping.w, 1.0e-8f) :
         std::max(PI_F * Radius * Radius, 1.0f);
@@ -122,11 +122,11 @@ void RTXPTLightsBaker::Reset()
     m_FeedbackCandidatesUAV.Release();
     m_ProxyCounters.clear();
     m_ProxyIndices.clear();
-    m_AllocatedWidth  = 0;
-    m_AllocatedHeight = 0;
+    m_AllocatedWidth       = 0;
+    m_AllocatedHeight      = 0;
     m_ResetFeedbackPending = false;
     m_LocalSamplingEnabled = false;
-    m_Stats           = {};
+    m_Stats                = {};
 }
 
 void RTXPTLightsBaker::SceneReloaded()
@@ -134,7 +134,7 @@ void RTXPTLightsBaker::SceneReloaded()
     m_ProxyCounters.clear();
     m_ProxyIndices.clear();
     RequestFeedbackReset();
-    m_LocalSamplingEnabled = false;
+    m_LocalSamplingEnabled     = false;
     m_Stats.TotalLightCount    = 0;
     m_Stats.AnalyticLightCount = 0;
     m_Stats.TriangleLightCount = 0;
@@ -168,15 +168,15 @@ bool RTXPTLightsBaker::CreateResources(IRenderDevice* pDevice, IEngineFactory* p
         return false;
     }
 
-    const bool FeedbackOk = CreateFeedbackTextures(pDevice, Width, Height);
-    const bool LocalOk    = CreateLocalSamplingBuffer(pDevice, Width, Height);
+    const bool FeedbackOk          = CreateFeedbackTextures(pDevice, Width, Height);
+    const bool LocalOk             = CreateLocalSamplingBuffer(pDevice, Width, Height);
     const bool ClearFeedbackPassOk = FeedbackOk &&
         m_ClearFeedbackPass.Initialize(pDevice, pEngineFactory, "RTXPT LightsBaker clear feedback", "ClearFeedbackCS");
     const bool ClearPassOk = FeedbackOk && LocalOk && ClearFeedbackPassOk &&
         m_ClearLocalSamplingPass.Initialize(pDevice, pEngineFactory, "RTXPT LightsBaker clear local sampling", "ClearLocalSamplingCS");
     const bool FillPassOk = ClearPassOk &&
         m_FillLocalSamplingPass.Initialize(pDevice, pEngineFactory, "RTXPT LightsBaker fill local sampling", "FillLocalSamplingCS");
-    m_Stats.Ready         = FeedbackOk && LocalOk && ClearFeedbackPassOk && ClearPassOk && FillPassOk;
+    m_Stats.Ready = FeedbackOk && LocalOk && ClearFeedbackPassOk && ClearPassOk && FillPassOk;
     return m_Stats.Ready;
 }
 
@@ -410,7 +410,7 @@ bool RTXPTLightsBaker::BuildGlobalProxies(const RTXPTLights& Lights, const RTXPT
         m_Stats.ProxyTotalWeight += Weight;
     }
 
-    const Uint32 TargetProxyCount  = std::max<Uint32>(TotalLightCount, TotalLightCount * kProxyRatio);
+    const Uint32 TargetProxyCount   = std::max<Uint32>(TotalLightCount, TotalLightCount * kProxyRatio);
     Uint32       AssignedProxyCount = 0;
     for (ProxyBuildItem& Item : Items)
     {
@@ -482,47 +482,47 @@ bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLi
     }
 
     RTXPTLightingControlDataCPU Control;
-    Control.TotalLightCount        = m_Stats.TotalLightCount;
-    Control.AnalyticLightCount     = m_Stats.AnalyticLightCount;
-    Control.TriangleLightCount     = m_Stats.TriangleLightCount;
-    Control.SamplingProxyCount     = m_Stats.SamplingProxyCount;
+    Control.TotalLightCount         = m_Stats.TotalLightCount;
+    Control.AnalyticLightCount      = m_Stats.AnalyticLightCount;
+    Control.TriangleLightCount      = m_Stats.TriangleLightCount;
+    Control.SamplingProxyCount      = m_Stats.SamplingProxyCount;
     Control.HistoricTotalLightCount = m_Stats.TotalLightCount;
-    Control.ProxyBuildTaskCount    = m_Stats.TotalLightCount;
-    Control.WeightsSumUINT         = FloatAsUint(m_Stats.ProxyTotalWeight);
-    const bool  NEEATEnabled       = Settings.ImportanceSamplingType == 2u;
-    const float FeedbackUseWeight  = NEEATEnabled ? std::clamp(Settings.GlobalTemporalFeedbackWeight, 0.0f, 0.95f) : 0.0f;
-    const float LocalToGlobalRatio = NEEATEnabled ? std::clamp(Settings.LocalToGlobalSampleRatio, 0.0f, 0.95f) : 0.0f;
+    Control.ProxyBuildTaskCount     = m_Stats.TotalLightCount;
+    Control.WeightsSumUINT          = FloatAsUint(m_Stats.ProxyTotalWeight);
+    const bool  NEEATEnabled        = Settings.ImportanceSamplingType == 2u;
+    const float FeedbackUseWeight   = NEEATEnabled ? std::clamp(Settings.GlobalTemporalFeedbackWeight, 0.0f, 0.95f) : 0.0f;
+    const float LocalToGlobalRatio  = NEEATEnabled ? std::clamp(Settings.LocalToGlobalSampleRatio, 0.0f, 0.95f) : 0.0f;
     m_LocalSamplingEnabled =
         NEEATEnabled &&
         m_Stats.SamplingProxyCount > 0u &&
         m_Stats.LocalSamplingTileCountX > 0u &&
         m_Stats.LocalSamplingTileCountY > 0u;
 
-    Control.ImportanceSamplingType   = Settings.ImportanceSamplingType;
-    Control.TemporalFeedbackRequired = NEEATEnabled ? 1u : 0u;
-    Control.GlobalFeedbackUseWeight  = FeedbackUseWeight;
-    Control.LocalToGlobalSampleRatio = LocalToGlobalRatio;
-    Control.TileBufferHeight         = m_Stats.LocalSamplingTileCountY;
+    Control.ImportanceSamplingType           = Settings.ImportanceSamplingType;
+    Control.TemporalFeedbackRequired         = NEEATEnabled ? 1u : 0u;
+    Control.GlobalFeedbackUseWeight          = FeedbackUseWeight;
+    Control.LocalToGlobalSampleRatio         = LocalToGlobalRatio;
+    Control.TileBufferHeight                 = m_Stats.LocalSamplingTileCountY;
     Control.ScreenSpaceVsWorldSpaceThreshold = 0.3f;
-    Control.LocalSamplingResolution[0] = m_Stats.LocalSamplingTileCountX;
-    Control.LocalSamplingResolution[1] = m_Stats.LocalSamplingTileCountY;
-    Control.BakerPadding[0]            = FloatAsUint(Settings.DistantVsLocalImportanceScale * kDistantVsLocalImportanceBaseScale);
-    Control.BakerPadding[1]            = Settings.EnvMapImportanceMapMipCount;
-    Control.BakerPadding[2]            = Settings.EnvMapImportanceMapResolution;
-    Control.BakerPadding[4]            = m_AllocatedWidth;
-    Control.BakerPadding[5]            = m_AllocatedHeight;
-    Control.BakerPadding[6]            = m_AllocatedWidth;
-    Control.BakerPadding[7]            = m_AllocatedHeight;
-    Control.BakerPadding[8]            = Settings.MouseCursorX;
-    Control.BakerPadding[9]            = Settings.MouseCursorY;
-    Control.BakerPadding[10]           = FloatAsUint(Settings.ViewportSize.x > 0.0f ? Settings.PrevViewportSize.x / Settings.ViewportSize.x : 1.0f);
-    Control.BakerPadding[11]           = FloatAsUint(Settings.ViewportSize.y > 0.0f ? Settings.PrevViewportSize.y / Settings.ViewportSize.y : 1.0f);
-    Control.BakerPadding[14]           = m_Stats.UpdateCounter + 1u;
-    Control.BakerPadding[20]           = FloatAsUint(Settings.CameraPosition.x);
-    Control.BakerPadding[21]           = FloatAsUint(Settings.CameraPosition.y);
-    Control.BakerPadding[22]           = FloatAsUint(Settings.CameraPosition.z);
-    Control.BakerPadding[23]           = FloatAsUint(Settings.AverageContentsDistance);
-    const auto WriteFloat4 = [&Control](Uint32 BaseIndex, const float4& Value) {
+    Control.LocalSamplingResolution[0]       = m_Stats.LocalSamplingTileCountX;
+    Control.LocalSamplingResolution[1]       = m_Stats.LocalSamplingTileCountY;
+    Control.BakerPadding[0]                  = FloatAsUint(Settings.DistantVsLocalImportanceScale * kDistantVsLocalImportanceBaseScale);
+    Control.BakerPadding[1]                  = Settings.EnvMapImportanceMapMipCount;
+    Control.BakerPadding[2]                  = Settings.EnvMapImportanceMapResolution;
+    Control.BakerPadding[4]                  = m_AllocatedWidth;
+    Control.BakerPadding[5]                  = m_AllocatedHeight;
+    Control.BakerPadding[6]                  = m_AllocatedWidth;
+    Control.BakerPadding[7]                  = m_AllocatedHeight;
+    Control.BakerPadding[8]                  = Settings.MouseCursorX;
+    Control.BakerPadding[9]                  = Settings.MouseCursorY;
+    Control.BakerPadding[10]                 = FloatAsUint(Settings.ViewportSize.x > 0.0f ? Settings.PrevViewportSize.x / Settings.ViewportSize.x : 1.0f);
+    Control.BakerPadding[11]                 = FloatAsUint(Settings.ViewportSize.y > 0.0f ? Settings.PrevViewportSize.y / Settings.ViewportSize.y : 1.0f);
+    Control.BakerPadding[14]                 = m_Stats.UpdateCounter + 1u;
+    Control.BakerPadding[20]                 = FloatAsUint(Settings.CameraPosition.x);
+    Control.BakerPadding[21]                 = FloatAsUint(Settings.CameraPosition.y);
+    Control.BakerPadding[22]                 = FloatAsUint(Settings.CameraPosition.z);
+    Control.BakerPadding[23]                 = FloatAsUint(Settings.AverageContentsDistance);
+    const auto WriteFloat4                   = [&Control](Uint32 BaseIndex, const float4& Value) {
         Control.BakerPadding[BaseIndex + 0] = FloatAsUint(Value.x);
         Control.BakerPadding[BaseIndex + 1] = FloatAsUint(Value.y);
         Control.BakerPadding[BaseIndex + 2] = FloatAsUint(Value.z);

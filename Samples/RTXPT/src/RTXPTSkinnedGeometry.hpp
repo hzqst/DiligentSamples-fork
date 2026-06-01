@@ -52,21 +52,21 @@ static_assert(sizeof(RTXPTGeometryVertex) == 32, "RTXPTGeometryVertex layout mus
 
 struct RTXPTSkinnedSceneNodeGeometry
 {
-    RTXPTSceneId      ModelAssetId      = InvalidRTXPTSceneId;
-    RTXPTSceneId      ModelInstanceId    = InvalidRTXPTSceneId;
-    const GLTF::Node* pNode              = nullptr;
-    Uint32            SourceVertexBase   = 0;
-    Uint32            VertexBase         = 0;
-    Uint32            VertexCount        = 0;
-    Uint32            JointBase          = 0;
-    Uint32            JointCount         = 0;
+    RTXPTSceneId      ModelAssetId     = InvalidRTXPTSceneId;
+    RTXPTSceneId      ModelInstanceId  = InvalidRTXPTSceneId;
+    const GLTF::Node* pNode            = nullptr;
+    Uint32            SourceVertexBase = 0;
+    Uint32            VertexBase       = 0;
+    Uint32            VertexCount      = 0;
+    Uint32            JointBase        = 0;
+    Uint32            JointCount       = 0;
 };
 
 struct RTXPTSkinnedSceneAssetBinding
 {
-    RTXPTSceneId                        ModelAssetId = InvalidRTXPTSceneId;
-    IBuffer*                            pSourceVertexBuffer = nullptr;
-    IBuffer*                            pSourceSkinBuffer   = nullptr;
+    RTXPTSceneId                          ModelAssetId        = InvalidRTXPTSceneId;
+    IBuffer*                              pSourceVertexBuffer = nullptr;
+    IBuffer*                              pSourceSkinBuffer   = nullptr;
     RefCntAutoPtr<IShaderResourceBinding> pSRB;
 };
 
@@ -97,12 +97,12 @@ public:
     bool HasSkinnedGeometry() const { return !m_Nodes.empty(); }
     bool IsReady() const { return m_Stats.Ready && m_SkinnedVertexBuffer; }
 
-    IBuffer*                                           GetSkinnedVertexBuffer() const { return m_SkinnedVertexBuffer; }
-    const std::vector<RTXPTSkinnedSceneNodeGeometry>&   GetNodes() const { return m_Nodes; }
-    const RTXPTSkinnedSceneNodeGeometry*               FindNode(RTXPTSceneId ModelAssetId,
-                                                                RTXPTSceneId ModelInstanceId,
-                                                                const GLTF::Node* pNode) const;
-    const RTXPTSkinnedSceneGeometryStats&              GetStats() const { return m_Stats; }
+    IBuffer*                                          GetSkinnedVertexBuffer() const { return m_SkinnedVertexBuffer; }
+    const std::vector<RTXPTSkinnedSceneNodeGeometry>& GetNodes() const { return m_Nodes; }
+    const RTXPTSkinnedSceneNodeGeometry*              FindNode(RTXPTSceneId      ModelAssetId,
+                                                               RTXPTSceneId      ModelInstanceId,
+                                                               const GLTF::Node* pNode) const;
+    const RTXPTSkinnedSceneGeometryStats&             GetStats() const { return m_Stats; }
 
 private:
     struct SkinningConstants
@@ -120,18 +120,18 @@ private:
     bool BuildNodeTable(const RTXPTSceneGraphData& SceneData);
     bool UploadJointMatrices(IDeviceContext* pContext, const RTXPTSceneGraphData& SceneData);
 
-    std::vector<RTXPTSkinnedSceneNodeGeometry>  m_Nodes;
-    std::vector<float4x4>                       m_JointMatrices;
-    std::vector<RTXPTSkinnedSceneAssetBinding>  m_AssetBindings;
-    RefCntAutoPtr<IBuffer>                      m_SkinnedVertexBuffer;
-    RefCntAutoPtr<IBuffer>                      m_JointMatrixBuffer;
-    RefCntAutoPtr<IBuffer>                      m_SkinningConstantsCB;
-    RefCntAutoPtr<IPipelineState>               m_PSO;
-    RTXPTSkinnedSceneGeometryStats              m_Stats;
+    std::vector<RTXPTSkinnedSceneNodeGeometry> m_Nodes;
+    std::vector<float4x4>                      m_JointMatrices;
+    std::vector<RTXPTSkinnedSceneAssetBinding> m_AssetBindings;
+    RefCntAutoPtr<IBuffer>                     m_SkinnedVertexBuffer;
+    RefCntAutoPtr<IBuffer>                     m_JointMatrixBuffer;
+    RefCntAutoPtr<IBuffer>                     m_SkinningConstantsCB;
+    RefCntAutoPtr<IPipelineState>              m_PSO;
+    RTXPTSkinnedSceneGeometryStats             m_Stats;
 };
 
-using RTXPTSkinnedNodeGeometry = RTXPTSkinnedSceneNodeGeometry;
+using RTXPTSkinnedNodeGeometry  = RTXPTSkinnedSceneNodeGeometry;
 using RTXPTSkinnedGeometryStats = RTXPTSkinnedSceneGeometryStats;
-using RTXPTSkinnedGeometry     = RTXPTSkinnedSceneGeometry;
+using RTXPTSkinnedGeometry      = RTXPTSkinnedSceneGeometry;
 
 } // namespace Diligent

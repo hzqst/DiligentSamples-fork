@@ -26,7 +26,7 @@ struct RTXPTModelAsset
     std::string                  ResolvedPath;
     std::string                  ModelName;
     std::unique_ptr<GLTF::Model> Model;
-    Uint32                       SceneIndex = 0;
+    Uint32                       SceneIndex       = 0;
     Uint32                       GlobalVertexBase = 0;
     Uint32                       GlobalIndexBase  = 0;
     Uint32                       VertexCount      = 0;
@@ -70,35 +70,35 @@ struct RTXPTModelInstance
 
 struct RTXPTMaterialExtension
 {
-    std::string   FilePath;
-    std::string   ModelName;
-    std::string   MaterialName;
-    bool          Loaded = false;
+    std::string    FilePath;
+    std::string    ModelName;
+    std::string    MaterialName;
+    bool           Loaded = false;
     nlohmann::json RawJson;
 
-    float4 BaseColorFactor                              = float4{1, 1, 1, 1};
-    float3 EmissiveFactor                               = float3{0, 0, 0};
-    float  EmissiveIntensity                            = 1.0f;
-    float  MetallicFactor                               = 1.0f;
-    float  RoughnessFactor                              = 1.0f;
-    float  AlphaCutoff                                  = 0.5f;
-    bool   EnableAlphaTesting                           = false;
-    bool   EnableBaseTexture                            = true;
-    bool   EnableEmissiveTexture                        = true;
-    bool   EnableNormalTexture                          = true;
-    bool   EnableOcclusionRoughnessMetallicTexture      = true;
-    bool   EnableTransmission                           = false;
-    float  TransmissionFactor                           = 0.0f;
-    float  IoR                                          = 1.5f;
-    bool   ThinSurface                                  = false;
-    bool   SkipRender                                   = false;
+    float4 BaseColorFactor                         = float4{1, 1, 1, 1};
+    float3 EmissiveFactor                          = float3{0, 0, 0};
+    float  EmissiveIntensity                       = 1.0f;
+    float  MetallicFactor                          = 1.0f;
+    float  RoughnessFactor                         = 1.0f;
+    float  AlphaCutoff                             = 0.5f;
+    bool   EnableAlphaTesting                      = false;
+    bool   EnableBaseTexture                       = true;
+    bool   EnableEmissiveTexture                   = true;
+    bool   EnableNormalTexture                     = true;
+    bool   EnableOcclusionRoughnessMetallicTexture = true;
+    bool   EnableTransmission                      = false;
+    float  TransmissionFactor                      = 0.0f;
+    float  IoR                                     = 1.5f;
+    bool   ThinSurface                             = false;
+    bool   SkipRender                              = false;
 };
 
 struct RTXPTSceneLightMetadata
 {
-    std::string   Name;
-    std::string   Type;
-    float4x4      GlobalTransform = float4x4::Identity();
+    std::string    Name;
+    std::string    Type;
+    float4x4       GlobalTransform = float4x4::Identity();
     nlohmann::json RawJson;
 };
 
@@ -144,15 +144,15 @@ struct RTXPTSceneGraphData
     void Clear();
 };
 
-std::string GetRTXPTModelNameFromPath(const std::string& ModelPath);
-float4x4    MakeRTXPTNodeTransform(const nlohmann::json& Node);
+std::string              GetRTXPTModelNameFromPath(const std::string& ModelPath);
+float4x4                 MakeRTXPTNodeTransform(const nlohmann::json& Node);
 std::vector<std::string> GetRTXPTMaterialCandidates(const std::string& AssetsRoot,
                                                     const std::string& SceneName,
                                                     const std::string& ModelName,
                                                     const std::string& MaterialName);
-RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string& FilePath,
-                                                   const std::string& ModelName,
-                                                   const std::string& MaterialName,
-                                                   const nlohmann::json& Json);
+RTXPTMaterialExtension   ParseRTXPTMaterialExtension(const std::string&    FilePath,
+                                                     const std::string&    ModelName,
+                                                     const std::string&    MaterialName,
+                                                     const nlohmann::json& Json);
 
 } // namespace Diligent

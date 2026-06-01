@@ -56,30 +56,30 @@ struct LightsBakerEnvMapParamsCPU
 {
     RTXPTFloat3x4 Transform       = {};
     RTXPTFloat3x4 InvTransform    = {};
-    float3   ColorMultiplier = float3{1, 1, 1};
-    float    Enabled         = 0.0f;
+    float3        ColorMultiplier = float3{1, 1, 1};
+    float         Enabled         = 0.0f;
 };
 
 struct RTXPTLightsBakerSettings
 {
-    Uint32  ImportanceSamplingType        = 1; // 0=Uniform, 1=Power+, 2=NEE-AT.
-    float3  CameraPosition                = float3{0, 0, 0};
-    float3  CameraDirection               = float3{0, 0, -1};
-    float   AverageContentsDistance       = 10.0f;
-    Uint32  MouseCursorX                  = 0;
-    Uint32  MouseCursorY                  = 0;
-    float4x4 ViewProjMatrix               = float4x4::Identity();
-    float   GlobalTemporalFeedbackWeight  = 0.75f;
-    float   LocalToGlobalSampleRatio      = 0.65f;
-    bool    UseApproximateMIS             = false;
-    bool    ResetFeedback                 = false;
-    float2  ViewportSize                  = float2{0, 0};
-    float2  PrevViewportSize              = float2{0, 0};
-    Uint32  EnvMapImportanceMapResolution = 0;
-    Uint32  EnvMapImportanceMapMipCount    = 0;
-    LightsBakerEnvMapParamsCPU EnvMapParams = {};
-    float   DistantVsLocalImportanceScale = 1.0f;
-    Int64   FrameIndex                    = -1;
+    Uint32                     ImportanceSamplingType        = 1; // 0=Uniform, 1=Power+, 2=NEE-AT.
+    float3                     CameraPosition                = float3{0, 0, 0};
+    float3                     CameraDirection               = float3{0, 0, -1};
+    float                      AverageContentsDistance       = 10.0f;
+    Uint32                     MouseCursorX                  = 0;
+    Uint32                     MouseCursorY                  = 0;
+    float4x4                   ViewProjMatrix                = float4x4::Identity();
+    float                      GlobalTemporalFeedbackWeight  = 0.75f;
+    float                      LocalToGlobalSampleRatio      = 0.65f;
+    bool                       UseApproximateMIS             = false;
+    bool                       ResetFeedback                 = false;
+    float2                     ViewportSize                  = float2{0, 0};
+    float2                     PrevViewportSize              = float2{0, 0};
+    Uint32                     EnvMapImportanceMapResolution = 0;
+    Uint32                     EnvMapImportanceMapMipCount   = 0;
+    LightsBakerEnvMapParamsCPU EnvMapParams                  = {};
+    float                      DistantVsLocalImportanceScale = 1.0f;
+    Int64                      FrameIndex                    = -1;
 };
 
 struct RTXPTLightsBakerStats
@@ -150,12 +150,12 @@ private:
     RTXPTLightsBakerPass m_FillLocalSamplingPass;
     RTXPTLightsBakerPass m_ClearFeedbackPass;
 
-    std::vector<Uint32> m_ProxyCounters;
-    std::vector<Uint32> m_ProxyIndices;
-    Uint32              m_AllocatedWidth  = 0;
-    Uint32              m_AllocatedHeight = 0;
-    bool                m_ResetFeedbackPending = false;
-    bool                m_LocalSamplingEnabled = false;
+    std::vector<Uint32>   m_ProxyCounters;
+    std::vector<Uint32>   m_ProxyIndices;
+    Uint32                m_AllocatedWidth       = 0;
+    Uint32                m_AllocatedHeight      = 0;
+    bool                  m_ResetFeedbackPending = false;
+    bool                  m_LocalSamplingEnabled = false;
     RTXPTLightsBakerStats m_Stats;
 };
 

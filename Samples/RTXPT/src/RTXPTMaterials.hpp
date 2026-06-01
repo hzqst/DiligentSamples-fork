@@ -92,19 +92,19 @@ constexpr Uint32 kMaterialFlag_EmissiveAreaLight           = 0x20u;
 
 // A material is alpha tested only when it uses ALPHA_MODE_MASK and actually has a base-color texture to
 // sample the alpha from. This compatibility overload preserves the single-GLTF path behavior.
-bool RTXPTMaterialIsAlphaTested(const GLTF::Material& Material);
-bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material& Material);
+bool                          RTXPTMaterialIsAlphaTested(const GLTF::Material& Material);
+bool                          RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material& Material);
 const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphData& SceneData,
                                                         const RTXPTModelAsset&     Asset,
                                                         Uint32                     MaterialId);
-bool RTXPTMaterialHasBaseColorTexture(const GLTF::Model&             Model,
-                                      const GLTF::Material&          Material,
-                                      const RTXPTMaterialExtension*  pExtension);
-bool RTXPTMaterialIsAlphaTested(const GLTF::Material&          Material,
-                                const RTXPTMaterialExtension*  pExtension,
-                                bool                           HasBaseColorTexture);
-bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&          Material,
-                                      const RTXPTMaterialExtension*  pExtension);
+bool                          RTXPTMaterialHasBaseColorTexture(const GLTF::Model&            Model,
+                                                               const GLTF::Material&         Material,
+                                                               const RTXPTMaterialExtension* pExtension);
+bool                          RTXPTMaterialIsAlphaTested(const GLTF::Material&         Material,
+                                                         const RTXPTMaterialExtension* pExtension,
+                                                         bool                          HasBaseColorTexture);
+bool                          RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&         Material,
+                                                               const RTXPTMaterialExtension* pExtension);
 
 struct RTXPTMaterialStats
 {

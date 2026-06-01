@@ -41,13 +41,13 @@ namespace Diligent
 
 struct RTXPTSceneCamera
 {
-    std::string Name;
-    float3      Position              = float3{0.0f, 0.0f, 0.0f};
-    QuaternionF Rotation              = QuaternionF{};
-    float       VerticalFov           = PI_F / 4.0f;
-    float       NearPlane             = 0.1f;
-    float       FarPlane              = 10000.0f;
-    bool        HasExplicitClipPlanes = false;
+    std::string          Name;
+    float3               Position              = float3{0.0f, 0.0f, 0.0f};
+    QuaternionF          Rotation              = QuaternionF{};
+    float                VerticalFov           = PI_F / 4.0f;
+    float                NearPlane             = 0.1f;
+    float                FarPlane              = 10000.0f;
+    bool                 HasExplicitClipPlanes = false;
     std::optional<bool>  EnableAutoExposure;
     std::optional<float> ExposureCompensation;
     std::optional<float> ExposureValue;
@@ -75,28 +75,28 @@ public:
     void Update(double CurrTime, double ElapsedTime);
     bool HasValidContent() const;
 
-    const std::string& GetLoadedSceneName() const { return m_LoadedSceneName; }
-    const std::string& GetAssetsRoot() const { return m_AssetsRoot; }
-    const std::string& GetModelPath() const { return m_ModelPath; }
+    const std::string&             GetLoadedSceneName() const { return m_LoadedSceneName; }
+    const std::string&             GetAssetsRoot() const { return m_AssetsRoot; }
+    const std::string&             GetModelPath() const { return m_ModelPath; }
     const GLTF::Model*             GetModel() const;
-    const GLTF::ModelTransforms&    GetTransforms() const;
-    Uint32                          GetSceneIndex() const { return m_SceneIndex; }
-    VALUE_TYPE                      GetIndexType() const { return m_IndexType; }
-    Uint32                          GetMeshNodeCount() const { return m_MeshNodeCount; }
-    Uint32                          GetPrimitiveCount() const { return m_PrimitiveCount; }
-    Uint32                          GetMaterialCount() const { return m_MaterialCount; }
-    Uint32                          GetLightCount() const { return m_LightCount; }
-    Uint32                          GetCameraCount() const { return static_cast<Uint32>(m_Cameras.size()); }
-    const RTXPTSceneCamera*         GetCamera(Uint32 CameraIndex) const;
-    const RTXPTSceneGeometryStats&  GetGeometryStats() const { return m_GeometryStats; }
-    const RTXPTSceneGraphData&      GetSceneGraphData() const { return m_SceneGraph; }
-    const RTXPTSceneAdapterStats&   GetAdapterStats() const { return m_SceneGraph.Stats; }
-    Uint32                          GetModelAssetCount() const { return static_cast<Uint32>(m_SceneGraph.ModelAssets.size()); }
-    Uint32                          GetModelInstanceCount() const { return static_cast<Uint32>(m_SceneGraph.ModelInstances.size()); }
-    bool                            HasSkinnedGeometry() const { return m_GeometryStats.HasSkinnedGeometry; }
-    bool                            HasAnimation() const { return m_GeometryStats.HasAnimations; }
-    bool                            IsGeometryDirty() const { return m_GeometryDirty; }
-    void                            ClearGeometryDirty() { m_GeometryDirty = false; }
+    const GLTF::ModelTransforms&   GetTransforms() const;
+    Uint32                         GetSceneIndex() const { return m_SceneIndex; }
+    VALUE_TYPE                     GetIndexType() const { return m_IndexType; }
+    Uint32                         GetMeshNodeCount() const { return m_MeshNodeCount; }
+    Uint32                         GetPrimitiveCount() const { return m_PrimitiveCount; }
+    Uint32                         GetMaterialCount() const { return m_MaterialCount; }
+    Uint32                         GetLightCount() const { return m_LightCount; }
+    Uint32                         GetCameraCount() const { return static_cast<Uint32>(m_Cameras.size()); }
+    const RTXPTSceneCamera*        GetCamera(Uint32 CameraIndex) const;
+    const RTXPTSceneGeometryStats& GetGeometryStats() const { return m_GeometryStats; }
+    const RTXPTSceneGraphData&     GetSceneGraphData() const { return m_SceneGraph; }
+    const RTXPTSceneAdapterStats&  GetAdapterStats() const { return m_SceneGraph.Stats; }
+    Uint32                         GetModelAssetCount() const { return static_cast<Uint32>(m_SceneGraph.ModelAssets.size()); }
+    Uint32                         GetModelInstanceCount() const { return static_cast<Uint32>(m_SceneGraph.ModelInstances.size()); }
+    bool                           HasSkinnedGeometry() const { return m_GeometryStats.HasSkinnedGeometry; }
+    bool                           HasAnimation() const { return m_GeometryStats.HasAnimations; }
+    bool                           IsGeometryDirty() const { return m_GeometryDirty; }
+    void                           ClearGeometryDirty() { m_GeometryDirty = false; }
 
     // Buffer 0 packs POSITION + NORMAL + TEXCOORD_0 (the Diligent GLTF default layout).
     // VertexStride0 is the per-vertex stride for buffer 0 and must equal sizeof(GeometryVertexData) on the shader side.
@@ -106,10 +106,10 @@ public:
     Uint32   GetVertexStride0() const { return m_VertexStride0; }
 
 private:
-    void ResetLoadedData();
-    void CacheSceneData();
-    bool LoadSceneCameras(const std::string& ScenePath);
-    const RTXPTModelAsset* GetCompatibilityModelAsset() const;
+    void                      ResetLoadedData();
+    void                      CacheSceneData();
+    bool                      LoadSceneCameras(const std::string& ScenePath);
+    const RTXPTModelAsset*    GetCompatibilityModelAsset() const;
     const RTXPTModelInstance* GetCompatibilityModelInstance() const;
 
     RTXPTSceneGraphData           m_SceneGraph;

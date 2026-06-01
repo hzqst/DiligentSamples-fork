@@ -96,11 +96,11 @@ bool LoadRTXPTRelaxedJsonFile(const std::string& FilePath, RTXPTJsonLoadResult& 
     if (!Result.Json.is_discarded())
         return true;
 
-    Result.StrictParseFailed     = true;
+    Result.StrictParseFailed      = true;
     const std::string RelaxedText = RemoveTrailingJsonCommas(Text);
-    Result.Json                  = nlohmann::json::parse(RelaxedText, nullptr, false, true);
-    Result.RelaxedParseUsed      = true;
-    Result.CommentsIgnored       = true;
+    Result.Json                   = nlohmann::json::parse(RelaxedText, nullptr, false, true);
+    Result.RelaxedParseUsed       = true;
+    Result.CommentsIgnored        = true;
     if (!Result.Json.is_discarded())
         return true;
 

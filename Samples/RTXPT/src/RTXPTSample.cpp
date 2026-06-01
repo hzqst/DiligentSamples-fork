@@ -41,18 +41,18 @@ namespace Diligent
 namespace
 {
 
-constexpr float       kDefaultCameraNearPlane = 1.0f;
-constexpr float       kDefaultCameraFarPlane   = 10000.0f;
-constexpr float       kMinClipPlaneSeparation = 1e-3f;
-constexpr int         kMaxBounceSliderValue   = 48;
+constexpr float       kDefaultCameraNearPlane                 = 1.0f;
+constexpr float       kDefaultCameraFarPlane                  = 10000.0f;
+constexpr float       kMinClipPlaneSeparation                 = 1e-3f;
+constexpr int         kMaxBounceSliderValue                   = 48;
 constexpr bool        kDefaultToneMappingAutoExposure         = false;
 constexpr float       kDefaultToneMappingExposureCompensation = 0.0f;
 constexpr float       kDefaultToneMappingExposureValue        = 0.0f;
 constexpr float       kDefaultToneMappingExposureValueMin     = -16.0f;
 constexpr float       kDefaultToneMappingExposureValueMax     = 16.0f;
-constexpr const char* kPreferredSceneName     = "bistro-programmer-art.scene.json";
-constexpr const char* kSceneFileSuffix        = ".scene.json";
-constexpr Uint32      kMaxPackedEmissiveTriangleCount = 0x7fffffffu;
+constexpr const char* kPreferredSceneName                     = "bistro-programmer-art.scene.json";
+constexpr const char* kSceneFileSuffix                        = ".scene.json";
+constexpr Uint32      kMaxPackedEmissiveTriangleCount         = 0x7fffffffu;
 
 Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 EmissiveTriangleCount)
 {
@@ -278,11 +278,11 @@ void RTXPTSample::ResetSceneDependentResources()
     m_CameraNearPlane       = kDefaultCameraNearPlane;
     m_CameraFarPlane        = kDefaultCameraFarPlane;
     ResetToneMappingSettings(m_ReferenceUI);
-    m_AccumulationFrame     = 0;
-    m_AccumulationActive    = false;
-    m_HasLastCameraMatrices = false;
-    m_HasDynamicGeometry    = false;
-    m_EmissiveTrianglesDirty = true;
+    m_AccumulationFrame        = 0;
+    m_AccumulationActive       = false;
+    m_HasLastCameraMatrices    = false;
+    m_HasDynamicGeometry       = false;
+    m_EmissiveTrianglesDirty   = true;
     m_LightsBakerSettingsDirty = false;
     m_EnvMapBakerDirty         = true;
     m_EnvMapBakerSettingsDirty = true;
@@ -303,7 +303,7 @@ bool RTXPTSample::UpdateEnvMapBaker(bool ForceRebuild)
                                               m_FeatureCaps.ComputeShaders);
     if (Updated)
     {
-        m_EnvMapBakerDirty = false;
+        m_EnvMapBakerDirty         = false;
         m_EnvMapBakerSettingsDirty = false;
     }
     return Updated;
@@ -337,9 +337,9 @@ bool RTXPTSample::RebuildSceneDependentResources()
     ResourcesReady &= UpdateLightsBaker(true);
 
     ResourcesReady &= m_SkinnedGeometry.Initialize(m_pDevice,
-                                                    m_pEngineFactory,
-                                                    SceneData,
-                                                    m_FeatureCaps.ComputeShaders);
+                                                   m_pEngineFactory,
+                                                   SceneData,
+                                                   m_FeatureCaps.ComputeShaders);
 
     m_HasDynamicGeometry     = m_SkinnedGeometry.HasSkinnedGeometry();
     m_EmissiveTrianglesDirty = true;
@@ -553,12 +553,12 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
         m_AccumulationFrame = 0;
     }
 
-    m_LastFrameConstants.ptConsts.bounceCount           = m_MaxBounces;
-    m_LastFrameConstants.ptConsts.sampleIndex           = m_AccumulationFrame;
-    m_LastFrameConstants.ptConsts.resetAccumulation     = m_ResetAccumulationPending ? 1u : 0u;
-    m_LastFrameConstants.ptConsts.minBounceCount        = m_MinBounces;
-    m_LastFrameConstants.ptConsts.NEEEnabled            = m_EnableNEE ? 1u : 0u;
-    const Uint32 EmissiveTriangleCount = (m_EnableNEE && m_EnableEmissiveNEE && m_EmissiveTrianglePass.IsReady() &&
+    m_LastFrameConstants.ptConsts.bounceCount       = m_MaxBounces;
+    m_LastFrameConstants.ptConsts.sampleIndex       = m_AccumulationFrame;
+    m_LastFrameConstants.ptConsts.resetAccumulation = m_ResetAccumulationPending ? 1u : 0u;
+    m_LastFrameConstants.ptConsts.minBounceCount    = m_MinBounces;
+    m_LastFrameConstants.ptConsts.NEEEnabled        = m_EnableNEE ? 1u : 0u;
+    const Uint32 EmissiveTriangleCount              = (m_EnableNEE && m_EnableEmissiveNEE && m_EmissiveTrianglePass.IsReady() &&
                                           !m_EmissiveTrianglesDirty) ?
         m_Lights.GetEmissiveTriangleCount() :
         0u;
@@ -566,10 +566,10 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.ptConsts.lightIntensityScale   = m_LightIntensityScale;
     m_LastFrameConstants.ptConsts.maxNEEBounceCount     = m_MaxNEEBounces;
     m_LastFrameConstants.ptConsts.analyticLightCount    = m_Lights.GetStats().LightCount;
-    m_LastFrameConstants.ptConsts.NEEType                = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 2));
-    m_LastFrameConstants.ptConsts.NEECandidateSamples    = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEECandidateSamples, 1, 32));
-    m_LastFrameConstants.ptConsts.NEEFullSamples         = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEFullSamples, 0, 32));
-    m_LastFrameConstants.ptConsts.NEEMISType             = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 2));
+    m_LastFrameConstants.ptConsts.NEEType               = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 2));
+    m_LastFrameConstants.ptConsts.NEECandidateSamples   = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEECandidateSamples, 1, 32));
+    m_LastFrameConstants.ptConsts.NEEFullSamples        = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEFullSamples, 0, 32));
+    m_LastFrameConstants.ptConsts.NEEMISType            = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 2));
     // G1: a disabled firefly filter uploads a zero threshold, so the soft cap is a no-op and the
     // converged image is identical to the filter-on image (only per-sample variance differs).
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
@@ -593,7 +593,7 @@ bool RTXPTSample::UpdateLightsBaker(bool ResetFeedback)
     if (!m_pDevice || !m_pSwapChain || !m_Scene.HasValidContent())
         return false;
 
-    const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+    const SwapChainDesc&     SCDesc = m_pSwapChain->GetDesc();
     RTXPTLightsBakerSettings BakerSettings;
     BakerSettings.ImportanceSamplingType        = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 2));
     BakerSettings.CameraPosition                = m_Camera.GetPos();
@@ -837,7 +837,7 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
         {
             const RTXPTSceneGraphData& SceneData        = m_Scene.GetSceneGraphData();
             const bool                 SkinningExecuted = m_SkinnedGeometry.Update(m_pImmediateContext, SceneData);
-            const bool ASUpdated =
+            const bool                 ASUpdated =
                 SkinningExecuted &&
                 m_AccelerationStructures.UpdateDynamicBLAS(m_pImmediateContext, SceneData, m_SkinnedGeometry);
             if (ASUpdated)
@@ -885,7 +885,7 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
         RequestAccumulationReset("Window resized");
         if (m_Scene.HasValidContent())
         {
-            const bool EnvUpdated           = UpdateEnvMapBaker(false);
+            const bool EnvUpdated = UpdateEnvMapBaker(false);
             const bool LightsResourcesReady =
                 m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, Width, Height, m_FeatureCaps.ComputeShaders);
             const bool LightsUpdated = LightsResourcesReady && UpdateLightsBaker(true);
@@ -1098,7 +1098,7 @@ void RTXPTSample::UpdateUI()
         if (!m_EnvMapSources.empty())
         {
             const int ClampedSource = std::clamp(m_SelectedEnvMapSource, 0, static_cast<int>(m_EnvMapSources.size()) - 1);
-            EnvPreview               = m_EnvMapSources[static_cast<size_t>(ClampedSource)].DisplayName.c_str();
+            EnvPreview              = m_EnvMapSources[static_cast<size_t>(ClampedSource)].DisplayName.c_str();
         }
 
         if (ImGui::BeginCombo("Source", EnvPreview))
@@ -1108,10 +1108,10 @@ void RTXPTSample::UpdateUI()
                 const bool Selected = static_cast<int>(Index) == m_SelectedEnvMapSource;
                 if (ImGui::Selectable(m_EnvMapSources[Index].DisplayName.c_str(), Selected))
                 {
-                    m_SelectedEnvMapSource               = static_cast<int>(Index);
-                    m_EnvMapSettings.SourceRelativePath   = m_EnvMapSources[Index].RelativePath;
-                    m_EnvMapBakerDirty                    = true;
-                    m_EnvMapBakerSettingsDirty            = true;
+                    m_SelectedEnvMapSource              = static_cast<int>(Index);
+                    m_EnvMapSettings.SourceRelativePath = m_EnvMapSources[Index].RelativePath;
+                    m_EnvMapBakerDirty                  = true;
+                    m_EnvMapBakerSettingsDirty          = true;
                     RequestAccumulationReset("Environment source changed");
                 }
                 if (Selected)

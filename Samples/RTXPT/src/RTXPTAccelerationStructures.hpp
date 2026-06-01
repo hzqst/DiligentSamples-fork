@@ -43,14 +43,14 @@ namespace Diligent
 
 struct SubInstanceData
 {
-    Uint32 MaterialID   = 0;
-    Uint32 Flags        = 0;
-    Uint32 IndexOffset  = 0;
-    Uint32 IndexCount   = 0;
-    Uint32 VertexOffset = 0;
-    Uint32 VertexCount  = 0;
+    Uint32 MaterialID             = 0;
+    Uint32 Flags                  = 0;
+    Uint32 IndexOffset            = 0;
+    Uint32 IndexCount             = 0;
+    Uint32 VertexOffset           = 0;
+    Uint32 VertexCount            = 0;
     Uint32 EmissiveTriangleOffset = 0;
-    Uint32 _padding1    = 0;
+    Uint32 _padding1              = 0;
 };
 static_assert(sizeof(SubInstanceData) == 32, "SubInstanceData layout must match PathTracer/PathTracerShared.h");
 

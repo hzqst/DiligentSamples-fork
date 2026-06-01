@@ -48,24 +48,24 @@ namespace Diligent
 namespace
 {
 
-constexpr const char* kProceduralSkyPath = "==PROCEDURAL_SKY==";
-constexpr Uint32      kFallbackCubeSize  = 4;
+constexpr const char* kProceduralSkyPath          = "==PROCEDURAL_SKY==";
+constexpr Uint32      kFallbackCubeSize           = 4;
 constexpr Uint32      kMinImportanceMapResolution = 16;
 constexpr Uint32      kImportanceBakerThreads     = 16;
-constexpr Uint32      kImportanceSamplesPerAxis = 4;
+constexpr Uint32      kImportanceSamplesPerAxis   = 4;
 
 struct EnvMapImportanceBakerConstantsCPU
 {
-    Uint32 SourceCubeDim = 0;
-    Uint32 SourceCubeMipCount = 0;
-    Uint32 ImportanceMapDim = 0;
-    Uint32 ImportanceMapBaseMip = 0;
+    Uint32 SourceCubeDim                = 0;
+    Uint32 SourceCubeMipCount           = 0;
+    Uint32 ImportanceMapDim             = 0;
+    Uint32 ImportanceMapBaseMip         = 0;
     Uint32 ImportanceMapDimInSamples[2] = {};
-    Uint32 ImportanceMapNumSamples[2] = {};
-    float  ImportanceMapInvSamples = 1.0f;
-    Uint32 ReduceSrcMip = 0;
-    Uint32 ReduceDstMip = 0;
-    Uint32 _padding0 = 0;
+    Uint32 ImportanceMapNumSamples[2]   = {};
+    float  ImportanceMapInvSamples      = 1.0f;
+    Uint32 ReduceSrcMip                 = 0;
+    Uint32 ReduceDstMip                 = 0;
+    Uint32 _padding0                    = 0;
 };
 static_assert(sizeof(EnvMapImportanceBakerConstantsCPU) == 48, "EnvMapImportanceBakerConstantsCPU must match EnvMapImportanceBaker.hlsl");
 
@@ -120,10 +120,10 @@ EnvMapImportanceBakerConstantsCPU MakeImportanceConstants(const TextureDesc& Sou
                                                           Uint32             ReduceDstMip)
 {
     EnvMapImportanceBakerConstantsCPU Constants;
-    Constants.SourceCubeDim              = SourceDesc.Width;
-    Constants.SourceCubeMipCount         = SourceDesc.MipLevels;
-    Constants.ImportanceMapDim           = Resolution;
-    Constants.ImportanceMapBaseMip       = MipLevels > 0 ? MipLevels - 1u : 0u;
+    Constants.SourceCubeDim                = SourceDesc.Width;
+    Constants.SourceCubeMipCount           = SourceDesc.MipLevels;
+    Constants.ImportanceMapDim             = Resolution;
+    Constants.ImportanceMapBaseMip         = MipLevels > 0 ? MipLevels - 1u : 0u;
     Constants.ImportanceMapDimInSamples[0] = Resolution * kImportanceSamplesPerAxis;
     Constants.ImportanceMapDimInSamples[1] = Resolution * kImportanceSamplesPerAxis;
     Constants.ImportanceMapNumSamples[0]   = kImportanceSamplesPerAxis;
@@ -172,8 +172,7 @@ bool EnvMapSourceChanged(const RTXPTEnvMapSettings& Lhs, const RTXPTEnvMapSettin
     return Lhs.SourceRelativePath != Rhs.SourceRelativePath;
 }
 
-bool CreateCubeTexture(IRenderDevice* pDevice, const char* Name, Uint32 Size, Uint32 Color,
-                       RefCntAutoPtr<ITexture>& Texture, RefCntAutoPtr<ITextureView>& SRV)
+bool CreateCubeTexture(IRenderDevice* pDevice, const char* Name, Uint32 Size, Uint32 Color, RefCntAutoPtr<ITexture>& Texture, RefCntAutoPtr<ITextureView>& SRV)
 {
     Texture.Release();
     SRV.Release();
@@ -203,8 +202,7 @@ bool CreateCubeTexture(IRenderDevice* pDevice, const char* Name, Uint32 Size, Ui
     return SRV != nullptr;
 }
 
-bool CreateRGBA8Texture(IRenderDevice* pDevice, const char* Name, Uint32 Color,
-                        RefCntAutoPtr<ITexture>& Texture, RefCntAutoPtr<ITextureView>& SRV)
+bool CreateRGBA8Texture(IRenderDevice* pDevice, const char* Name, Uint32 Color, RefCntAutoPtr<ITexture>& Texture, RefCntAutoPtr<ITextureView>& SRV)
 {
     Texture.Release();
     SRV.Release();
@@ -227,8 +225,7 @@ bool CreateRGBA8Texture(IRenderDevice* pDevice, const char* Name, Uint32 Color,
     return SRV != nullptr;
 }
 
-bool CreateR32FloatTexture(IRenderDevice* pDevice, const char* Name, float Value,
-                           RefCntAutoPtr<ITexture>& Texture, RefCntAutoPtr<ITextureView>& SRV)
+bool CreateR32FloatTexture(IRenderDevice* pDevice, const char* Name, float Value, RefCntAutoPtr<ITexture>& Texture, RefCntAutoPtr<ITextureView>& SRV)
 {
     Texture.Release();
     SRV.Release();
@@ -277,10 +274,10 @@ void RTXPTEnvMapBaker::Reset()
     m_IBLPrecompute.reset();
     m_BuildImportanceBasePass.Reset();
     m_ReduceImportanceMipPass.Reset();
-    m_Constants        = {};
+    m_Constants         = {};
     m_LightsBakerParams = {};
-    m_LastSettings     = {};
-    m_Stats            = {};
+    m_LastSettings      = {};
+    m_Stats             = {};
 }
 
 void RTXPTEnvMapBaker::SceneReloaded()
@@ -305,8 +302,7 @@ bool RTXPTEnvMapBaker::CreateResources(IRenderDevice* pDevice, IDeviceContext*, 
     return CreateSamplers(pDevice) && CreateFallbackTextures(pDevice);
 }
 
-bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory,
-                              const std::string& AssetsRoot, const RTXPTEnvMapSettings& Settings, bool ForceRebuild, bool ComputeSupported)
+bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory, const std::string& AssetsRoot, const RTXPTEnvMapSettings& Settings, bool ForceRebuild, bool ComputeSupported)
 {
     if (pDevice == nullptr || pContext == nullptr || pEngineFactory == nullptr)
     {
@@ -347,7 +343,7 @@ bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, 
     }
 
     const bool ImportanceResourceMissing = m_Stats.ImportanceReady && (!m_ImportanceMap || !m_RadianceMap);
-    const bool ImportanceChanged = ForceRebuild || SourceChanged ||
+    const bool ImportanceChanged         = ForceRebuild || SourceChanged ||
         !m_ImportanceMapSRV || !m_RadianceMapSRV ||
         ImportanceResourceMissing ||
         m_Stats.ImportanceResolution != ImportanceResolution ||
@@ -465,7 +461,7 @@ RTXPTEnvMapSettings RTXPTEnvMapBaker::MakeSceneDefaultSettings(const RTXPTSceneG
             continue;
 
         Settings.SourceRelativePath = ReadRTXPTOptionalString(Light.RawJson, "path", kProceduralSkyPath);
-        float Scale[3] = {1.0f, 1.0f, 1.0f};
+        float Scale[3]              = {1.0f, 1.0f, 1.0f};
         if (ReadRTXPTFloatArray(Light.RawJson, "radianceScale", Scale, 3))
             Settings.RadianceScale = float3{Scale[0], Scale[1], Scale[2]};
 
@@ -549,15 +545,15 @@ bool RTXPTEnvMapBaker::CreateProceduralSourceTexture(IRenderDevice* pDevice, con
 
     m_SourceTexture.Release();
     m_SourceSRV.Release();
-    m_Stats.SourceLoaded = false;
-    constexpr Uint32   Width = 512, Height = 256;
-    const float3       HorizonColor{0.48f, 0.58f, 0.68f};
-    const float3       ZenithColor{0.05f, 0.08f, 0.14f};
+    m_Stats.SourceLoaded      = false;
+    constexpr Uint32    Width = 512, Height = 256;
+    const float3        HorizonColor{0.48f, 0.58f, 0.68f};
+    const float3        ZenithColor{0.05f, 0.08f, 0.14f};
     std::vector<float4> Texels(static_cast<size_t>(Width) * Height);
 
     for (Uint32 Y = 0; Y < Height; ++Y)
     {
-        const float T = static_cast<float>(Y) / static_cast<float>(Height - 1);
+        const float  T = static_cast<float>(Y) / static_cast<float>(Height - 1);
         const float4 RowColor{
             HorizonColor.x + (ZenithColor.x - HorizonColor.x) * T,
             HorizonColor.y + (ZenithColor.y - HorizonColor.y) * T,
@@ -581,9 +577,9 @@ bool RTXPTEnvMapBaker::CreateProceduralSourceTexture(IRenderDevice* pDevice, con
         return false;
     }
 
-    m_Stats.SourceLoaded   = true;
-    m_Stats.Procedural     = true;
-    m_Stats.SourceName     = kProceduralSkyPath;
+    m_Stats.SourceLoaded = true;
+    m_Stats.Procedural   = true;
+    m_Stats.SourceName   = kProceduralSkyPath;
     m_Stats.LastError.clear();
     return true;
 }
@@ -632,8 +628,7 @@ bool RTXPTEnvMapBaker::PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext*
     return true;
 }
 
-bool RTXPTEnvMapBaker::CreateImportanceMaps(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory,
-                                            const RTXPTEnvMapSettings& Settings, bool ComputeSupported)
+bool RTXPTEnvMapBaker::CreateImportanceMaps(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory, const RTXPTEnvMapSettings& Settings, bool ComputeSupported)
 {
     auto Fail = [this](const char* Error) {
         m_Stats.Ready           = false;
@@ -901,18 +896,18 @@ bool RTXPTEnvMapBaker::CreateFallbackTextures(IRenderDevice* pDevice)
     m_SourceTexture.Release();
     m_SourceSRV.Release();
 
-    const bool EnvOk = CreateCubeTexture(pDevice, "RTXPT EnvMapBaker fallback environment cube",
+    const bool EnvOk        = CreateCubeTexture(pDevice, "RTXPT EnvMapBaker fallback environment cube",
                                          kFallbackCubeSize, BlackRGBA, m_FallbackEnvironmentMap, m_EnvironmentMapSRV);
-    const bool DiffuseOk = CreateCubeTexture(pDevice, "RTXPT EnvMapBaker fallback diffuse irradiance cube",
+    const bool DiffuseOk    = CreateCubeTexture(pDevice, "RTXPT EnvMapBaker fallback diffuse irradiance cube",
                                              kFallbackCubeSize, BlackRGBA, m_FallbackDiffuseIrradiance, m_DiffuseIrradianceSRV);
     const bool ImportanceOk = CreateR32FloatTexture(pDevice, "RTXPT EnvMapBaker fallback importance map",
                                                     1.0f, m_FallbackImportanceMap, m_ImportanceMapSRV);
-    const bool RadianceOk = CreateRGBA8Texture(pDevice, "RTXPT EnvMapBaker fallback radiance map",
+    const bool RadianceOk   = CreateRGBA8Texture(pDevice, "RTXPT EnvMapBaker fallback radiance map",
                                                BlackRGBA, m_FallbackRadianceMap, m_RadianceMapSRV);
-    const bool BRDFOk = CreateRGBA8Texture(pDevice, "RTXPT EnvMapBaker fallback BRDF LUT",
-                                            WhiteRGBA, m_FallbackBRDFLUT, m_BRDFLUTSRV);
+    const bool BRDFOk       = CreateRGBA8Texture(pDevice, "RTXPT EnvMapBaker fallback BRDF LUT",
+                                           WhiteRGBA, m_FallbackBRDFLUT, m_BRDFLUTSRV);
 
-    m_SourceSRV                 = m_EnvironmentMapSRV;
+    m_SourceSRV   = m_EnvironmentMapSRV;
     m_Stats.Ready = m_EnvironmentSampler && m_ImportanceSampler &&
         EnvOk && DiffuseOk && ImportanceOk && RadianceOk && BRDFOk;
     m_Stats.SourceLoaded         = false;
@@ -982,11 +977,11 @@ bool RTXPTEnvMapBaker::CreateSamplers(IRenderDevice* pDevice)
 
 void RTXPTEnvMapBaker::UpdateConstants(const RTXPTEnvMapSettings& Settings)
 {
-    const float Rotation = Settings.RotationRadians;
-    const float CosA     = std::cos(Rotation);
-    const float SinA     = std::sin(Rotation);
-    const float Enabled  = Settings.Enabled ? 1.0f : 0.0f;
-    const float Intensity = std::max(Settings.Intensity, 0.0f);
+    const float Rotation      = Settings.RotationRadians;
+    const float CosA          = std::cos(Rotation);
+    const float SinA          = std::sin(Rotation);
+    const float Enabled       = Settings.Enabled ? 1.0f : 0.0f;
+    const float Intensity     = std::max(Settings.Intensity, 0.0f);
     m_Constants.LocalToWorld0 = float4{CosA, 0.0f, -SinA, 0.0f};
     m_Constants.LocalToWorld1 = float4{0.0f, 1.0f, 0.0f, 0.0f};
     m_Constants.LocalToWorld2 = float4{SinA, 0.0f, CosA, 0.0f};

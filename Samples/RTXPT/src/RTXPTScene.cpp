@@ -376,7 +376,7 @@ void AppendSceneCameras(const nlohmann::json& Node, const float4x4& ParentTransf
     const float4x4 LocalTransform  = MakeRTXPTNodeTransform(Node);
     const float4x4 GlobalTransform = LocalTransform * ParentTransform;
 
-    const auto TypeIt = Node.find("type");
+    const auto        TypeIt = Node.find("type");
     const std::string TypeName =
         TypeIt != Node.end() && TypeIt->is_string() ? TypeIt->get<std::string>() : std::string{};
     const bool IsPerspectiveCamera = TypeName == "PerspectiveCamera" || TypeName == "PerspectiveCameraEx";
@@ -563,10 +563,10 @@ void AppendAnimatedCameras(const nlohmann::json&          SceneJson,
     }
 }
 
-bool AppendRTXPTGraphNode(RTXPTSceneGraphData& Data,
+bool AppendRTXPTGraphNode(RTXPTSceneGraphData&  Data,
                           const nlohmann::json& NodeJson,
-                          RTXPTSceneId ParentId,
-                          const float4x4& ParentTransform)
+                          RTXPTSceneId          ParentId,
+                          const float4x4&       ParentTransform)
 {
     if (!NodeJson.is_object())
     {

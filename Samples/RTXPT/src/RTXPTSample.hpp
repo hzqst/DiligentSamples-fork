@@ -69,27 +69,27 @@ struct RTXPTFeatureCaps
 // the full tone-mapping pass remains Phase 6 work.
 struct RTXPTReferenceUIState
 {
-    bool  AccumulationAA                  = true;  // Jitter AA: always on in our port (no toggle yet).
-    bool  EnableRussianRoulette           = true;  // RR: always on; start bounce == Min bounces (RR start).
-    bool  ReferenceFireflyFilterEnabled   = true;  // Phase R1 (G1): adaptive firefly filter.
-    float ReferenceFireflyFilterThreshold = 5.0f;  // Phase R1 (G1).
-    int   DiffuseBounceCount              = 2;     // Phase R5 (G9): separate diffuse-bounce limit.
-    bool  EnableToneMapping               = true;  // Phase 6: configurable tone-map pass (ACES is always applied now).
-    bool  ToneMappingAutoExposure         = false; // Phase 6: scene camera exposure metadata.
-    float ToneMappingExposureCompensation = 0.0f;  // Phase 6.
-    float ToneMappingExposureValue        = 0.0f;  // Phase 6.
-    float ToneMappingExposureValueMin     = -16.0f; // Phase 6.
-    float ToneMappingExposureValueMax     = 16.0f;  // Phase 6.
-    int   NEEType                         = 1;     // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
-    int   NEECandidateSamples             = 5;     // Phase R3 (G5): RIS candidate count.
-    int   NEEFullSamples                  = 1;     // Phase R3 (G5): visibility-tested full samples.
-    int   NEEMISType                      = 0;     // Phase R3 (G5): 0=Full, 1=ApproxInRealtime, 2=Approximate (deferred).
+    bool  AccumulationAA                     = true;   // Jitter AA: always on in our port (no toggle yet).
+    bool  EnableRussianRoulette              = true;   // RR: always on; start bounce == Min bounces (RR start).
+    bool  ReferenceFireflyFilterEnabled      = true;   // Phase R1 (G1): adaptive firefly filter.
+    float ReferenceFireflyFilterThreshold    = 5.0f;   // Phase R1 (G1).
+    int   DiffuseBounceCount                 = 2;      // Phase R5 (G9): separate diffuse-bounce limit.
+    bool  EnableToneMapping                  = true;   // Phase 6: configurable tone-map pass (ACES is always applied now).
+    bool  ToneMappingAutoExposure            = false;  // Phase 6: scene camera exposure metadata.
+    float ToneMappingExposureCompensation    = 0.0f;   // Phase 6.
+    float ToneMappingExposureValue           = 0.0f;   // Phase 6.
+    float ToneMappingExposureValueMin        = -16.0f; // Phase 6.
+    float ToneMappingExposureValueMax        = 16.0f;  // Phase 6.
+    int   NEEType                            = 1;      // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
+    int   NEECandidateSamples                = 5;      // Phase R3 (G5): RIS candidate count.
+    int   NEEFullSamples                     = 1;      // Phase R3 (G5): visibility-tested full samples.
+    int   NEEMISType                         = 0;      // Phase R3 (G5): 0=Full, 1=ApproxInRealtime, 2=Approximate (deferred).
     float NEEAT_GlobalTemporalFeedbackWeight = 0.75f;
     float NEEAT_LocalToGlobalSampleRatio     = 0.65f;
     float NEEAT_DistantVsLocalImportance     = 1.0f;
-    int   NestedDielectricsQuality        = 1;     // Phase R6 (G10): 0=Off, 1=Fast, 2=Quality.
-    bool  EnableLDSamplerForBSDF          = true;  // Phase R5 (G9): low-discrepancy (Sobol/Owen) sampler.
-    bool  EnvironmentMapEnabled           = false; // Phase R4 (G7): HDR env-map loading (procedural sky is always active).
+    int   NestedDielectricsQuality           = 1;     // Phase R6 (G10): 0=Off, 1=Fast, 2=Quality.
+    bool  EnableLDSamplerForBSDF             = true;  // Phase R5 (G9): low-discrepancy (Sobol/Owen) sampler.
+    bool  EnvironmentMapEnabled              = false; // Phase R4 (G7): HDR env-map loading (procedural sky is always active).
 };
 
 class RTXPTSample final : public SampleBase
@@ -125,55 +125,55 @@ private:
     void ClearFallback(const float4& ClearColor);
     void RequestAccumulationReset(const char* Reason);
 
-    RTXPTFeatureCaps            m_FeatureCaps;
-    std::string                 m_AssetsRoot;
-    std::vector<std::string>    m_AvailableScenes;
-    std::string                 m_CurrentSceneName;
-    RTXPTScene                  m_Scene;
-    RTXPTMaterials              m_Materials;
-    RTXPTLights                 m_Lights;
-    RTXPTLightsBaker            m_LightsBaker;
-    RTXPTEnvMapBaker            m_EnvMapBaker;
+    RTXPTFeatureCaps               m_FeatureCaps;
+    std::string                    m_AssetsRoot;
+    std::vector<std::string>       m_AvailableScenes;
+    std::string                    m_CurrentSceneName;
+    RTXPTScene                     m_Scene;
+    RTXPTMaterials                 m_Materials;
+    RTXPTLights                    m_Lights;
+    RTXPTLightsBaker               m_LightsBaker;
+    RTXPTEnvMapBaker               m_EnvMapBaker;
     std::vector<RTXPTEnvMapSource> m_EnvMapSources;
-    RTXPTEnvMapSettings         m_EnvMapSettings;
-    RTXPTAccelerationStructures m_AccelerationStructures;
-    RTXPTSkinnedSceneGeometry   m_SkinnedGeometry;
-    RTXPTRenderTargets          m_RenderTargets;
-    RTXPTRayTracingPass         m_RayTracingPass;
-    RTXPTComputePass            m_DebugComputePass;
-    RTXPTEmissiveTrianglePass   m_EmissiveTrianglePass;
-    RTXPTBlitPass               m_BlitPass;
-    FirstPersonCamera           m_Camera;
-    RefCntAutoPtr<IBuffer>      m_FrameConstantsCB;
-    SampleConstants             m_LastFrameConstants;
-    RTXPTReferenceUIState       m_ReferenceUI;
-    float4x4                    m_LastCameraView           = float4x4::Identity();
-    float4x4                    m_LastCameraProj           = float4x4::Identity();
-    float                       m_CameraVerticalFov        = PI_F / 4.0f;
-    float                       m_CameraNearPlane          = 1.0f;
-    float                       m_CameraFarPlane           = 10000.0f;
-    Uint32                      m_FrameIndex               = 0;
-    Uint32                      m_AccumulationFrame        = 0;
-    Uint32                      m_MaxBounces               = 4;
-    Uint32                      m_MinBounces               = 3;
-    Uint32                      m_MaxNEEBounces            = 16;
-    bool                        m_EnableNEE                = true;
-    bool                        m_EnableEnvNEE             = true;
-    bool                        m_EnableEmissiveNEE        = true;
-    bool                        m_HasDynamicGeometry       = false;
-    bool                        m_EmissiveTrianglesDirty   = true;
-    float                       m_EnvIntensity             = 1.0f;
-    float                       m_LightIntensityScale      = 1.0f;
-    int                         m_SelectedSceneCamera      = -1;
-    int                         m_SelectedEnvMapSource     = 0;
-    bool                        m_EnableSceneAnimations    = true;
-    bool                        m_EnableDebugComputePass   = false;
-    bool                        m_ResetAccumulationPending = true;
-    bool                        m_AccumulationActive       = false;
-    bool                        m_HasLastCameraMatrices    = false;
-    bool                        m_LightsBakerSettingsDirty = false;
-    bool                        m_EnvMapBakerDirty         = true;
-    bool                        m_EnvMapBakerSettingsDirty = true;
+    RTXPTEnvMapSettings            m_EnvMapSettings;
+    RTXPTAccelerationStructures    m_AccelerationStructures;
+    RTXPTSkinnedSceneGeometry      m_SkinnedGeometry;
+    RTXPTRenderTargets             m_RenderTargets;
+    RTXPTRayTracingPass            m_RayTracingPass;
+    RTXPTComputePass               m_DebugComputePass;
+    RTXPTEmissiveTrianglePass      m_EmissiveTrianglePass;
+    RTXPTBlitPass                  m_BlitPass;
+    FirstPersonCamera              m_Camera;
+    RefCntAutoPtr<IBuffer>         m_FrameConstantsCB;
+    SampleConstants                m_LastFrameConstants;
+    RTXPTReferenceUIState          m_ReferenceUI;
+    float4x4                       m_LastCameraView           = float4x4::Identity();
+    float4x4                       m_LastCameraProj           = float4x4::Identity();
+    float                          m_CameraVerticalFov        = PI_F / 4.0f;
+    float                          m_CameraNearPlane          = 1.0f;
+    float                          m_CameraFarPlane           = 10000.0f;
+    Uint32                         m_FrameIndex               = 0;
+    Uint32                         m_AccumulationFrame        = 0;
+    Uint32                         m_MaxBounces               = 4;
+    Uint32                         m_MinBounces               = 3;
+    Uint32                         m_MaxNEEBounces            = 16;
+    bool                           m_EnableNEE                = true;
+    bool                           m_EnableEnvNEE             = true;
+    bool                           m_EnableEmissiveNEE        = true;
+    bool                           m_HasDynamicGeometry       = false;
+    bool                           m_EmissiveTrianglesDirty   = true;
+    float                          m_EnvIntensity             = 1.0f;
+    float                          m_LightIntensityScale      = 1.0f;
+    int                            m_SelectedSceneCamera      = -1;
+    int                            m_SelectedEnvMapSource     = 0;
+    bool                           m_EnableSceneAnimations    = true;
+    bool                           m_EnableDebugComputePass   = false;
+    bool                           m_ResetAccumulationPending = true;
+    bool                           m_AccumulationActive       = false;
+    bool                           m_HasLastCameraMatrices    = false;
+    bool                           m_LightsBakerSettingsDirty = false;
+    bool                           m_EnvMapBakerDirty         = true;
+    bool                           m_EnvMapBakerSettingsDirty = true;
 };
 
 } // namespace Diligent

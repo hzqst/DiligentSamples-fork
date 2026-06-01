@@ -67,11 +67,10 @@ float ReadRTXPTSpotAngleRadians(const nlohmann::json& Json, const char* DegreesK
     return DegreesToRadians(DefaultDegrees);
 }
 
-PolymorphicLightInfo MakeSphereLightData(const float3& Color, float Intensity, const float4x4& Transform,
-                                         float Range, float Radius, float InnerCone, float OuterCone)
+PolymorphicLightInfo MakeSphereLightData(const float3& Color, float Intensity, const float4x4& Transform, float Range, float Radius, float InnerCone, float OuterCone)
 {
-    const float ClampedRadius = std::max(Radius, 1.0e-4f);
-    const float3 Radiance = Color * std::max(Intensity, 0.0f) / (PI_F * ClampedRadius * ClampedRadius);
+    const float  ClampedRadius = std::max(Radius, 1.0e-4f);
+    const float3 Radiance      = Color * std::max(Intensity, 0.0f) / (PI_F * ClampedRadius * ClampedRadius);
 
     PolymorphicLightInfo Data;
     Data.colorType      = float4{Radiance.x, Radiance.y, Radiance.z, kPolymorphicLightTypeSphere};
@@ -81,16 +80,16 @@ PolymorphicLightInfo MakeSphereLightData(const float3& Color, float Intensity, c
     {
         const float OuterCos = std::cos(OuterCone);
         const float InnerCos = std::cos(InnerCone);
-        Data.shaping = float4{OuterCos, std::max(0.0f, InnerCos - OuterCos), 0.0f, 0.0f};
+        Data.shaping         = float4{OuterCos, std::max(0.0f, InnerCos - OuterCos), 0.0f, 0.0f};
     }
     return Data;
 }
 
 PolymorphicLightInfo MakeDirectionalLightData(const float3& Color, float Intensity, const float4x4& Transform, float AngularSizeRadians)
 {
-    const float HalfAngle  = std::max(AngularSizeRadians * 0.5f, 0.00001f);
-    const float SolidAngle = std::max(2.0f * PI_F * (1.0f - std::cos(HalfAngle)), 1.0e-8f);
-    const float3 Radiance  = Color * std::max(Intensity, 0.0f) / SolidAngle;
+    const float  HalfAngle  = std::max(AngularSizeRadians * 0.5f, 0.00001f);
+    const float  SolidAngle = std::max(2.0f * PI_F * (1.0f - std::cos(HalfAngle)), 1.0e-8f);
+    const float3 Radiance   = Color * std::max(Intensity, 0.0f) / SolidAngle;
 
     PolymorphicLightInfo Data;
     Data.colorType      = float4{Radiance.x, Radiance.y, Radiance.z, kPolymorphicLightTypeDirectional};
@@ -157,12 +156,12 @@ void RTXPTLights::Reset()
     m_EmissiveTriangleBuffer.Release();
     m_AnalyticLights.clear();
     m_EmissiveProxyWeight = 0.0f;
-    m_Stats = {};
+    m_Stats               = {};
 }
 
 bool RTXPTLights::UploadLightBuffer(IRenderDevice* pDevice, std::vector<PolymorphicLightInfo>& Lights)
 {
-    m_AnalyticLights = Lights;
+    m_AnalyticLights   = Lights;
     m_Stats.LightCount = static_cast<Uint32>(m_AnalyticLights.size());
     if (Lights.empty())
     {
@@ -300,8 +299,8 @@ bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSce
         if (!Asset.Model || Asset.SceneIndex >= Asset.Model->Scenes.size())
             continue;
 
-        const GLTF::Model& Model = *Asset.Model;
-        const GLTF::Scene& Scene = Model.Scenes[Asset.SceneIndex];
+        const GLTF::Model&           Model      = *Asset.Model;
+        const GLTF::Scene&           Scene      = Model.Scenes[Asset.SceneIndex];
         const GLTF::ModelTransforms& Transforms = Instance.Transforms.NodeGlobalMatrices.empty() ?
             Asset.StaticTransforms :
             Instance.Transforms;
@@ -322,7 +321,7 @@ bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSce
                     continue;
 
                 const Uint32 TriangleCount = GetPrimitiveTriangleCount(Primitive);
-                const Uint64 NewCount = EmissiveTriangleCount + TriangleCount;
+                const Uint64 NewCount      = EmissiveTriangleCount + TriangleCount;
                 if (NewCount > Uint64{std::numeric_limits<Uint32>::max()})
                 {
                     m_Stats.LastError = "RTXPT emissive triangle count exceeds Uint32";

@@ -91,9 +91,7 @@ bool RTXPTLightsBakerPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
     return m_SRB != nullptr;
 }
 
-bool RTXPTLightsBakerPass::Bind(IBuffer* pControl, IBuffer* pProxyCounters, IBuffer* pProxyIndices, IBuffer* pLocalSamplingBuffer,
-                                ITextureView* pFeedbackTotalWeightSRV, ITextureView* pFeedbackCandidatesSRV,
-                                ITextureView* pFeedbackTotalWeightUAV, ITextureView* pFeedbackCandidatesUAV)
+bool RTXPTLightsBakerPass::Bind(IBuffer* pControl, IBuffer* pProxyCounters, IBuffer* pProxyIndices, IBuffer* pLocalSamplingBuffer, ITextureView* pFeedbackTotalWeightSRV, ITextureView* pFeedbackCandidatesSRV, ITextureView* pFeedbackTotalWeightUAV, ITextureView* pFeedbackCandidatesUAV)
 {
     if (!m_SRB || pControl == nullptr)
         return false;

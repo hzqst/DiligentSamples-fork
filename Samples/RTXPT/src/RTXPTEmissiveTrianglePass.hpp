@@ -68,7 +68,7 @@ public:
 
     bool Dispatch(IDeviceContext* pContext, Uint32 SubInstanceCount);
 
-    bool                                IsReady() const { return m_Stats.Ready; }
+    bool                                  IsReady() const { return m_Stats.Ready; }
     const RTXPTEmissiveTrianglePassStats& GetStats() const { return m_Stats; }
 
 private:

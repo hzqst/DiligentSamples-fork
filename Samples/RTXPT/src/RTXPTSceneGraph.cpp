@@ -34,9 +34,9 @@ std::string GetRTXPTModelNameFromPath(const std::string& ModelPath)
     return Dot != std::string::npos && Dot > Start ? ModelPath.substr(Start, Dot - Start) : ModelPath.substr(Start);
 }
 
-RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string& FilePath,
-                                                   const std::string& ModelName,
-                                                   const std::string& MaterialName,
+RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string&    FilePath,
+                                                   const std::string&    ModelName,
+                                                   const std::string&    MaterialName,
                                                    const nlohmann::json& Json)
 {
     RTXPTMaterialExtension Ext;
@@ -55,8 +55,8 @@ RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string& FilePath,
     {
         Ext.EmissiveIntensity = ReadRTXPTOptionalFloat(Json, "EmissiveIntensity", 1.0f);
         Ext.EmissiveFactor    = float3{Emissive[0] * Ext.EmissiveIntensity,
-                                        Emissive[1] * Ext.EmissiveIntensity,
-                                        Emissive[2] * Ext.EmissiveIntensity};
+                                    Emissive[1] * Ext.EmissiveIntensity,
+                                    Emissive[2] * Ext.EmissiveIntensity};
     }
 
     Ext.MetallicFactor     = ReadRTXPTOptionalFloat(Json, "Metalness", Ext.MetallicFactor);
@@ -70,10 +70,10 @@ RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string& FilePath,
     Ext.EnableEmissiveTexture                   = Json.value("EnableEmissiveTexture", Ext.EnableEmissiveTexture);
     Ext.EnableNormalTexture                     = Json.value("EnableNormalTexture", Ext.EnableNormalTexture);
     Ext.EnableOcclusionRoughnessMetallicTexture = Json.value("EnableOcclusionRoughnessMetallicTexture",
-                                                              Ext.EnableOcclusionRoughnessMetallicTexture);
-    Ext.EnableTransmission = Json.value("EnableTransmission", Ext.EnableTransmission);
-    Ext.ThinSurface        = Json.value("ThinSurface", Ext.ThinSurface);
-    Ext.SkipRender         = Json.value("SkipRender", Ext.SkipRender);
+                                                             Ext.EnableOcclusionRoughnessMetallicTexture);
+    Ext.EnableTransmission                      = Json.value("EnableTransmission", Ext.EnableTransmission);
+    Ext.ThinSurface                             = Json.value("ThinSurface", Ext.ThinSurface);
+    Ext.SkipRender                              = Json.value("SkipRender", Ext.SkipRender);
 
     return Ext;
 }
@@ -90,15 +90,15 @@ float4x4 MakeRTXPTNodeTransform(const nlohmann::json& Node)
         float Euler[3] = {0.0f, 0.0f, 0.0f};
         if (ReadRTXPTFloatArray(Node, "euler", Euler, 3))
         {
-            QuaternionF       Qx{std::sin(Euler[0] * 0.5f), 0.0f, 0.0f, std::cos(Euler[0] * 0.5f)};
-            QuaternionF       Qy{0.0f, std::sin(Euler[1] * 0.5f), 0.0f, std::cos(Euler[1] * 0.5f)};
-            QuaternionF       Qz{0.0f, 0.0f, std::sin(Euler[2] * 0.5f), std::cos(Euler[2] * 0.5f)};
+            QuaternionF Qx{std::sin(Euler[0] * 0.5f), 0.0f, 0.0f, std::cos(Euler[0] * 0.5f)};
+            QuaternionF Qy{0.0f, std::sin(Euler[1] * 0.5f), 0.0f, std::cos(Euler[1] * 0.5f)};
+            QuaternionF Qz{0.0f, 0.0f, std::sin(Euler[2] * 0.5f), std::cos(Euler[2] * 0.5f)};
             // Donut scene graph Euler order.
             const QuaternionF Q = Qz * Qy * Qx;
-            Rotation[0]        = Q.q.x;
-            Rotation[1]        = Q.q.y;
-            Rotation[2]        = Q.q.z;
-            Rotation[3]        = Q.q.w;
+            Rotation[0]         = Q.q.x;
+            Rotation[1]         = Q.q.y;
+            Rotation[2]         = Q.q.z;
+            Rotation[3]         = Q.q.w;
         }
     }
 

@@ -72,22 +72,22 @@ public:
     bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
     bool UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
 
-    const RTXPTLightStats& GetStats() const { return m_Stats; }
-    IBuffer*               GetLightBuffer() const { return m_LightBuffer; }
-    IBuffer*               GetEmissiveTriangleBuffer() const { return m_EmissiveTriangleBuffer; }
-    Uint32                 GetEmissiveTriangleCount() const { return m_Stats.EmissiveTriangleCount; }
+    const RTXPTLightStats&                   GetStats() const { return m_Stats; }
+    IBuffer*                                 GetLightBuffer() const { return m_LightBuffer; }
+    IBuffer*                                 GetEmissiveTriangleBuffer() const { return m_EmissiveTriangleBuffer; }
+    Uint32                                   GetEmissiveTriangleCount() const { return m_Stats.EmissiveTriangleCount; }
     const std::vector<PolymorphicLightInfo>& GetAnalyticLights() const { return m_AnalyticLights; }
-    float                                  GetEmissiveProxyWeight() const { return m_EmissiveProxyWeight; }
+    float                                    GetEmissiveProxyWeight() const { return m_EmissiveProxyWeight; }
 
 private:
     bool UploadLightBuffer(IRenderDevice* pDevice, std::vector<PolymorphicLightInfo>& Lights);
     bool UploadEmissiveTriangleBuffer(IRenderDevice* pDevice, Uint32 EmissiveTriangleCount);
 
-    RefCntAutoPtr<IBuffer>         m_LightBuffer;
-    RefCntAutoPtr<IBuffer>         m_EmissiveTriangleBuffer;
+    RefCntAutoPtr<IBuffer>            m_LightBuffer;
+    RefCntAutoPtr<IBuffer>            m_EmissiveTriangleBuffer;
     std::vector<PolymorphicLightInfo> m_AnalyticLights;
-    float                         m_EmissiveProxyWeight = 0.0f;
-    RTXPTLightStats               m_Stats;
+    float                             m_EmissiveProxyWeight = 0.0f;
+    RTXPTLightStats                   m_Stats;
 };
 
 } // namespace Diligent

@@ -90,9 +90,7 @@ bool RTXPTEnvMapBakerPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
     return m_SRB != nullptr;
 }
 
-bool RTXPTEnvMapBakerPass::Bind(IBuffer* pConstants, ITextureView* pSourceCubeSRV, ITextureView* pSourceImportanceMipSRV,
-                                ITextureView* pSourceRadianceMipSRV, ITextureView* pImportanceUAV,
-                                ITextureView* pRadianceUAV, ISampler* pLinearSampler)
+bool RTXPTEnvMapBakerPass::Bind(IBuffer* pConstants, ITextureView* pSourceCubeSRV, ITextureView* pSourceImportanceMipSRV, ITextureView* pSourceRadianceMipSRV, ITextureView* pImportanceUAV, ITextureView* pRadianceUAV, ISampler* pLinearSampler)
 {
     if (!m_SRB)
         return false;

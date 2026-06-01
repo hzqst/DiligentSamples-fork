@@ -22,10 +22,10 @@ struct PathTracerConstants
     float environmentIntensity;  // Scales the procedural-sky environment radiance.
     float lightIntensityScale;   // Scales analytic (punctual) light radiance.
 
-    uint  maxNEEBounceCount;   // Limits NEE work to the first N path bounces.
-    uint  analyticLightCount;  // CPU-side count of valid analytic lights; the dummy light is not sampled.
-    uint  NEEType;             // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
-    uint  NEECandidateSamples; // G5: RIS candidate count per full sample.
+    uint maxNEEBounceCount;   // Limits NEE work to the first N path bounces.
+    uint analyticLightCount;  // CPU-side count of valid analytic lights; the dummy light is not sampled.
+    uint NEEType;             // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
+    uint NEECandidateSamples; // G5: RIS candidate count per full sample.
 
     uint  NEEFullSamples;         // G5: visibility-tested full samples.
     uint  NEEMISType;             // G5 UI parity: 0=Full; approximate modes remain disabled in this plan.
@@ -48,11 +48,11 @@ struct RTXPTEnvMapConstants
 // Mirrors Diligent::SampleConstants in RTXPTFrameConstants.hpp (must keep order and layout in sync; total size 352 bytes).
 struct SampleConstants
 {
-    float4x4            viewProj;
-    float4x4            viewProjInv;
-    float4              cameraPositionAndTime;
-    float4              viewportSizeAndFrameIndex;
-    PathTracerConstants ptConsts;
+    float4x4             viewProj;
+    float4x4             viewProjInv;
+    float4               cameraPositionAndTime;
+    float4               viewportSizeAndFrameIndex;
+    PathTracerConstants  ptConsts;
     RTXPTEnvMapConstants envMap;
 };
 

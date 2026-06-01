@@ -163,9 +163,9 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
     m_SubInstanceTransforms.clear();
     m_SubInstanceTransforms.reserve(SceneData.GraphNodes.size());
 
-    Uint32 SubInstanceBase    = 0;
+    Uint32 SubInstanceBase        = 0;
     Uint32 EmissiveTriangleOffset = 0;
-    bool   HasDynamicGeometry = false;
+    bool   HasDynamicGeometry     = false;
     for (Uint32 InstanceId = 0; InstanceId < SceneData.ModelInstances.size(); ++InstanceId)
     {
         const RTXPTModelInstance& Instance = SceneData.ModelInstances[InstanceId];
@@ -182,7 +182,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
             return false;
         }
 
-        const GLTF::Model& Model = *Asset.Model;
+        const GLTF::Model&   Model    = *Asset.Model;
         const PositionLayout Position = FindPositionLayout(Model);
         if (!Position.Valid || Position.BufferId != 0 || Position.ValueType != VT_FLOAT32 || Position.ComponentCount != 3)
         {
@@ -194,11 +194,11 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
         std::vector<Uint8> MaterialEmissiveAreaLight(Model.Materials.size(), Uint8{0});
         for (Uint32 MatIdx = 0; MatIdx < Model.Materials.size(); ++MatIdx)
         {
-            const GLTF::Material&          Material              = Model.Materials[MatIdx];
-            const RTXPTMaterialExtension*  pExtension            = RTXPTGetMaterialExtension(SceneData, Asset, MatIdx);
-            const bool                     HasBaseColorTexture   = RTXPTMaterialHasBaseColorTexture(Model, Material, pExtension);
-            MaterialAlphaTested[MatIdx] = RTXPTMaterialIsAlphaTested(Material, pExtension, HasBaseColorTexture) ? Uint8{1} : Uint8{0};
-            MaterialEmissiveAreaLight[MatIdx] = RTXPTMaterialIsEmissiveAreaLight(Material, pExtension) ? Uint8{1} : Uint8{0};
+            const GLTF::Material&         Material            = Model.Materials[MatIdx];
+            const RTXPTMaterialExtension* pExtension          = RTXPTGetMaterialExtension(SceneData, Asset, MatIdx);
+            const bool                    HasBaseColorTexture = RTXPTMaterialHasBaseColorTexture(Model, Material, pExtension);
+            MaterialAlphaTested[MatIdx]                       = RTXPTMaterialIsAlphaTested(Material, pExtension, HasBaseColorTexture) ? Uint8{1} : Uint8{0};
+            MaterialEmissiveAreaLight[MatIdx]                 = RTXPTMaterialIsEmissiveAreaLight(Material, pExtension) ? Uint8{1} : Uint8{0};
         }
 
         IBuffer* pVertexBuffer = Model.GetVertexBuffer(Position.BufferId, pDevice, pContext);
@@ -254,8 +254,8 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
 
             const RTXPTSkinnedSceneNodeGeometry* pSkinnedNode =
                 pSkinnedGeometry != nullptr ?
-                    pSkinnedGeometry->FindNode(Instance.ModelAssetId, InstanceId, pNode) :
-                    nullptr;
+                pSkinnedGeometry->FindNode(Instance.ModelAssetId, InstanceId, pNode) :
+                nullptr;
             if (pNode->pSkin != nullptr)
             {
                 if (pSkinnedGeometry == nullptr)
@@ -302,8 +302,8 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
                 const std::string NodeName = pNode->Name.empty() ? "RTXPTGeometry" : pNode->Name;
                 GeometryNames.emplace_back(Instance.Name + "_" + NodeName + "_" + std::to_string(PrimitiveIndex));
 
-                const bool   IsIndexed     = Primitive.HasIndices();
-                const Uint32 TriangleCount = IsIndexed ? Primitive.IndexCount / 3u : Primitive.VertexCount / 3u;
+                const bool   IsIndexed                 = Primitive.HasIndices();
+                const Uint32 TriangleCount             = IsIndexed ? Primitive.IndexCount / 3u : Primitive.VertexCount / 3u;
                 const bool   GeometryEmissiveAreaLight = Primitive.MaterialId < MaterialEmissiveAreaLight.size() &&
                     MaterialEmissiveAreaLight[Primitive.MaterialId] != 0;
 
@@ -311,7 +311,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
                 SubEntry.MaterialID = Primitive.MaterialId < Asset.MaterialRemap.size() ?
                     Asset.MaterialRemap[Primitive.MaterialId] :
                     0;
-                SubEntry.VertexCount = Primitive.VertexCount;
+                SubEntry.VertexCount            = Primitive.VertexCount;
                 SubEntry.EmissiveTriangleOffset = EmissiveTriangleOffset;
                 if (IsSkinnedNode)
                 {
@@ -613,7 +613,7 @@ bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const RTX
             return false;
         }
 
-        const RTXPTModelAsset& Asset = SceneData.ModelAssets[Instance.ModelAssetId];
+        const RTXPTModelAsset&       Asset      = SceneData.ModelAssets[Instance.ModelAssetId];
         const GLTF::ModelTransforms& Transforms = Instance.Transforms.NodeGlobalMatrices.empty() ?
             Asset.StaticTransforms :
             Instance.Transforms;
@@ -625,7 +625,7 @@ bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const RTX
             return false;
         }
 
-        const float4x4& WorldTransform = Transforms.NodeGlobalMatrices[NodeIndex];
+        const float4x4& WorldTransform                     = Transforms.NodeGlobalMatrices[NodeIndex];
         m_TLASInstances[Record.InstanceIndex].Transform    = ToInstanceMatrix(WorldTransform);
         m_TLASInstances[Record.InstanceIndex].InstanceName = m_InstanceNames[Record.InstanceIndex].c_str();
 

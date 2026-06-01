@@ -62,11 +62,11 @@ Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 Emis
     return (ClampedCount << 1u) | (EnableEnvNEE ? 1u : 0u);
 }
 
-PathTracerCameraData MakePathTracerCameraData(const FirstPersonCamera& Camera,
-                                              Uint32                   Width,
-                                              Uint32                   Height,
-                                              float                    FocalDistance,
-                                              float                    ApertureRadius)
+PathTracerCameraData MakePathTracerCameraData(FirstPersonCamera& Camera,
+                                              Uint32             Width,
+                                              Uint32             Height,
+                                              float              FocalDistance,
+                                              float              ApertureRadius)
 {
     const auto& Proj              = Camera.GetProjAttribs();
     const float SafeHeight        = static_cast<float>(std::max(Height, Uint32{1}));

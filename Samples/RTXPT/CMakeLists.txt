@@ -24,6 +24,7 @@ set(SOURCE
 
 set(INCLUDE
     src/RTXPTSample.hpp
+    src/RTXPTCameraBasis.hpp
     src/RTXPTScene.hpp
     src/RTXPTSceneJson.hpp
     src/RTXPTSceneGraph.hpp

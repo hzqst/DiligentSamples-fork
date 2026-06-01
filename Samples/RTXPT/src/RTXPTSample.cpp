@@ -25,6 +25,7 @@
  */
 
 #include "RTXPTSample.hpp"
+#include "RTXPTCameraBasis.hpp"
 #include "GraphicsAccessories.hpp"
 #include "GraphicsUtilities.h"
 #include "FileSystem.hpp"
@@ -431,6 +432,7 @@ bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload
 
 void RTXPTSample::InitializeCamera()
 {
+    m_Camera.SetReferenceAxes(float3{1.0f, 0.0f, 0.0f}, float3{0.0f, 1.0f, 0.0f}, true);
     m_Camera.SetPos(float3{0.0f, 1.5f, -6.0f});
     m_Camera.SetLookAt(float3{0.0f, 1.5f, 0.0f});
     m_Camera.SetRotationSpeed(0.005f);
@@ -466,9 +468,7 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
     if (pCamera == nullptr)
         return false;
 
-    float3      Forward       = pCamera->Rotation.RotateVector(float3{0.0f, 0.0f, -1.0f});
-    const float ForwardLength = length(Forward);
-    Forward                   = ForwardLength > 1e-5f ? Forward / ForwardLength : float3{0.0f, 0.0f, -1.0f};
+    const RTXPTCameraBasis CameraBasis = MakeRTXPTDonutCameraBasis(pCamera->Rotation);
 
     m_SelectedSceneCamera = static_cast<int>(CameraIndex);
     m_CameraVerticalFov   = pCamera->VerticalFov;
@@ -484,8 +484,12 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
     m_ReferenceUI.ToneMappingExposureValueMin     = pCamera->ExposureValueMin.value_or(kDefaultToneMappingExposureValueMin);
     m_ReferenceUI.ToneMappingExposureValueMax     = pCamera->ExposureValueMax.value_or(kDefaultToneMappingExposureValueMax);
 
+    // Align scene-camera basis with original RTXPT (Donut): Donut flips local Z for scene cameras
+    // and builds the image-plane U vector as cross(CameraW, camUp). Using a left-handed
+    // FirstPersonCamera reference makes ReferenceAhead equal the Donut forward vector.
+    m_Camera.SetReferenceAxes(CameraBasis.Right, CameraBasis.Up, false);
     m_Camera.SetPos(pCamera->Position);
-    m_Camera.SetLookAt(pCamera->Position + Forward);
+    m_Camera.SetLookAt(pCamera->Position + CameraBasis.Forward);
 
     const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
     UpdateCameraProjection(SCDesc.Width, SCDesc.Height);

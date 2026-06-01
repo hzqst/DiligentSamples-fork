@@ -832,6 +832,9 @@ void RTXPTSample::Render()
         return;
     }
 
+    // TODO(RTXPT-Port Phase 6/P1-P5): replace the direct Trace -> optional debug
+    // compute -> blit path with OutputColor -> ProcessedOutputColor -> LdrColor
+    // post-processing, keeping RTXPTBlitPass as the final swapchain copy.
     const bool TraceExecuted =
         m_RayTracingPass.Trace(m_pImmediateContext,
                                m_RenderTargets.GetOutputColorUAV(),
@@ -1056,12 +1059,12 @@ void RTXPTSample::UpdateUI()
         ImGui::TextColored(CategoryColor, "Post processing:");
         ImGui::Indent(Indent);
         {
-            // Tone mapping: ACES is always applied in raygen today; a configurable
-            // tone-map pass is tracked separately as Phase 6.
+            // TODO(RTXPT-Port Phase 6/P3): make this live when RTXPTToneMappingPass
+            // owns ProcessedOutputColor -> LdrColor.
             ImGui::BeginDisabled(true);
             ImGui::Checkbox("Enable tone mapping", &m_ReferenceUI.EnableToneMapping);
             ImGui::EndDisabled();
-            PlaceholderTooltip("ACES tone mapping is always applied in raygen; a configurable tone-map pass is tracked as Phase 6.");
+            PlaceholderTooltip("Tone mapping is still raygen-side ACES; Phase 6/P3 moves it into the post-process chain.");
         }
         ImGui::Unindent(Indent); // end Post processing
 

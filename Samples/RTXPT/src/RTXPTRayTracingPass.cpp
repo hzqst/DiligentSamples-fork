@@ -224,6 +224,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
         .AddVariable(SHADER_TYPE_RAY_GEN, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        // TODO(RTXPT-Port Phase 6/P2): remove this raygen accumulation UAV
+        // binding after RTXPTAccumulationPass owns accumulation.
         .AddVariable(SHADER_TYPE_RAY_GEN, "u_AccumulationBuffer", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
 
     if (!ScreenPatternDiagnostic)

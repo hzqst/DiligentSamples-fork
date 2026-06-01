@@ -34,6 +34,9 @@
 namespace Diligent
 {
 
+// TODO(RTXPT-Port Phase 6/P1): Split the current display-ready OutputColor
+// contract into RTXPT-fork-style raw HDR OutputColor, AccumulatedRadiance,
+// ProcessedOutputColor, LdrColor, and LdrColorScratch targets.
 class RTXPTRenderTargets
 {
 public:

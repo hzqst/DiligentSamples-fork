@@ -95,6 +95,8 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice,
     m_Height = Height;
     m_Format = Format;
 
+    // TODO(RTXPT-Port Phase 6/P1): OutputColor becomes a raw HDR UAV
+    // (prefer RGBA16F) instead of the current RGBA8 display target.
     if (!CreateTarget(pDevice, "RTXPT OutputColor", m_OutputColor))
         return false;
 

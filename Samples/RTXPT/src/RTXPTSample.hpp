@@ -63,10 +63,8 @@ struct RTXPTFeatureCaps
 };
 
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
-// (D:/RTXPT-fork/Rtxpt/SampleUI.h). Some fields back live controls now, while the rest
-// remain placeholders for later phases (R4/R5/R6 or the separate tone-mapping Phase 6).
-// Scene camera exposure metadata is applied through PathTracerConstants::exposureScale while
-// the full tone-mapping pass remains Phase 6 work.
+// (D:/RTXPT-fork/Rtxpt/SampleUI.h). Phase 6/P3 moves tone-mapping exposure
+// from raygen-side exposureScale into the dedicated tone-mapping pass state.
 struct RTXPTReferenceUIState
 {
     bool  AccumulationAA                     = true;   // Jitter AA: always on in our port (no toggle yet).

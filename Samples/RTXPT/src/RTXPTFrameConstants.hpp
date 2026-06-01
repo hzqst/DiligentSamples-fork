@@ -73,7 +73,7 @@ struct PathTracerConstants
     Uint32 NEEFullSamples           = 1;    // G5: visibility-tested full samples.
     Uint32 NEEMISType               = 0;    // G5 UI parity: 0=Full; approximate modes remain disabled.
     float  fireflyFilterThreshold   = 0.0f; // G1 adaptive firefly filter; 0 disables the filter.
-    float  exposureScale            = 1.0f; // Scene camera exposure multiplier before in-raygen ACES.
+    float  exposureScale            = 1.0f; // TODO(RTXPT-Port Phase 6/P3): remove after tone-mapper owns exposure.
     Uint32 diffuseBounceCount       = 2;    // R5/G9: max diffuse bounces and BSDF LD sampling window.
     Uint32 nestedDielectricsQuality = 1;    // Nested dielectrics quality: 0=Off, 1=Fast, 2=Quality.
     Uint32 _paddingR6_0             = 0;

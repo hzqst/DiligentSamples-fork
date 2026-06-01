@@ -409,6 +409,9 @@ void main()
     u_Output[pixel] = float4(ToneMapACES(accumulated * g_Const.ptConsts.exposureScale), 1.0);
 }
 
-// TODO(RTXPT-Port Phase 6): Move tone mapping from raygen into the dedicated post-process chain.
+// TODO(RTXPT-Port Phase 6/P2): write raw HDR pathRadiance to u_Output and move
+// reference accumulation from raygen into RTXPTAccumulationPass.
+// TODO(RTXPT-Port Phase 6/P3): remove raygen ToneMapACES/exposureScale use after
+// RTXPTToneMappingPass owns ProcessedOutputColor -> LdrColor.
 
 #endif

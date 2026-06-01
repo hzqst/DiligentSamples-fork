@@ -62,40 +62,35 @@ namespace PathTracer
     float3 SampleEnvironmentNEE(StandardBSDFData bsdfData, float3 visibilityOrigin,
                                 float3 wo, inout SampleGenerator sg, float fireflyFilterK)
     {
-        if (g_Const.ptConsts.environmentIntensity <= 0.0)
+        EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
+        if (envSampler.Constants.ColorEnabled.w <= 0.0)
             return float3(0.0, 0.0, 0.0);
 
-        float envPdf;
-        const float3 wi = sampleCosineHemisphere(sampleNext2D(sg), bsdfData.N, envPdf);
-        if (envPdf <= 0.0)
+        const DistantLightSample envSample = envSampler.MIPDescentSample(sampleNext2D(sg));
+        if (envSample.Pdf <= 0.0)
             return float3(0.0, 0.0, 0.0);
 
         const float specProb = getSpecularProbability(bsdfData, wo);
         float3      f;
         float       bsdfPdf;
-        EvalBSDF(bsdfData, wo, wi, specProb, f, bsdfPdf);
+        EvalBSDF(bsdfData, wo, envSample.Dir, specProb, f, bsdfPdf);
         if (bsdfPdf <= 0.0)
             return float3(0.0, 0.0, 0.0);
 
-        if (!TraceVisibilityRay(visibilityOrigin, wi, kVisibilityRayTMax))
+        if (!TraceVisibilityRay(visibilityOrigin, envSample.Dir, kVisibilityRayTMax))
             return float3(0.0, 0.0, 0.0);
 
-        const float3 envRadiance = EnvMap::Eval(wi) * g_Const.ptConsts.environmentIntensity;
-        const float  misWeight   = PowerHeuristic(1.0, envPdf, 1.0, bsdfPdf);
+        const float misWeight = PowerHeuristic(1.0, envSample.Pdf, 1.0, bsdfPdf);
+        float3      contribution = f * envSample.Le * (misWeight / envSample.Pdf);
 
-        // Local radiance f*Li before the MIS / 1-over-pdf importance weights.
-        const float3 fLi = f * envRadiance;
-
-        // G1: dampen NEE fireflies using the env-sampling pdf as the spread proxy.
-        float       damp        = 1.0;
         const float ffThreshold = g_Const.ptConsts.fireflyFilterThreshold;
         if (ffThreshold != 0.0)
         {
-            const float neeK = ComputeNewScatterFireflyFilterK(fireflyFilterK, envPdf, 1.0);
-            damp             = FireflyFilterShort(Average(fLi), ffThreshold, neeK);
+            const float neeK = ComputeNewScatterFireflyFilterK(fireflyFilterK, envSample.Pdf, 1.0);
+            contribution *= FireflyFilterShort(Average(contribution), ffThreshold, neeK);
         }
 
-        return fLi * damp * (misWeight / envPdf);
+        return contribution;
     }
 
     float ComputeBSDFMISForEmissiveTriangle(uint2 pixelPos, float bsdfPdf, float emissiveSolidAnglePdf, uint fullSamples)
@@ -167,12 +162,19 @@ namespace PathTracer
         return result;
     }
 
-    float ComputeBSDFEnvMISWeight(bool didEnvNEE, float prevBsdfPdf, float3 prevNormal, float3 rayDir)
+    float ComputeBSDFEnvMISWeight(bool didEnvNEE, float prevBsdfPdf, float3 rayDir)
     {
         if (!didEnvNEE || prevBsdfPdf <= 0.0)
             return 1.0;
 
-        const float envPdf = max(dot(prevNormal, rayDir), 0.0) * K_1_PI;
+        EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
+        if (envSampler.Constants.ColorEnabled.w <= 0.0)
+            return 1.0;
+
+        const float envPdf = envSampler.MIPDescentEvalPdf(rayDir);
+        if (envPdf <= 0.0)
+            return 1.0;
+
         return PowerHeuristic(1.0, prevBsdfPdf, 1.0, envPdf);
     }
 } // namespace PathTracer

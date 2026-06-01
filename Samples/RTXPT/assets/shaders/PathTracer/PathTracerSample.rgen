@@ -204,7 +204,6 @@ void main()
     float fireflyFilterK = 1.0;
 
     float  prevBsdfPdf        = 0.0;
-    float3 prevNormal         = float3(0.0, 1.0, 0.0);
     bool   prevDidEnvNEE      = false;
     bool   prevDidEmissiveNEE = false;
     const uint maxBounces     = max(g_Const.ptConsts.bounceCount, 1u);
@@ -240,9 +239,8 @@ void main()
 
         if (payload.hitFlag == 0u)
         {
-            const float  misWeight   = PathTracer::ComputeBSDFEnvMISWeight(prevDidEnvNEE, prevBsdfPdf, prevNormal, rayDir);
-            const float3 envRadiance = payload.emission * g_Const.ptConsts.environmentIntensity;
-            float3       environmentEmission = envRadiance * misWeight;
+            const float misWeight = PathTracer::ComputeBSDFEnvMISWeight(prevDidEnvNEE, prevBsdfPdf, rayDir);
+            float3      environmentEmission = payload.emission * misWeight;
             if (ffThreshold != 0.0)
                 environmentEmission = FireflyFilter(environmentEmission, ffThreshold, fireflyFilterK);
             pathRadiance += throughput * environmentEmission;
@@ -305,7 +303,6 @@ void main()
         }
 
         prevBsdfPdf        = pdf;
-        prevNormal         = bsdfData.N;
         prevDidEnvNEE      = useNEE && enableEnvNEE;
         // Emissive MIS should depend on whether emissive NEE was available at the previous vertex,
         // not on whether the stochastic reservoir happened to pick an emissive proxy on that bounce.

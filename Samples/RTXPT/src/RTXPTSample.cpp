@@ -563,7 +563,6 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
         m_Lights.GetEmissiveTriangleCount() :
         0u;
     m_LastFrameConstants.ptConsts.environmentNEEEnabled = PackEnvironmentNEEAndEmissiveTriangleCount(m_EnableEnvNEE, EmissiveTriangleCount);
-    m_LastFrameConstants.ptConsts.environmentIntensity  = m_EnvIntensity;
     m_LastFrameConstants.ptConsts.lightIntensityScale   = m_LightIntensityScale;
     m_LastFrameConstants.ptConsts.maxNEEBounceCount     = m_MaxNEEBounces;
     m_LastFrameConstants.ptConsts.analyticLightCount    = m_Lights.GetStats().LightCount;

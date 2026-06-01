@@ -1,16 +1,14 @@
 #ifndef __SAMPLE_GENERATORS_HLSLI__
 #define __SAMPLE_GENERATORS_HLSLI__
 
-// Lightweight integer hash for PRNG seeding. Same constants used by RTXPT's
-// IntroPathTracer (D:/RTXPT-fork/Rtxpt/Shaders/IntroSample/IntroPathTracer.hlsl)
-// - chosen for good visual distribution rather than statistical strength.
+// Integer hash shared by the RTXPT-style stateless sample generators.
 uint Hash32(uint x)
 {
     x ^= x >> 16;
-    x *= 0x7feb352du;
+    x *= 0x21f0aaadu;
     x ^= x >> 15;
-    x *= 0x846ca68bu;
-    x ^= x >> 16;
+    x *= 0xf35a2d97u;
+    x ^= x >> 15;
     return x;
 }
 
@@ -19,10 +17,9 @@ uint Hash32Combine(uint seed, uint value)
     return seed ^ (Hash32(value) + 0x9e3779b9u + (seed << 6) + (seed >> 2));
 }
 
-// Map 23 random bits to [0, 1).
-float UintToFloat01(uint x)
+float Hash32ToFloat(uint hash)
 {
-    return asfloat(0x3f800000u | (x & 0x7fffffu)) - 1.0;
+    return (hash >> 8) / float(1 << 24);
 }
 
 struct SampleGenerator
@@ -64,7 +61,7 @@ SampleGenerator SampleGenerator_makeStateless(uint2 pixelPos, uint vertexIndex, 
 float sampleNext1D(inout SampleGenerator sg)
 {
     sg.State = Hash32(sg.State);
-    return UintToFloat01(sg.State);
+    return Hash32ToFloat(sg.State);
 }
 
 float2 sampleNext2D(inout SampleGenerator sg)
@@ -72,6 +69,25 @@ float2 sampleNext2D(inout SampleGenerator sg)
     const float X = sampleNext1D(sg);
     const float Y = sampleNext1D(sg);
     return float2(X, Y);
+}
+
+float3 sampleNext3D(inout SampleGenerator sg)
+{
+    float3 Sample;
+    Sample.x = sampleNext1D(sg);
+    Sample.y = sampleNext1D(sg);
+    Sample.z = sampleNext1D(sg);
+    return Sample;
+}
+
+float4 sampleNext4D(inout SampleGenerator sg)
+{
+    float4 Sample;
+    Sample.x = sampleNext1D(sg);
+    Sample.y = sampleNext1D(sg);
+    Sample.z = sampleNext1D(sg);
+    Sample.w = sampleNext1D(sg);
+    return Sample;
 }
 
 // Build an orthonormal basis (Tangent, Bitangent) from a unit normal. Frisvad 2012.

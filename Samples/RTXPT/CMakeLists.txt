@@ -60,6 +60,7 @@ set(SHADERS
     assets/shaders/PathTracer/Lighting/LightsBaker.hlsl
     assets/shaders/PathTracer/Lighting/EnvMapImportanceBaker.hlsl
     assets/shaders/PathTracer/Utils/SampleGenerators.hlsli
+    assets/shaders/PathTracer/Utils/StatelessSampleGenerators.hlsli
     assets/shaders/PathTracer/Rendering/Materials/BxDF.hlsli
     assets/shaders/PathTracer/PathTracerSample.rgen
     assets/shaders/PathTracer/PathTracerMiss.rmiss

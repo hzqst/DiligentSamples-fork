@@ -570,6 +570,8 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.ptConsts.NEECandidateSamples   = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEECandidateSamples, 1, 32));
     m_LastFrameConstants.ptConsts.NEEFullSamples        = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEFullSamples, 0, 32));
     m_LastFrameConstants.ptConsts.NEEMISType            = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 2));
+    m_LastFrameConstants.ptConsts.diffuseBounceCount =
+        static_cast<Uint32>(std::clamp(m_ReferenceUI.DiffuseBounceCount, 0, 16));
     // G1: a disabled firefly filter uploads a zero threshold, so the soft cap is a no-op and the
     // converged image is identical to the filter-on image (only per-sample variance differs).
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
@@ -665,6 +667,7 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_Materials.GetTextureBindings(),
                                     m_Materials.GetTextureCount(),
                                     EnableMaterialTextures,
+                                    m_ReferenceUI.EnableLDSamplerForBSDF,
                                     m_FeatureCaps.RayTracing,
                                     m_FeatureCaps.StandaloneRayTracingShaders);
 
@@ -697,6 +700,7 @@ void RTXPTSample::CreatePhase4Passes()
                                     nullptr,
                                     0,
                                     false,
+                                    m_ReferenceUI.EnableLDSamplerForBSDF,
                                     m_FeatureCaps.RayTracing,
                                     m_FeatureCaps.StandaloneRayTracingShaders);
     }
@@ -860,6 +864,12 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
     if (m_LightsBakerSettingsDirty && UpdateLightsBaker(true))
         RecreatePhase4Passes = true;
 
+    if (m_RayTracingPassSettingsDirty)
+    {
+        RecreatePhase4Passes          = true;
+        m_RayTracingPassSettingsDirty = false;
+    }
+
     if (RecreatePhase4Passes)
         CreatePhase4Passes();
 
@@ -964,11 +974,9 @@ void RTXPTSample::UpdateUI()
             if (ResetOnChange(ImGui::SliderInt("Max bounces", &MaxBouncesUI, 1, kMaxBounceSliderValue), "Max bounces changed"))
                 m_MaxBounces = static_cast<Uint32>(MaxBouncesUI);
 
-            // Max diffuse bounces: placeholder until the BSDF/sampler work (Phase R5).
-            ImGui::BeginDisabled(true);
-            ImGui::SliderInt("Max diffuse bounces", &m_ReferenceUI.DiffuseBounceCount, 0, 16);
-            ImGui::EndDisabled();
-            PlaceholderTooltip("Separate diffuse-bounce limit lands with the BSDF/sampler work (Phase R5).");
+            int DiffuseBouncesUI = m_ReferenceUI.DiffuseBounceCount;
+            if (ResetOnChange(ImGui::SliderInt("Max diffuse bounces", &DiffuseBouncesUI, 0, 16), "Max diffuse bounces changed"))
+                m_ReferenceUI.DiffuseBounceCount = std::clamp(DiffuseBouncesUI, 0, 16);
 
             int MinBouncesUI = static_cast<int>(m_MinBounces);
             if (ResetOnChange(ImGui::SliderInt("Min bounces (RR start)", &MinBouncesUI, 0, 16), "Min bounces changed"))
@@ -1077,11 +1085,9 @@ void RTXPTSample::UpdateUI()
         ImGui::EndDisabled();
         PlaceholderTooltip("Nested dielectrics land in Phase R6.");
 
-        // Low-discrepancy sampler for BSDF: Phase R5 (G9).
-        ImGui::BeginDisabled(true);
-        ImGui::Checkbox("Enable LD sampler for BSDF", &m_ReferenceUI.EnableLDSamplerForBSDF);
-        ImGui::EndDisabled();
-        PlaceholderTooltip("Low-discrepancy (Sobol/Owen) sampler lands in Phase R5.");
+        if (ResetOnChange(ImGui::Checkbox("Enable LD sampler for BSDF", &m_ReferenceUI.EnableLDSamplerForBSDF),
+                          "BSDF LD sampler toggled"))
+            m_RayTracingPassSettingsDirty = true;
 
         ImGui::Unindent(Indent);
     }

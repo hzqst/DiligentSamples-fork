@@ -97,6 +97,7 @@ public:
                     IDeviceObject* const* pMaterialTextures,
                     Uint32                MaterialTextureCount,
                     bool                  EnableMaterialTextures,
+                    bool                  EnableLDSamplerForBSDF,
                     bool                  RayTracingSupported,
                     bool                  StandaloneRTShadersSupported);
 

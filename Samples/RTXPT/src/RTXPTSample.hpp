@@ -170,10 +170,11 @@ private:
     bool                           m_EnableDebugComputePass   = false;
     bool                           m_ResetAccumulationPending = true;
     bool                           m_AccumulationActive       = false;
-    bool                           m_HasLastCameraMatrices    = false;
-    bool                           m_LightsBakerSettingsDirty = false;
-    bool                           m_EnvMapBakerDirty         = true;
-    bool                           m_EnvMapBakerSettingsDirty = true;
+    bool                           m_HasLastCameraMatrices       = false;
+    bool                           m_LightsBakerSettingsDirty    = false;
+    bool                           m_RayTracingPassSettingsDirty = false;
+    bool                           m_EnvMapBakerDirty            = true;
+    bool                           m_EnvMapBakerSettingsDirty    = true;
 };
 
 } // namespace Diligent

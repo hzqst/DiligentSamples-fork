@@ -49,11 +49,15 @@ struct PathTracerConstants
     Uint32 NEECandidateSamples = 5;  // G5: RIS candidate count per full sample.
 
     Uint32 NEEFullSamples         = 1;    // G5: visibility-tested full samples.
-    Uint32 NEEMISType             = 0;    // G5 UI parity: 0=Full; approximate modes remain disabled in this plan.
+    Uint32 NEEMISType             = 0;    // G5 UI parity: 0=Full; approximate modes remain disabled.
     float  fireflyFilterThreshold = 0.0f; // G1 adaptive firefly filter; 0 disables the filter.
     float  exposureScale          = 1.0f; // Scene camera exposure multiplier before in-raygen ACES.
+    Uint32 diffuseBounceCount     = 2;    // R5/G9: max diffuse bounces and BSDF LD sampling window.
+    Uint32 _paddingR5_0           = 0;
+    Uint32 _paddingR5_1           = 0;
+    Uint32 _paddingR5_2           = 0;
 };
-static_assert(sizeof(PathTracerConstants) == 64, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(PathTracerConstants) == 80, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 
 struct RTXPTEnvMapConstants
 {
@@ -77,6 +81,6 @@ struct SampleConstants
     PathTracerConstants  ptConsts                  = {};
     RTXPTEnvMapConstants envMap                    = {};
 };
-static_assert(sizeof(SampleConstants) == 352, "SampleConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(SampleConstants) == 368, "SampleConstants layout must match PathTracer/PathTracerShared.h");
 
 } // namespace Diligent

@@ -9,7 +9,7 @@ static const uint kSubInstanceFlagSkinned = 0x2u;
 // clamps the area->solid-angle conversion for near-grazing / very close emissive-triangle samples.
 static const float kMaxSolidAnglePdf = 1e10;
 
-// Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 64 bytes).
+// Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 80 bytes).
 struct PathTracerConstants
 {
     uint bounceCount;       // Maximum number of secondary bounces; 0 means primary-ray only.
@@ -28,9 +28,13 @@ struct PathTracerConstants
     uint NEECandidateSamples; // G5: RIS candidate count per full sample.
 
     uint  NEEFullSamples;         // G5: visibility-tested full samples.
-    uint  NEEMISType;             // G5 UI parity: 0=Full; approximate modes remain disabled in this plan.
-    float fireflyFilterThreshold; // G1 adaptive firefly filter: soft-cap level; 0 disables the filter entirely.
-    float exposureScale;          // Scene camera exposure multiplier applied before the in-raygen ACES curve.
+    uint  NEEMISType;             // G5 UI parity: 0=Full; approximate modes remain disabled.
+    float fireflyFilterThreshold; // G1 adaptive firefly filter; 0 disables the filter.
+    float exposureScale;          // Scene camera exposure multiplier before in-raygen ACES.
+    uint  diffuseBounceCount;     // R5/G9: max diffuse bounces and BSDF LD sampling window.
+    uint  _paddingR5_0;
+    uint  _paddingR5_1;
+    uint  _paddingR5_2;
 };
 
 struct RTXPTEnvMapConstants
@@ -45,7 +49,7 @@ struct RTXPTEnvMapConstants
     float4 ImportanceMetadata;
 };
 
-// Mirrors Diligent::SampleConstants in RTXPTFrameConstants.hpp (must keep order and layout in sync; total size 352 bytes).
+// Mirrors Diligent::SampleConstants in RTXPTFrameConstants.hpp (must keep order and layout in sync; total size 368 bytes).
 struct SampleConstants
 {
     float4x4             viewProj;

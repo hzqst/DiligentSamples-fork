@@ -87,6 +87,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                                      IDeviceObject* const* pMaterialTextures,
                                      Uint32                MaterialTextureCount,
                                      bool                  EnableMaterialTextures,
+                                     bool                  EnableLDSamplerForBSDF,
                                      bool                  RayTracingSupported,
                                      bool                  StandaloneRTShadersSupported)
 {
@@ -146,6 +147,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         Macros.Add("ENABLE_MATERIAL_TEXTURES", 1);
         Macros.Add("MATERIAL_TEXTURE_COUNT", static_cast<int>(MaterialTextureCount));
     }
+    Macros.Add("RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF", EnableLDSamplerForBSDF ? 1 : 0);
     ShaderCI.Macros = Macros;
 
     RefCntAutoPtr<IShader> pRayGen;

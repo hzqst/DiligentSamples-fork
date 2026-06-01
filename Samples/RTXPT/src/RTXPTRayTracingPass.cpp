@@ -210,11 +210,12 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     // PathPayload = 9 * float4 = 144 bytes (R6 transmission/nested-dielectric surface data).
     PSOCreateInfo.MaxPayloadSize = static_cast<Uint32>(sizeof(float) * 36);
 
-    // Hit-bridge resources are referenced by the closest-hit shader and (when textured) the any-hit shader.
+    // Material data is read by raygen for nested dielectric media and by hit shaders for surface shading.
     const SHADER_TYPE HitStages = UseTextures ?
         (SHADER_TYPE_RAY_CLOSEST_HIT | SHADER_TYPE_RAY_ANY_HIT) :
         SHADER_TYPE_RAY_CLOSEST_HIT;
-    const SHADER_TYPE EnvStages = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS;
+    const SHADER_TYPE MaterialStages = HitStages | SHADER_TYPE_RAY_GEN;
+    const SHADER_TYPE EnvStages      = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS;
 
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
@@ -232,7 +233,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     if (FullPathTracer)
     {
         ResourceLayout
-            .AddVariable(HitStages, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(MaterialStages, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(HitStages, "t_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(HitStages, "t_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(HitStages, "t_SkinnedVertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
@@ -371,7 +372,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
     if (FullPathTracer)
     {
-        m_Stats.MaterialBridgeBound = SetStaticForStages(HitStages, "t_PTMaterialData", pMaterialsView, "material buffer");
+        m_Stats.MaterialBridgeBound = SetStaticForStages(MaterialStages, "t_PTMaterialData", pMaterialsView, "material buffer");
         m_Stats.SubInstanceBound    = SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
         m_Stats.LightBridgeBound    = SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer");
         m_Stats.LightsBakerBridgeBound =
@@ -406,7 +407,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         if (UseTextures)
         {
             m_Stats.MaterialBridgeBound = m_Stats.MaterialBridgeBound &&
-                SetStaticForStages(HitStages, "t_PTMaterialData", pMaterialsView, "material buffer");
+                SetStaticForStages(MaterialStages, "t_PTMaterialData", pMaterialsView, "material buffer");
             m_Stats.SubInstanceBound = m_Stats.SubInstanceBound &&
                 SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
             m_Stats.VertexBufferBound = m_Stats.VertexBufferBound &&

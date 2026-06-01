@@ -578,6 +578,8 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.ptConsts.NEEMISType            = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 2));
     m_LastFrameConstants.ptConsts.diffuseBounceCount =
         static_cast<Uint32>(std::clamp(m_ReferenceUI.DiffuseBounceCount, 0, 16));
+    m_LastFrameConstants.ptConsts.nestedDielectricsQuality =
+        static_cast<Uint32>(std::clamp(m_ReferenceUI.NestedDielectricsQuality, 0, 2));
     // G1: a disabled firefly filter uploads a zero threshold, so the soft cap is a no-op and the
     // converged image is identical to the filter-on image (only per-sample variance differs).
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
@@ -1085,11 +1087,13 @@ void RTXPTSample::UpdateUI()
     {
         ImGui::Indent(Indent);
 
-        // Nested dielectrics: Phase R6 (G10).
-        ImGui::BeginDisabled(true);
-        ImGui::Combo("Nested Dielectrics", &m_ReferenceUI.NestedDielectricsQuality, "Off\0Fast\0Quality\0\0");
-        ImGui::EndDisabled();
-        PlaceholderTooltip("Nested dielectrics land in Phase R6.");
+        if (ResetOnChange(ImGui::Combo("Nested Dielectrics", &m_ReferenceUI.NestedDielectricsQuality, "Off\0Fast\0Quality\0\0"),
+                          "Nested dielectric quality changed"))
+        {
+            m_ReferenceUI.NestedDielectricsQuality = std::clamp(m_ReferenceUI.NestedDielectricsQuality, 0, 2);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Priority-based nested dielectrics. Fast allows fewer false-hit rejections; Quality allows more.");
 
         if (ResetOnChange(ImGui::Checkbox("Enable LD sampler for BSDF", &m_ReferenceUI.EnableLDSamplerForBSDF),
                           "BSDF LD sampler toggled"))
@@ -1336,7 +1340,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
         ImGui::Separator();
         ImGui::TextColored(CategoryColor, "Roadmap (open work):");
-        ImGui::TextWrapped("TODO(RTXPT-Port Phase R6): transmission / nested dielectrics / ALPHA_MODE_BLEND.");
+        ImGui::TextWrapped("TODO(RTXPT-Port Phase R6): ALPHA_MODE_BLEND.");
 
         ImGui::Unindent(Indent);
     }

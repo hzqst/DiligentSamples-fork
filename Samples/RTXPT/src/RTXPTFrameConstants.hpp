@@ -48,14 +48,14 @@ struct PathTracerConstants
     Uint32 NEEType             = 1;  // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
     Uint32 NEECandidateSamples = 5;  // G5: RIS candidate count per full sample.
 
-    Uint32 NEEFullSamples         = 1;    // G5: visibility-tested full samples.
-    Uint32 NEEMISType             = 0;    // G5 UI parity: 0=Full; approximate modes remain disabled.
-    float  fireflyFilterThreshold = 0.0f; // G1 adaptive firefly filter; 0 disables the filter.
-    float  exposureScale          = 1.0f; // Scene camera exposure multiplier before in-raygen ACES.
-    Uint32 diffuseBounceCount     = 2;    // R5/G9: max diffuse bounces and BSDF LD sampling window.
-    Uint32 _paddingR5_0           = 0;
-    Uint32 _paddingR5_1           = 0;
-    Uint32 _paddingR5_2           = 0;
+    Uint32 NEEFullSamples           = 1;    // G5: visibility-tested full samples.
+    Uint32 NEEMISType               = 0;    // G5 UI parity: 0=Full; approximate modes remain disabled.
+    float  fireflyFilterThreshold   = 0.0f; // G1 adaptive firefly filter; 0 disables the filter.
+    float  exposureScale            = 1.0f; // Scene camera exposure multiplier before in-raygen ACES.
+    Uint32 diffuseBounceCount       = 2;    // R5/G9: max diffuse bounces and BSDF LD sampling window.
+    Uint32 nestedDielectricsQuality = 1;    // R6/G10: 0=Off, 1=Fast, 2=Quality.
+    Uint32 _paddingR6_0             = 0;
+    Uint32 _paddingR6_1             = 0;
 };
 static_assert(sizeof(PathTracerConstants) == 80, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
 

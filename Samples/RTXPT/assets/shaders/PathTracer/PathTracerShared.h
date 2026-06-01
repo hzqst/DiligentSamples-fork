@@ -27,14 +27,14 @@ struct PathTracerConstants
     uint NEEType;             // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
     uint NEECandidateSamples; // G5: RIS candidate count per full sample.
 
-    uint  NEEFullSamples;         // G5: visibility-tested full samples.
-    uint  NEEMISType;             // G5 UI parity: 0=Full; approximate modes remain disabled.
-    float fireflyFilterThreshold; // G1 adaptive firefly filter; 0 disables the filter.
-    float exposureScale;          // Scene camera exposure multiplier before in-raygen ACES.
-    uint  diffuseBounceCount;     // R5/G9: max diffuse bounces and BSDF LD sampling window.
-    uint  _paddingR5_0;
-    uint  _paddingR5_1;
-    uint  _paddingR5_2;
+    uint  NEEFullSamples;           // G5: visibility-tested full samples.
+    uint  NEEMISType;               // G5 UI parity: 0=Full; approximate modes remain disabled.
+    float fireflyFilterThreshold;   // G1 adaptive firefly filter; 0 disables the filter.
+    float exposureScale;            // Scene camera exposure multiplier before in-raygen ACES.
+    uint  diffuseBounceCount;       // R5/G9: max diffuse bounces and BSDF LD sampling window.
+    uint  nestedDielectricsQuality; // R6/G10: 0=Off, 1=Fast, 2=Quality.
+    uint  _paddingR6_0;
+    uint  _paddingR6_1;
 };
 
 struct RTXPTEnvMapConstants

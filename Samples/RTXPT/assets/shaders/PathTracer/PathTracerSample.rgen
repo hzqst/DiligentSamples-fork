@@ -220,9 +220,12 @@ void main()
     const float ffThreshold   = g_Const.ptConsts.fireflyFilterThreshold; // 0 disables the firefly filter.
     uint diffuseBounces       = 0u;
     bool terminateAtNextEndpoint = false;
+    uint bounce                   = 0u;
+    uint rejectedDielectricHits   = 0u;
+    InteriorList interiorList     = InteriorList::make();
 
     [loop]
-    for (uint bounce = 0u; bounce < maxBounces || terminateAtNextEndpoint; ++bounce)
+    while (bounce < maxBounces || terminateAtNextEndpoint)
     {
         const uint vertexIndex = bounce + 1u;
 
@@ -255,6 +258,30 @@ void main()
             break;
         }
 
+        if (!interiorList.isEmpty())
+        {
+            const HomogeneousVolumeData volume = Bridge::loadHomogeneousVolumeData(interiorList.getTopMaterialID());
+            throughput *= HomogeneousVolumeSampler::evalTransmittance(volume, payload.hitDistance);
+        }
+
+        float outsideIoR = 1.0;
+        const bool acceptedDielectricHit =
+            PathTracer::HandleNestedDielectrics(payload,
+                                                g_Const.ptConsts.nestedDielectricsQuality,
+                                                interiorList,
+                                                rejectedDielectricHits,
+                                                outsideIoR);
+        if (!acceptedDielectricHit)
+        {
+            if (g_Const.ptConsts.nestedDielectricsQuality == 2u &&
+                rejectedDielectricHits >= PathTracer::GetMaxRejectedDielectricHits(g_Const.ptConsts.nestedDielectricsQuality))
+                break;
+
+            const float bias = max(1e-4, 1e-3 * payload.hitDistance);
+            rayOrigin = payload.worldPos - payload.faceNormal * bias;
+            continue;
+        }
+
         // Accumulate emissive surfaces hit by BSDF sampling, MIS-weighted against emissive-triangle NEE (G4).
         float3     surfaceEmission = payload.emission;
         if (prevDidEmissiveNEE && prevBsdfPdf > 0.0 && payload.emissiveLightPdf > 0.0)
@@ -270,11 +297,21 @@ void main()
 
         // Build the glTF metallic-roughness surface the closest-hit filled in, then add explicit direct lighting
         // before importance-sampling the GGX BSDF for the next direction.
-        const float3    wo       = -rayDir;
-        StandardBSDFData bsdfData = MakeStandardBSDFData(payload.worldNormal, payload.baseColor, payload.metallic, payload.roughness);
+        const float3 wo = -rayDir;
+        StandardBSDFData bsdfData =
+            MakeStandardBSDFData(payload.worldNormal,
+                                 payload.baseColor,
+                                 payload.metallic,
+                                 payload.roughness,
+                                 payload.ior,
+                                 outsideIoR,
+                                 payload.transmissionFactor,
+                                 payload.diffuseTransmissionFactor,
+                                 payload.thinSurface != 0u,
+                                 payload.frontFacing != 0u);
 
         const float  bias             = max(1e-4, 1e-3 * payload.hitDistance);
-        const float3 visibilityOrigin = payload.worldPos + bsdfData.N * bias;
+        const float3 visibilityOrigin = payload.worldPos + payload.faceNormal * bias;
 
         const bool useNEE = enableNEE && bounce < maxNEEBounces;
         bool       sampledEmissiveNEE = false;
@@ -309,10 +346,14 @@ void main()
         if (!SampleBSDF(bsdfData, wo, preGeneratedSamples, nextDir, weight, pdf, lobe, lobeP))
             break;
 
+        const bool   isTransmission = (lobe & kBSDFLobeTransmission) != 0u;
+        const float3 scatterOrigin  = payload.worldPos + (isTransmission ? -payload.faceNormal : payload.faceNormal) * bias;
         throughput *= weight;
+        if (g_Const.ptConsts.nestedDielectricsQuality != 0u)
+            PathTracer::UpdateNestedDielectricsOnScatterTransmission(payload, lobe, interiorList);
         const bool isDiffuseBounce =
             ((lobe & kBSDFLobeDiffuseReflection) != 0u) ||
-            bsdfData.roughness > kSpecularRoughnessThreshold;
+            (((lobe & kBSDFLobeTransmission) == 0u) && bsdfData.roughness > kSpecularRoughnessThreshold);
         if (isDiffuseBounce)
         {
             ++diffuseBounces;
@@ -339,8 +380,9 @@ void main()
         // not on whether the stochastic reservoir happened to pick an emissive proxy on that bounce.
         prevDidEmissiveNEE = useNEE && fullSamples > 0u && Bridge::getEmissiveTriangleCount() > 0u;
 
-        rayOrigin = visibilityOrigin;
+        rayOrigin = scatterOrigin;
         rayDir    = nextDir;
+        ++bounce;
     }
 
     // Blend into the accumulation buffer. resetAccumulation == 1 means this is the first sample after a reset.
@@ -359,7 +401,6 @@ void main()
     u_Output[pixel] = float4(ToneMapACES(accumulated * g_Const.ptConsts.exposureScale), 1.0);
 }
 
-// TODO(RTXPT-Port Phase R6): Add transmission / nested dielectrics to the BSDF (currently opaque diffuse + GGX specular).
 // TODO(RTXPT-Port Phase 6): Move tone mapping from raygen into the dedicated post-process chain.
 
 #endif

@@ -87,7 +87,7 @@ struct RTXPTReferenceUIState
     float NEEAT_GlobalTemporalFeedbackWeight = 0.75f;
     float NEEAT_LocalToGlobalSampleRatio     = 0.65f;
     float NEEAT_DistantVsLocalImportance     = 1.0f;
-    int   NestedDielectricsQuality           = 1;     // Phase R6 (G10): 0=Off, 1=Fast, 2=Quality.
+    int   NestedDielectricsQuality           = 1;     // Nested dielectrics quality: 0=Off, 1=Fast, 2=Quality.
     bool  EnableLDSamplerForBSDF             = true;  // Phase R5 (G9): low-discrepancy (Sobol/Owen) sampler.
     bool  EnvironmentMapEnabled              = false; // Phase R4 (G7): HDR env-map loading (procedural sky is always active).
 };

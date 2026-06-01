@@ -53,7 +53,7 @@ struct PathTracerConstants
     float  fireflyFilterThreshold   = 0.0f; // G1 adaptive firefly filter; 0 disables the filter.
     float  exposureScale            = 1.0f; // Scene camera exposure multiplier before in-raygen ACES.
     Uint32 diffuseBounceCount       = 2;    // R5/G9: max diffuse bounces and BSDF LD sampling window.
-    Uint32 nestedDielectricsQuality = 1;    // R6/G10: 0=Off, 1=Fast, 2=Quality.
+    Uint32 nestedDielectricsQuality = 1;    // Nested dielectrics quality: 0=Off, 1=Fast, 2=Quality.
     Uint32 _paddingR6_0             = 0;
     Uint32 _paddingR6_1             = 0;
 };

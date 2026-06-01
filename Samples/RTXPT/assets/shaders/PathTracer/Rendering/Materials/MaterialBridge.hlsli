@@ -170,6 +170,6 @@ namespace Bridge
     }
 } // namespace Bridge
 
-// TODO(RTXPT-Port Phase 5.3): Honor TextureShaderAttribs UV selectors / wrap modes / atlas transform (currently assumes TEXCOORD_0 + wrap + slice).
+// TODO(RTXPT-Port): Honor TextureShaderAttribs UV selectors / wrap modes / atlas transform (currently assumes TEXCOORD_0 + wrap + slice).
 
 #endif // __MATERIAL_BRIDGE_HLSLI__

@@ -69,9 +69,7 @@ struct RTXPTEnvMapSettings
     float3      RadianceScale           = float3{1, 1, 1};
     float       Intensity               = 1.0f;
     float       RotationRadians         = 0.0f;
-    Uint32      TargetCubeResolution    = 1024;
     Uint32      ImportanceMapResolution = 1024;
-    int         CompressionQuality      = 0; // 0=Off, 1=Fast, 2=Quality.
 };
 
 struct RTXPTEnvMapBakerStats

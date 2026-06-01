@@ -9,6 +9,26 @@ static const uint kSubInstanceFlagSkinned = 0x2u;
 // clamps the area->solid-angle conversion for near-grazing / very close emissive-triangle samples.
 static const float kMaxSolidAnglePdf = 1e10;
 
+struct PathTracerCameraData
+{
+    float3 PosW;
+    float  NearZ;
+    float3 DirectionW;
+    float  PixelConeSpreadAngle;
+    float3 CameraU;
+    float  FarZ;
+    float3 CameraV;
+    float  FocalDistance;
+    float3 CameraW;
+    float  AspectRatio;
+    uint2  ViewportSize;
+    float  ApertureRadius;
+    float  _padding0;
+    float2 Jitter;
+    float  _padding1;
+    float  _padding2;
+};
+
 // Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 80 bytes).
 struct PathTracerConstants
 {
@@ -49,13 +69,14 @@ struct RTXPTEnvMapConstants
     float4 ImportanceMetadata;
 };
 
-// Mirrors Diligent::SampleConstants in RTXPTFrameConstants.hpp (must keep order and layout in sync; total size 368 bytes).
+// Mirrors Diligent::SampleConstants in RTXPTFrameConstants.hpp (must keep order and layout in sync; total size 480 bytes).
 struct SampleConstants
 {
     float4x4             viewProj;
     float4x4             viewProjInv;
     float4               cameraPositionAndTime;
     float4               viewportSizeAndFrameIndex;
+    PathTracerCameraData camera;
     PathTracerConstants  ptConsts;
     RTXPTEnvMapConstants envMap;
 };

@@ -62,6 +62,41 @@ Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 Emis
     return (ClampedCount << 1u) | (EnableEnvNEE ? 1u : 0u);
 }
 
+PathTracerCameraData MakePathTracerCameraData(const FirstPersonCamera& Camera,
+                                              Uint32                   Width,
+                                              Uint32                   Height,
+                                              float                    FocalDistance,
+                                              float                    ApertureRadius)
+{
+    const auto& Proj              = Camera.GetProjAttribs();
+    const float SafeHeight        = static_cast<float>(std::max(Height, Uint32{1}));
+    const float AspectRatio       = Height > 0 ? static_cast<float>(Width) / static_cast<float>(Height) : 1.0f;
+    const float SafeFocalDistance = std::max(FocalDistance, 0.001f);
+    const float TanHalfFov        = std::tan(Proj.FOV * 0.5f);
+
+    const float3 CameraDir   = normalize(Camera.GetWorldAhead());
+    const float3 CameraUp    = normalize(Camera.GetWorldUp());
+    const float3 CameraW     = CameraDir * SafeFocalDistance;
+    const float3 CameraUUnit = normalize(cross(CameraW, CameraUp));
+    const float3 CameraVUnit = normalize(cross(CameraUUnit, CameraW));
+
+    PathTracerCameraData Data;
+    Data.PosW                 = Camera.GetPos();
+    Data.NearZ                = Proj.NearClipPlane;
+    Data.DirectionW           = CameraDir;
+    Data.PixelConeSpreadAngle = std::atan(2.0f * TanHalfFov / SafeHeight);
+    Data.CameraU              = CameraUUnit * (SafeFocalDistance * TanHalfFov * AspectRatio);
+    Data.FarZ                 = Proj.FarClipPlane;
+    Data.CameraV              = CameraVUnit * (SafeFocalDistance * TanHalfFov);
+    Data.FocalDistance        = SafeFocalDistance;
+    Data.CameraW              = CameraW;
+    Data.AspectRatio          = AspectRatio;
+    Data.ViewportWidth        = std::max(Width, Uint32{1});
+    Data.ViewportHeight       = std::max(Height, Uint32{1});
+    Data.ApertureRadius       = std::max(ApertureRadius, 0.0f);
+    return Data;
+}
+
 RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
 {
     RTXPTFeatureCaps Caps{};
@@ -546,6 +581,11 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.viewProjInv               = ViewProj.Inverse();
     m_LastFrameConstants.cameraPositionAndTime     = float4{CameraPosition.x, CameraPosition.y, CameraPosition.z, static_cast<float>(CurrTime)};
     m_LastFrameConstants.viewportSizeAndFrameIndex = float4{Width, Height, Width > 0.0f ? 1.0f / Width : 0.0f, static_cast<float>(m_FrameIndex)};
+    m_LastFrameConstants.camera                    = MakePathTracerCameraData(m_Camera,
+                                                           SCDesc.Width,
+                                                           SCDesc.Height,
+                                                           m_ReferenceUI.CameraFocalDistance,
+                                                           m_ReferenceUI.CameraAperture);
 
     if (m_AccumulationActive)
     {

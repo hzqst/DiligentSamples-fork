@@ -90,6 +90,8 @@ struct RTXPTReferenceUIState
     int   NestedDielectricsQuality           = 1;     // Nested dielectrics quality: 0=Off, 1=Fast, 2=Quality.
     bool  EnableLDSamplerForBSDF             = true;  // Phase R5 (G9): low-discrepancy (Sobol/Owen) sampler.
     bool  EnvironmentMapEnabled              = false; // Phase R4 (G7): HDR env-map loading (procedural sky is always active).
+    float CameraAperture                      = 0.0f;  // Phase R7 (G11): thin-lens aperture radius.
+    float CameraFocalDistance                 = 10000.0f; // Phase R7 (G11): thin-lens focal distance.
 };
 
 class RTXPTSample final : public SampleBase

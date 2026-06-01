@@ -25,6 +25,68 @@ float ComputeLowGrazingAngleFalloff(float3 lightDirection, float3 interpolatedGe
     return saturate((dot(lightDirection, interpolatedGeometryNormal) - falloffFrom) / max(falloffRange, 1e-6));
 }
 
+struct CameraRay
+{
+    float3 origin;
+    float3 dir;
+    float  tMin;
+    float  tMax;
+};
+
+float2 SampleConcentricDisk(float2 sample)
+{
+    const float2 p = 2.0 * sample - 1.0;
+    if (dot(p, p) == 0.0)
+        return float2(0.0, 0.0);
+
+    float r;
+    float theta;
+    if (abs(p.x) > abs(p.y))
+    {
+        r     = p.x;
+        theta = 0.7853981633974483 * (p.y / p.x);
+    }
+    else
+    {
+        r     = p.y;
+        theta = 1.5707963267948966 - 0.7853981633974483 * (p.x / p.y);
+    }
+
+    return r * float2(cos(theta), sin(theta));
+}
+
+float3 ComputeNonNormalizedRayDirPinhole(PathTracerCameraData data, uint2 pixel, float2 jitter)
+{
+    const float2 p   = (float2(pixel) + float2(0.5, 0.5) + jitter) / float2(data.ViewportSize);
+    const float2 ndc = float2(2.0, -2.0) * p + float2(-1.0, 1.0);
+    return ndc.x * data.CameraU + ndc.y * data.CameraV + data.CameraW;
+}
+
+CameraRay ComputeRayThinlens(PathTracerCameraData data, uint2 pixel, float2 jitter, float2 sample2D)
+{
+    CameraRay ray;
+    ray.origin = data.PosW;
+    ray.dir    = ComputeNonNormalizedRayDirPinhole(data, pixel, jitter);
+
+    const float2 apertureSample = SampleConcentricDisk(sample2D);
+    const float3 target         = ray.origin + ray.dir;
+    if (data.ApertureRadius > 0.0)
+    {
+        ray.origin += data.ApertureRadius *
+            (apertureSample.x * normalize(data.CameraU) + apertureSample.y * normalize(data.CameraV));
+    }
+    ray.dir = normalize(target - ray.origin);
+
+    const float invCos = 1.0 / max(dot(normalize(data.CameraW), ray.dir), 1e-6);
+    ray.tMin = data.NearZ * invCos;
+    ray.tMax = data.FarZ * invCos;
+
+    ray.origin += ray.dir * ray.tMin;
+    ray.tMax   = max(ray.tMax - ray.tMin, 0.0);
+    ray.tMin   = 0.0;
+    return ray;
+}
+
 // Power heuristic for MIS (Veach). Matches RTXPT-fork PathTracerHelpers.hlsli signature.
 float PowerHeuristic(float nf, float fPdf, float ng, float gPdf)
 {

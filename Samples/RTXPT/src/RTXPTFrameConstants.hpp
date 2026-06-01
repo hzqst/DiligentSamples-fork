@@ -31,6 +31,28 @@
 namespace Diligent
 {
 
+struct PathTracerCameraData
+{
+    float3 PosW                 = float3{0, 0, 0};
+    float  NearZ                = 0.0f;
+    float3 DirectionW           = float3{0, 0, 1};
+    float  PixelConeSpreadAngle = 0.0f;
+    float3 CameraU              = float3{1, 0, 0};
+    float  FarZ                 = 0.0f;
+    float3 CameraV              = float3{0, 1, 0};
+    float  FocalDistance        = 10000.0f;
+    float3 CameraW              = float3{0, 0, 10000.0f};
+    float  AspectRatio          = 1.0f;
+    Uint32 ViewportWidth        = 1;
+    Uint32 ViewportHeight       = 1;
+    float  ApertureRadius       = 0.0f;
+    float  _padding0            = 0.0f;
+    float2 Jitter               = float2{0, 0};
+    float  _padding1            = 0.0f;
+    float  _padding2            = 0.0f;
+};
+static_assert(sizeof(PathTracerCameraData) == 112, "PathTracerCameraData layout must match PathTracer/PathTracerShared.h");
+
 struct PathTracerConstants
 {
     Uint32 bounceCount       = 4;
@@ -78,9 +100,10 @@ struct SampleConstants
     float4x4             viewProjInv               = float4x4::Identity();
     float4               cameraPositionAndTime     = float4{0, 0, 0, 0};
     float4               viewportSizeAndFrameIndex = float4{0, 0, 0, 0};
+    PathTracerCameraData camera                    = {};
     PathTracerConstants  ptConsts                  = {};
     RTXPTEnvMapConstants envMap                    = {};
 };
-static_assert(sizeof(SampleConstants) == 368, "SampleConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(SampleConstants) == 480, "SampleConstants layout must match PathTracer/PathTracerShared.h");
 
 } // namespace Diligent

@@ -96,6 +96,7 @@ struct RTXPTMaterialExtension
     float3 VolumeAttenuationColor                  = float3{1, 1, 1};
     float  VolumeAttenuationDistance               = 3.402823466e+38f;
     int    NestedPriority                          = 14;
+    float  ShadowNoLFadeout                        = 0.0f;
     bool   SkipRender                              = false;
 };
 

@@ -375,6 +375,7 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
                 Data.volumeAttenuationColor       = Ext.VolumeAttenuationColor;
                 Data.volumeAttenuationDistance    = std::max(Ext.VolumeAttenuationDistance, 0.0f);
                 Data.nestedPriority               = static_cast<Uint32>(std::clamp(Ext.NestedPriority, 0, 14));
+                Data.shadowNoLFadeout             = std::clamp(Ext.ShadowNoLFadeout, 0.0f, 0.25f);
 
                 if (Ext.EnableTransmission || Data.transmissionFactor > 0.0f || Data.diffuseTransmissionFactor > 0.0f)
                     Data.flags |= kMaterialFlag_HasTransmission;

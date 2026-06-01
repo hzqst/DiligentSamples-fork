@@ -83,10 +83,10 @@ struct MaterialPTData
     float  thicknessTextureSlice    = 0.0f; // offset 124
 
     // RTXPT-fork authored priority: 0 is the special highest-priority value; 14 is the default/max authored value.
-    Uint32 nestedPriority = 14; // offset 128
-    Uint32 _paddingR6_0   = 0;
-    float  _paddingR6_1   = 0.0f;
-    float  _paddingR6_2   = 0.0f;
+    Uint32 nestedPriority   = 14;   // offset 128
+    Uint32 _paddingR7_0     = 0;    // offset 132
+    float  shadowNoLFadeout = 0.0f; // offset 136
+    float  _paddingR7_1     = 0.0f; // offset 140
 };
 static_assert(sizeof(MaterialPTData) == 144, "MaterialPTData layout must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, metallicRoughnessTextureIndex) == 60,
@@ -117,6 +117,8 @@ static_assert(offsetof(MaterialPTData, thicknessTextureSlice) == 124,
               "MaterialPTData thicknessTextureSlice offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, nestedPriority) == 128,
               "MaterialPTData nestedPriority offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, shadowNoLFadeout) == 136,
+              "MaterialPTData shadowNoLFadeout offset must match PathTracer/PathTracerShared.h");
 
 // Flag bits for MaterialPTData::flags. Keep in sync with kMaterialFlag* in PathTracer/PathTracerShared.h.
 constexpr Uint32 kMaterialFlag_HasBaseColorTexture         = 0x1u;

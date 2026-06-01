@@ -70,6 +70,7 @@ RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string&    FilePat
     Ext.ThicknessFactor           = ReadRTXPTOptionalFloat(Json, "ThicknessFactor", Ext.ThicknessFactor);
     Ext.VolumeAttenuationDistance = ReadRTXPTOptionalFloat(Json, "VolumeAttenuationDistance", Ext.VolumeAttenuationDistance);
     Ext.NestedPriority            = std::clamp(Json.value("NestedPriority", Ext.NestedPriority), 0, 14);
+    Ext.ShadowNoLFadeout          = ReadRTXPTOptionalFloat(Json, "ShadowNoLFadeout", Ext.ShadowNoLFadeout);
 
     float VolumeColor[3] = {Ext.VolumeAttenuationColor.x, Ext.VolumeAttenuationColor.y, Ext.VolumeAttenuationColor.z};
     if (ReadRTXPTFloatArray(Json, "VolumeAttenuationColor", VolumeColor, 3))

@@ -38,6 +38,8 @@ namespace PathTracer
         payload.frontFacing = 1u;
         payload.thinSurface = 1u;
         payload.alpha = 1.0;
+        payload.vertexNormal = payload.worldNormal;
+        payload.shadowNoLFadeout = 0.0;
         return payload;
     }
 

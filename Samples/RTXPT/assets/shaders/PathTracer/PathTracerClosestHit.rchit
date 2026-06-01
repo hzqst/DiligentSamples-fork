@@ -66,6 +66,7 @@ void main(inout PathPayload Payload,
                                 Attributes.barycentrics.y,
                                 1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
     float3 WorldNormal = -WorldRayDirection();
+    float3 VertexNormal = WorldNormal;
     float3 FaceNormal  = -WorldRayDirection();
     float3 WorldPos    = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     float  Metallic    = 0.0;
@@ -99,6 +100,7 @@ void main(inout PathPayload Payload,
             WorldNormal = FaceNormal;
         if (dot(WorldNormal, FaceNormal) < 0.0)
             WorldNormal = -WorldNormal;
+        VertexNormal = WorldNormal;
 
         // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
         const float3 tangentNormal = Bridge::getTangentNormal(material, texCoord);
@@ -134,6 +136,7 @@ void main(inout PathPayload Payload,
         Payload.nestedPriority          = min(material.nestedPriority, 14u);
         Payload.thinSurface             = Bridge::isThinSurface(material) ? 1u : 0u;
         Payload.alpha                   = BaseColorWithAlpha.a;
+        Payload.shadowNoLFadeout        = Bridge::loadShadowNoLFadeout(MaterialID);
 
         // Precompute the emissive triangle's area-light solid-angle pdf so raygen can MIS-weight
         // the BSDF-hit emission against emissive-triangle NEE. Only NEE-eligible constant emitters
@@ -159,6 +162,7 @@ void main(inout PathPayload Payload,
     Payload.worldPos    = WorldPos;
     Payload.worldNormal = normalize(WorldNormal);
     Payload.faceNormal  = normalize(FaceNormal);
+    Payload.vertexNormal = normalize(VertexNormal);
     Payload.materialID  = MaterialID;
     Payload.frontFacing = FrontFacing ? 1u : 0u;
     Payload.baseColor   = BaseColor;

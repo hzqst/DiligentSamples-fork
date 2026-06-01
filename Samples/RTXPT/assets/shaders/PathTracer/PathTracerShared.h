@@ -66,7 +66,7 @@ struct PrimaryPayload
     float4 ColorDepth;
 };
 
-// Reference path tracer payload. Size is 144 bytes (36 floats); keep RTXPTRayTracingPass::Initialize
+// Reference path tracer payload. Size is 160 bytes (40 floats); keep RTXPTRayTracingPass::Initialize
 // MaxPayloadSize in sync when this changes.
 struct PathPayload
 {
@@ -100,6 +100,9 @@ struct PathPayload
     uint  frontFacing;
     uint  thinSurface;
     float alpha;
+
+    float3 vertexNormal;     // Interpolated vertex normal, corrected for face side, before normal mapping.
+    float  shadowNoLFadeout; // RTXPT-fork MaterialPT::ShadowNoLFadeout.
 };
 
 // Mirrors Diligent::SubInstanceData in RTXPTAccelerationStructures.hpp.
@@ -156,9 +159,9 @@ struct MaterialPTData
 
     // RTXPT-fork authored priority: 0 is the special highest-priority value; 14 is the default/max authored value.
     uint  nestedPriority; // offset 128
-    uint  _paddingR6_0;
-    float _paddingR6_1;
-    float _paddingR6_2;
+    uint  _paddingR7_0;
+    float shadowNoLFadeout; // offset 136
+    float _paddingR7_1;
 };
 
 // Mirrors the kMaterialFlag_* constants in RTXPTMaterials.hpp.

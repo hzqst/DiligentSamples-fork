@@ -143,6 +143,16 @@ namespace Bridge
         return max(material.ior, 1.0);
     }
 
+    float loadShadowNoLFadeout(uint materialID)
+    {
+        const uint count = getMaterialCount();
+        if (materialID >= count)
+            return 0.0;
+
+        MaterialPTData material = getMaterial(materialID);
+        return clamp(material.shadowNoLFadeout, 0.0, 0.25);
+    }
+
     HomogeneousVolumeData loadHomogeneousVolumeData(uint materialID)
     {
         HomogeneousVolumeData volume;

@@ -1126,26 +1126,20 @@ void RTXPTSample::UpdateUI()
         if (ResetOnChange(ImGui::SliderFloat("Rotation", &m_EnvMapSettings.RotationRadians, -PI_F, PI_F), "Environment rotation changed"))
             m_EnvMapBakerSettingsDirty = true;
 
-        int CubeResolution = static_cast<int>(m_EnvMapSettings.TargetCubeResolution);
-        if (ResetOnChange(ImGui::SliderInt("Cube resolution", &CubeResolution, 256, 4096), "Environment cube resolution changed"))
-        {
-            m_EnvMapSettings.TargetCubeResolution = static_cast<Uint32>(CubeResolution);
-            m_EnvMapBakerDirty                    = true;
-            m_EnvMapBakerSettingsDirty            = true;
-            RequestAccumulationReset("Environment cube resolution changed");
-        }
+        int CubeResolution = static_cast<int>(std::max(m_EnvMapBaker.GetStats().CubeResolution, 1u));
+        ImGui::BeginDisabled(true);
+        ImGui::SliderInt("Cube resolution", &CubeResolution, 256, 4096);
+        ImGui::EndDisabled();
+        PlaceholderTooltip("DiligentFX PBR precompute currently owns the processed cubemap resolution.");
 
         const bool VulkanBackend = m_pDevice->GetDeviceInfo().Type == RENDER_DEVICE_TYPE_VULKAN;
-        ImGui::BeginDisabled(VulkanBackend);
-        if (ImGui::Combo("BC6H compression", &m_EnvMapSettings.CompressionQuality, "Off\0Fast\0Quality\0\0"))
-        {
-            m_EnvMapBakerDirty         = true;
-            m_EnvMapBakerSettingsDirty = true;
-            RequestAccumulationReset("Environment compression changed");
-        }
+        ImGui::BeginDisabled(true);
+        ImGui::Combo("BC6H compression", &m_EnvMapSettings.CompressionQuality, "Off\0Fast\0Quality\0\0");
         ImGui::EndDisabled();
         if (VulkanBackend)
             PlaceholderTooltip("BC6H output compression remains disabled on Vulkan until the Diligent compute-copy path is validated.");
+        else
+            PlaceholderTooltip("BC6H output compression is not wired into the current DiligentFX precompute path.");
 
         m_EnvMapBaker.InfoGUI(Indent);
 

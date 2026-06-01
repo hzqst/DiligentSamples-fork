@@ -8,6 +8,8 @@
 
 #define RTXPT_ENVMAP_IMPORTANCE_THREADS 16
 
+static const float kEnvMapImportancePi = 3.14159265358979323846;
+
 struct EnvMapImportanceBakerConstants
 {
     uint  SourceCubeDim;
@@ -38,15 +40,15 @@ float RTXPTEnvMapLuminance(float3 c)
 
 float3 OctToDirEqualArea(float2 uv)
 {
-    float2 f = uv * 2.0 - 1.0;
-    float3 n = float3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-    if (n.z < 0.0)
-    {
-        const float2 old = n.xy;
-        n.x              = (1.0 - abs(old.y)) * (old.x >= 0.0 ? 1.0 : -1.0);
-        n.y              = (1.0 - abs(old.x)) * (old.y >= 0.0 ? 1.0 : -1.0);
-    }
-    return normalize(n);
+    const float2 p   = uv * 2.0 - 1.0;
+    const float  d   = 1.0 - (abs(p.x) + abs(p.y));
+    const float  r   = 1.0 - abs(d);
+    const float  phi = r > 0.0 ? ((abs(p.y) - abs(p.x)) / r + 1.0) * (0.25 * kEnvMapImportancePi) : 0.0;
+    const float  f   = r * sqrt(max(0.0, 2.0 - r * r));
+    const float  x   = f * sign(p.x) * cos(phi);
+    const float  y   = f * sign(p.y) * sin(phi);
+    const float  z   = sign(d) * (1.0 - r * r);
+    return float3(x, y, z);
 }
 
 [numthreads(RTXPT_ENVMAP_IMPORTANCE_THREADS, RTXPT_ENVMAP_IMPORTANCE_THREADS, 1)]

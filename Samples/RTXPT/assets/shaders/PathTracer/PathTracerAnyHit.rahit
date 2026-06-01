@@ -27,14 +27,22 @@ void main(inout PathPayload Payload,
     const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
 
     if (alphaTested && !Bridge::alphaTestPasses(material, texCoord))
+    {
         IgnoreHit();
+        return;
+    }
 
     if (alphaBlended)
     {
-        const float alpha = Bridge::getBaseColor(material, texCoord).a;
-        const uint  seed  = Hash32Combine(Hash32Combine(Hash32(PrimitiveIndex() + 0x2c9277b5u), DispatchRaysIndex().x),
-                                          Hash32Combine(DispatchRaysIndex().y, g_Const.ptConsts.sampleIndex));
+        const float alpha            = Bridge::getBaseColor(material, texCoord).a;
+        const uint  subInstanceIndex = Bridge::getSubInstanceIndex();
+        const uint  seed             = Hash32Combine(Hash32Combine(Hash32Combine(Hash32(PrimitiveIndex() + 0x2c9277b5u), subInstanceIndex),
+                                                       DispatchRaysIndex().x),
+                                                     Hash32Combine(DispatchRaysIndex().y, g_Const.ptConsts.sampleIndex));
         if (Hash32ToFloat(seed) > saturate(alpha))
+        {
             IgnoreHit();
+            return;
+        }
     }
 }

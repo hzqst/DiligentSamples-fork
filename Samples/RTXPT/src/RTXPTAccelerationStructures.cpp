@@ -201,9 +201,10 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
             const bool                    HasBaseColorTexture = RTXPTMaterialHasBaseColorTexture(Model, Material, pExtension);
             const bool                    IsAlphaTested       = RTXPTMaterialIsAlphaTested(Material, pExtension, HasBaseColorTexture);
             const bool                    IsAlphaBlended      = RTXPTMaterialIsAlphaBlended(Material, pExtension);
+            const bool                    NeedsAnyHit         = RTXPTMaterialNeedsAnyHit(Material, pExtension, HasBaseColorTexture);
             MaterialAlphaTested[MatIdx]                       = IsAlphaTested ? Uint8{1} : Uint8{0};
             MaterialAlphaBlended[MatIdx]                      = IsAlphaBlended ? Uint8{1} : Uint8{0};
-            MaterialNeedsAnyHit[MatIdx]                       = (IsAlphaTested || IsAlphaBlended) ? Uint8{1} : Uint8{0};
+            MaterialNeedsAnyHit[MatIdx]                       = NeedsAnyHit ? Uint8{1} : Uint8{0};
             MaterialEmissiveAreaLight[MatIdx]                 = RTXPTMaterialIsEmissiveAreaLight(Material, pExtension) ? Uint8{1} : Uint8{0};
         }
 

@@ -63,9 +63,6 @@ namespace PathTracer
                                 float3 wo, inout SampleGenerator sg, float fireflyFilterK)
     {
         EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
-        if (envSampler.Constants.ColorEnabled.w <= 0.0)
-            return float3(0.0, 0.0, 0.0);
-
         const DistantLightSample envSample = envSampler.MIPDescentSample(sampleNext2D(sg));
         if (envSample.Pdf <= 0.0)
             return float3(0.0, 0.0, 0.0);
@@ -168,9 +165,6 @@ namespace PathTracer
             return 1.0;
 
         EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
-        if (envSampler.Constants.ColorEnabled.w <= 0.0)
-            return 1.0;
-
         const float envPdf = envSampler.MIPDescentEvalPdf(rayDir);
         if (envPdf <= 0.0)
             return 1.0;

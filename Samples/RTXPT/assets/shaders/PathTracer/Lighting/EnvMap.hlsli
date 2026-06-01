@@ -75,7 +75,7 @@ struct EnvMapSampler
     float3 EvalLocal(float3 localDir, float lod)
     {
         if (Constants.ColorEnabled.w <= 0.0)
-            return RTXPTEnvFallback(ToWorld(localDir));
+            return RTXPTEnvFallback(ToWorld(localDir)) * Constants.ColorEnabled.rgb;
 
         return t_EnvironmentMap.SampleLevel(s_EnvironmentMapSampler, localDir, lod).rgb * Constants.ColorEnabled.rgb;
     }
@@ -111,7 +111,7 @@ struct EnvMapSampler
 
     DistantLightSample MIPDescentSample(float2 rnd)
     {
-        if (!HasImportance())
+        if (Constants.ColorEnabled.w <= 0.0 || !HasImportance())
             return UniformSample(rnd);
 
         const int importanceBaseMip = (int)Constants.ImportanceMetadata.z;
@@ -182,7 +182,7 @@ struct EnvMapSampler
 
     float MIPDescentEvalPdf(float3 worldDir)
     {
-        if (!HasImportance())
+        if (Constants.ColorEnabled.w <= 0.0 || !HasImportance())
             return UniformEvalPdf(worldDir);
 
         const float2 uv         = RTXPTDirToOctEqualArea(ToLocal(worldDir));

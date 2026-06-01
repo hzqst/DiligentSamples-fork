@@ -196,7 +196,7 @@ Raygen locals become camelCase:
 | `Wo` | `wo` |
 | `Surface` | `bsdfData` |
 | `Bias` | `bias` |
-| `VisibilityOrigin` | `visibilityOrigin` |
+| `VisibilityOrigin` | `PathTracer::MakeVisibilityOrigin(...)` |
 | `UseNEE` | `useNEE` |
 | `Survive` | `survive` |
 | `Accumulated` | `accumulated` |
@@ -400,6 +400,7 @@ Raygen locals become camelCase:
 | `MaterialPTData` R6 fields | `Materials/MaterialPT.h::PTMaterialData` | Diligent layout differs but carries transmission, IoR, nested priority, and attenuation data |
 | `PathTracerClosestHit.rchit` two-sided payload | `PathTracerBridgeDonut.hlsli::loadSurface` | Diligent keeps closest-hit payload return style instead of RTXPT-fork `SurfaceData` |
 | `PathTracerSample.rgen` interior-list loop | `PathTracer.hlsli::HandleHit` | Diligent raygen loop owns path state; rejected hits do not consume bounce count |
+| `PathTracerAnyHit.rahit` stochastic alpha blend | `PathTracerMaterialSpecializations.hlsl::ANYHIT_ENTRY` | Diligent extends the alpha-test any-hit path with material-flagged stochastic alpha blend; any-hit also stays texture-optional |
 
 ## Skinned glTF Current Geometry
 

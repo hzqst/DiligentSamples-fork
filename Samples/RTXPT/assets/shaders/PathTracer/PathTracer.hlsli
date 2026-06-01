@@ -65,6 +65,12 @@ namespace PathTracer
         return payload.hitFlag == 0u;
     }
 
+    float3 MakeVisibilityOrigin(float3 hitPos, float3 faceNormal, float bias, float3 dir)
+    {
+        const float side = dot(faceNormal, dir) >= 0.0 ? 1.0 : -1.0;
+        return hitPos + faceNormal * (bias * side);
+    }
+
     float ComputeLightVsBSDFMISForLightSample(DirectLightSample sample, uint fullSamples)
     {
         if (!sample.sampleableByBSDF || sample.bsdfPdf <= 0.0 || sample.proposalPdf <= 0.0)
@@ -74,7 +80,7 @@ namespace PathTracer
         return PowerHeuristic(1.0, lightPdf, 1.0, sample.bsdfPdf);
     }
 
-    float3 SampleEnvironmentNEE(StandardBSDFData bsdfData, float3 visibilityOrigin,
+    float3 SampleEnvironmentNEE(StandardBSDFData bsdfData, float3 hitPos, float3 faceNormal, float bias,
                                 float3 wo, inout SampleGenerator sg, float fireflyFilterK)
     {
         EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
@@ -89,6 +95,7 @@ namespace PathTracer
         if (bsdfPdf <= 0.0)
             return float3(0.0, 0.0, 0.0);
 
+        const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bias, envSample.Dir);
         if (!TraceVisibilityRay(visibilityOrigin, envSample.Dir, kVisibilityRayTMax))
             return float3(0.0, 0.0, 0.0);
 
@@ -118,7 +125,7 @@ namespace PathTracer
         return PowerHeuristic(1.0, bsdfPdf, 1.0, lightPdf);
     }
 
-    float3 SampleDirectLightNEE(StandardBSDFData bsdfData, float3 hitPos, float3 visibilityOrigin,
+    float3 SampleDirectLightNEE(StandardBSDFData bsdfData, float3 hitPos, float3 faceNormal, float bias,
                                 float3 wo, uint2 pixelPos, inout SampleGenerator sg, float fireflyFilterK,
                                 out bool sampledEmissive)
     {
@@ -150,6 +157,7 @@ namespace PathTracer
 
             const float visibilityDistance =
                 picked.kind == kLightProxyKindEmissiveBucket ? picked.distance * 0.9985 : picked.distance;
+            const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bias, picked.dir);
             if (!TraceVisibilityRay(visibilityOrigin, picked.dir, visibilityDistance))
                 continue;
 

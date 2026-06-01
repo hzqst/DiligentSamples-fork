@@ -237,7 +237,7 @@ void main()
 
         PathPayload payload = PathTracer::MakeEmptyPayload(0u);
 
-        // RAY_FLAG_NONE lets the alpha-test any-hit shader run for non-opaque (alpha-masked) geometry.
+        // RAY_FLAG_NONE lets alpha-test and alpha-blend any-hit run for non-opaque geometry.
         // Opaque geometry still skips any-hit via its BLAS RAYTRACING_GEOMETRY_FLAG_OPAQUE flag.
         TraceRay(t_SceneBVH,
                  RAY_FLAG_NONE,
@@ -310,20 +310,20 @@ void main()
                                  payload.thinSurface != 0u,
                                  payload.frontFacing != 0u);
 
-        const float  bias             = max(1e-4, 1e-3 * payload.hitDistance);
-        const float3 visibilityOrigin = payload.worldPos + payload.faceNormal * bias;
+        const float bias = max(1e-4, 1e-3 * payload.hitDistance);
 
         const bool useNEE = enableNEE && bounce < maxNEEBounces;
         bool       sampledEmissiveNEE = false;
         if (useNEE)
         {
             SampleGenerator sgNEELight = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NEELightSampler);
-            pathRadiance += throughput * PathTracer::SampleDirectLightNEE(bsdfData, payload.worldPos, visibilityOrigin,
+            pathRadiance += throughput * PathTracer::SampleDirectLightNEE(bsdfData, payload.worldPos, payload.faceNormal, bias,
                                                                           wo, pixel, sgNEELight, fireflyFilterK, sampledEmissiveNEE);
             if (enableEnvNEE)
             {
                 SampleGenerator sgEnvNEE = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NextEventEstimation);
-                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData, visibilityOrigin, wo, sgEnvNEE, fireflyFilterK);
+                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData, payload.worldPos, payload.faceNormal, bias,
+                                                                              wo, sgEnvNEE, fireflyFilterK);
             }
         }
 

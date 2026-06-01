@@ -53,6 +53,7 @@ constexpr float       kDefaultToneMappingExposureValueMax     = 16.0f;
 constexpr const char* kPreferredSceneName                     = "bistro-programmer-art.scene.json";
 constexpr const char* kSceneFileSuffix                        = ".scene.json";
 constexpr Uint32      kMaxPackedEmissiveTriangleCount         = 0x7fffffffu;
+constexpr bool        kReferencePathTraceMode                 = true;
 
 Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 EmissiveTriangleCount)
 {
@@ -273,7 +274,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_EmissiveTrianglePass.Reset();
 
     m_SelectedSceneCamera   = -1;
-    m_EnableSceneAnimations = true;
+    m_EnableSceneAnimations = !kReferencePathTraceMode;
     m_CameraVerticalFov     = PI_F / 4.0f;
     m_CameraNearPlane       = kDefaultCameraNearPlane;
     m_CameraFarPlane        = kDefaultCameraFarPlane;
@@ -320,9 +321,10 @@ bool RTXPTSample::RebuildSceneDependentResources()
     }
 
     bool ResourcesReady = true;
-    if (m_EnableSceneAnimations && m_Scene.HasSkinnedGeometry() && m_Scene.HasAnimation())
+    if (m_Scene.HasSkinnedGeometry() && m_Scene.HasAnimation())
     {
         // Seed the initial animated pose before scene-dependent resources snapshot transforms.
+        // Reference mode keeps animation playback disabled, but still starts from frame zero.
         m_Scene.Update(0.0, 0.0);
     }
 
@@ -385,7 +387,7 @@ bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload
     {
         const RTXPTSceneSettings& SceneSettings = m_Scene.GetSceneGraphData().Settings;
         if (SceneSettings.EnableAnimations.has_value())
-            m_EnableSceneAnimations = SceneSettings.EnableAnimations.value();
+            m_EnableSceneAnimations = SceneSettings.EnableAnimations.value() && !kReferencePathTraceMode;
         if (SceneSettings.MaxBounces.has_value())
             m_MaxBounces = SceneSettings.MaxBounces.value();
         ApplySceneEnvironmentSettings();
@@ -1177,10 +1179,12 @@ void RTXPTSample::UpdateUI()
             ImGui::TextWrapped("No RTXPT scene files found under assets root: %s", m_AssetsRoot.c_str());
 
         const RTXPTSceneGeometryStats& GeometryStats = m_Scene.GetGeometryStats();
-        ImGui::BeginDisabled(!GeometryStats.HasAnimations);
+        ImGui::BeginDisabled(!GeometryStats.HasAnimations || kReferencePathTraceMode);
         ResetOnChange(ImGui::Checkbox("Enable animations", &m_EnableSceneAnimations), "Scene animations toggled");
         ImGui::EndDisabled();
-        if (!GeometryStats.HasAnimations)
+        if (kReferencePathTraceMode)
+            PlaceholderTooltip("Animations are not available in reference mode.");
+        else if (!GeometryStats.HasAnimations)
             PlaceholderTooltip("This scene does not contain animations.");
 
         ImGui::Text("Scene: %s", m_Scene.HasValidContent() ? "loaded" : "missing");

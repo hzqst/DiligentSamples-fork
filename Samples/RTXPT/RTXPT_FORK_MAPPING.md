@@ -96,7 +96,6 @@ Hard constraints:
 | Current | New | Notes |
 |---|---|---|
 | `Hash32` / `Hash32Combine` / `Hash32ToFloat` | `Utils/NoiseAndSequences.hlsli` | R5 aligns reference-mode sample conversion; record if any hash constants intentionally remain port-specific |
-| `ToFloat0To1` | `UintToFloat01` (style) | keep our impl |
 | `struct RTXPTRandom` | `struct SampleGenerator` (style) | RTXPT-fork uses `SampleGeneratorType`; we keep one concrete struct |
 | `RTXPTRandom_Init` | `SampleGenerator_make` (style) | |
 | `NextFloat` | `sampleNext1D` = RTXPT-fork | param `inout SampleGenerator sg` |
@@ -330,8 +329,9 @@ Raygen locals become camelCase:
 - Macro and guard renames drop the port prefix or adopt RTXPT-fork casing. R5
   uses `kMinGGXAlpha` as the GGX alpha floor and collapses near-mirror
   specular events to delta reflection.
-- `SampleGenerator`, `UintToFloat01`, and the camelCase sampling helpers keep
-  the port's concrete RNG implementation. `sampleCosineHemisphere` still
+- `SampleGenerator` and the camelCase sampling helpers keep the port's concrete
+  RNG implementation while R5 routes hash-to-float conversion through
+  `Hash32ToFloat`. `sampleCosineHemisphere` still
   returns a basis-rotated world-space direction, unlike RTXPT-fork's local-frame
   helper.
 - The Diligent port uses a raygen-flattened N-bounce loop. RTXPT-fork uses a

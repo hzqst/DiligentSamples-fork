@@ -1271,6 +1271,21 @@ void RTXPTSample::UpdateUI()
             }
         }
 
+        if (ResetOnChange(ImGui::InputFloat("Aperture", &m_ReferenceUI.CameraAperture, 0.001f, 0.01f, "%.4f"),
+                          "Camera aperture changed"))
+        {
+            m_ReferenceUI.CameraAperture = std::clamp(m_ReferenceUI.CameraAperture, 0.0f, 1.0f);
+        }
+
+        if (ResetOnChange(ImGui::InputFloat("Focal Distance", &m_ReferenceUI.CameraFocalDistance, 0.1f),
+                          "Camera focal distance changed"))
+        {
+            m_ReferenceUI.CameraFocalDistance = std::clamp(m_ReferenceUI.CameraFocalDistance, 0.001f, 1.0e16f);
+        }
+
+        m_ReferenceUI.CameraAperture      = std::clamp(m_ReferenceUI.CameraAperture, 0.0f, 1.0f);
+        m_ReferenceUI.CameraFocalDistance = std::clamp(m_ReferenceUI.CameraFocalDistance, 0.001f, 1.0e16f);
+
         bool ClipPlanesChanged = false;
         ClipPlanesChanged |= ImGui::InputFloat("zNear", &m_CameraNearPlane, 0.1f, 1.0f, "%.6f");
         ClipPlanesChanged |= ImGui::InputFloat("zFar", &m_CameraFarPlane, 10.0f, 100.0f, "%.1f");

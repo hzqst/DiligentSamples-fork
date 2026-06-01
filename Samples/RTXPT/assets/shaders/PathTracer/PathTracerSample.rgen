@@ -222,7 +222,7 @@ void main()
     bool terminateAtNextEndpoint = false;
 
     [loop]
-    for (uint bounce = 0u; bounce < maxBounces; ++bounce)
+    for (uint bounce = 0u; bounce < maxBounces || terminateAtNextEndpoint; ++bounce)
     {
         const uint vertexIndex = bounce + 1u;
 
@@ -324,7 +324,7 @@ void main()
         fireflyFilterK = ComputeNewScatterFireflyFilterK(fireflyFilterK, pdf, lobeP);
 
         // Russian roulette once we are past minBounceCount - unbiased early termination of dim paths.
-        if (bounce >= g_Const.ptConsts.minBounceCount)
+        if (!terminateAtNextEndpoint && bounce >= g_Const.ptConsts.minBounceCount)
         {
             SampleGenerator sgRR    = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_RussianRoulette);
             const float     survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 1.0);

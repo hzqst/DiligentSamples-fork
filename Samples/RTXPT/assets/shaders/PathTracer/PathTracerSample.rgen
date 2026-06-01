@@ -157,6 +157,11 @@ void main()
 
 RaytracingAccelerationStructure                t_SceneBVH;
 
+#ifndef RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF
+#    define RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF 1
+#endif
+
+#include "Utils/StatelessSampleGenerators.hlsli"
 #include "PathTracer.hlsli"
 
 VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   u_Output;
@@ -212,6 +217,7 @@ void main()
     const bool enableEnvNEE   = enableNEE && ((g_Const.ptConsts.environmentNEEEnabled & 1u) != 0u);
     const uint fullSamples    = min(32u, g_Const.ptConsts.NEEFullSamples);
     const float ffThreshold   = g_Const.ptConsts.fireflyFilterThreshold; // 0 disables the firefly filter.
+    uint diffuseBounces       = 0u;
 
     [loop]
     for (uint bounce = 0u; bounce < maxBounces; ++bounce)
@@ -282,12 +288,29 @@ void main()
         float3          nextDir;
         float3          weight;
         float           pdf;
+        const SampleGeneratorVertexBase sgBase = SampleGeneratorVertexBase::make(pixel, vertexIndex, sampleIndex);
+        float3 preGeneratedSamples;
+
+#if RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF
+        [branch]
+        if (diffuseBounces < g_Const.ptConsts.diffuseBounceCount)
+            preGeneratedSamples = SampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
+        else
+#endif
+            preGeneratedSamples = UniformSampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
+
+        uint lobe;
         float           lobeP;
-        SampleGenerator sgScatter = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_ScatterBSDF);
-        if (!SampleBSDF(bsdfData, wo, sgScatter, nextDir, weight, pdf, lobeP))
+        if (!SampleBSDF(bsdfData, wo, preGeneratedSamples, nextDir, weight, pdf, lobe, lobeP))
             break;
 
         throughput *= weight;
+        if ((lobe & kBSDFLobeDiffuseReflection) != 0u)
+        {
+            ++diffuseBounces;
+            if (diffuseBounces > g_Const.ptConsts.diffuseBounceCount)
+                break;
+        }
 
         // G1: shrink the firefly K by the spread implied by this scatter (pdf) and the sampled lobe (lobeP).
         fireflyFilterK = ComputeNewScatterFireflyFilterK(fireflyFilterK, pdf, lobeP);

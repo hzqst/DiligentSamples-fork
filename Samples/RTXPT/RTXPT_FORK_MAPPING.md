@@ -87,7 +87,6 @@ Hard constraints:
 | include guards `RTXPT_*_HLSLI` | `__<NAME>_HLSLI__` (= RTXPT-fork form, e.g. `__BXDF_HLSLI__`) | RTXPT-fork uses `__NAME_HLSLI__` traditional guards |
 | `RTXPT_PI` | `K_PI` = RTXPT-fork | `Utils/Math/MathConstants.hlsli` |
 | `RTXPT_INV_PI` | `K_1_PI` = RTXPT-fork | |
-| `RTXPT_MIN_ROUGHNESS` | `kMinRoughness` (divergent) | RTXPT-fork's `kMinGGXAlpha=0.0064` is a different quantity; keep value `0.045` |
 | `RTXPT_VISIBILITY_RAY_TMIN` / `_TMAX` | `kVisibilityRayTMin` / `kVisibilityRayTMax` (style) | |
 | `kRTXPTSubInstanceFlagIndexed` | `kSubInstanceFlagIndexed` (style) | also C++ `kRTXPTSubInstanceFlag_Indexed` -> `kSubInstanceFlag_Indexed` |
 | `kRTXPTMaterialFlag*` (5) | `kMaterialFlag*` (style) | also C++ `kRTXPTMaterialFlag_*` |
@@ -96,8 +95,7 @@ Hard constraints:
 
 | Current | New | Notes |
 |---|---|---|
-| `Hash32` | `Hash32` = RTXPT-fork | already matches |
-| `Hash32Combine` | `Hash32Combine` = RTXPT-fork | already matches |
+| `Hash32` / `Hash32Combine` / `Hash32ToFloat` | `Utils/NoiseAndSequences.hlsli` | R5 aligns reference-mode sample conversion; record if any hash constants intentionally remain port-specific |
 | `ToFloat0To1` | `UintToFloat01` (style) | keep our impl |
 | `struct RTXPTRandom` | `struct SampleGenerator` (style) | RTXPT-fork uses `SampleGeneratorType`; we keep one concrete struct |
 | `RTXPTRandom_Init` | `SampleGenerator_make` (style) | |
@@ -105,7 +103,9 @@ Hard constraints:
 | `NextFloat2` | `sampleNext2D` = RTXPT-fork | |
 | `BuildOrthonormalBasis` | `BranchlessONB` = RTXPT-fork | params `normal, out tangent, out bitangent` |
 | `SampleCosineHemisphere` | `sampleCosineHemisphere` (style) | RTXPT-fork's local-frame helper differs; keep ours and record divergence |
-| (R1/G3 new) | `SampleGenerator_makeStateless` | stateless per-(pixel,vertex,sample) seed; mirrors RTXPT `UniformSampleSequenceGenerator::make`. Full Sobol/Owen deferred to R5 (G9) |
+| (R1/G3 new) | `SampleGenerator_makeStateless` | stateless per-(pixel,vertex,sample) seed; mirrors RTXPT `UniformSampleSequenceGenerator::make` |
+| `StatelessSampleGenerators.hlsli` | `Utils/StatelessSampleGenerators.hlsli` | BSDF-only Sobol/Owen sample blocks through `SampleSequenceGenerator::Generate` |
+| `UniformSampleSequenceGenerator` | `UniformSampleSequenceGenerator` | Uniform fallback for BSDF sample blocks after the diffuse-bounce LD window or when the macro is disabled |
 | (R1/G3 new) | `kSampleEffect_*` | mirrors RTXPT `SampleGeneratorEffectSeed` (Base/ScatterBSDF/NextEventEstimation/NEELightSampler/RussianRoulette) |
 | (R2/G4 new) | `kSampleEffect_NEEEmissive` | fills the previously unused effect slot 4 for emissive-triangle NEE |
 
@@ -122,10 +122,14 @@ Hard constraints:
 | `RTXPTFresnelSchlick(F0, VoH)` | `evalFresnelSchlick(f0, f90, cosTheta)` = RTXPT-fork | call with `f90=float3(1,1,1)` |
 | `RTXPTDistributionGGX(NoH, Alpha)` | `evalNdfGGX(alpha, cosTheta)` = RTXPT-fork | param order swaps |
 | `RTXPTVisibilitySmithGGX(NoV, NoL, Alpha)` | `evalVisibilitySmithGGXCorrelated(alpha, cosThetaO, cosThetaI)` (divergent) | returns `G/(4*NoV*NoL)`, not bare masking `G` |
+| `kMinGGXAlpha` | `kMinGGXAlpha` | Near-mirror specular collapses to delta reflection |
+| `sampleGGX_BVNDF` / `evalPdfGGX_BVNDF` | `Microfacet.hlsli` | Bounded-VNDF GGX reflection sampling and matching pdf |
+| `evalDiffuseFrostbiteWeight` | `DiffuseReflectionFrostbite::evalWeight` | Frostbite/Disney energy-conserving diffuse |
+| `MultiScatterSpecularApprox` | `MultiScatterSpecularApprox` | Turquin multi-scatter specular compensation |
 | `RTXPTLuminance` | `luminance` = RTXPT-fork | |
 | `RTXPTSpecularProbability` | `getSpecularProbability` (style) | |
 | `RTXPTEvalBSDF(S, Wo, Wi, SpecProb, out FTimesNoL, out Pdf)` | `EvalBSDF(bsdfData, wo, wi, specProb, out f, out pdf)` (style) | combined helper |
-| `RTXPTSampleBSDF(S, Wo, ..., out Wi, out Weight, out Pdf)` | `SampleBSDF(bsdfData, wo, inout sg, out wi, out weight, out pdf, out lobeP)` (style) | R1/G1 returns sampled-lobe probability for firefly K updates |
+| `RTXPTSampleBSDF(S, Wo, sample, ..., out Wi, out Weight, out Pdf)` | `SampleBSDF(bsdfData, wo, sample, out wi, out weight, out pdf, out lobe, out lobeP)` (style) | R5 consumes pregenerated BSDF samples and returns sampled lobe plus sampled-lobe probability |
 
 ### T-D. Lighting Layer (`Lighting/PolymorphicLight.hlsli`, `Lighting/EnvMap.hlsli`)
 
@@ -323,9 +327,9 @@ Raygen locals become camelCase:
 - Everything marked `(style)` in T-A..T-I is a lexical or casing alignment
   only. The exceptions below are the cases where the port must keep its own
   semantics or layout.
-- Macro and guard renames drop the port prefix or adopt RTXPT-fork casing, but
-  `kMinRoughness` remains the port's roughness floor, not RTXPT-fork's
-  `kMinGGXAlpha`.
+- Macro and guard renames drop the port prefix or adopt RTXPT-fork casing. R5
+  uses `kMinGGXAlpha` as the GGX alpha floor and collapses near-mirror
+  specular events to delta reflection.
 - `SampleGenerator`, `UintToFloat01`, and the camelCase sampling helpers keep
   the port's concrete RNG implementation. `sampleCosineHemisphere` still
   returns a basis-rotated world-space direction, unlike RTXPT-fork's local-frame
@@ -334,11 +338,14 @@ Raygen locals become camelCase:
   packed `PathState`/`PathPayload` state machine plus stable planes.
 - `PathTracer::` helpers and raygen locals follow RTXPT-fork style, but they
   remain wrappers around the flattened reference-mode loop.
+- The flattened loop now preserves endpoint emission at the diffuse limit.
+  Rough specular events (`roughness > 0.25`) count as diffuse-like for diffuse
+  bounce limiting to match R5 reference-mode behavior.
 - `Bridge::` runs over Diligent structured buffers, not Donut/NVRHI. There is
   no `PathTracerBridgeDonut.hlsli` equivalent here.
-- `StandardBSDFData` carries the shading normal `N`, and the port remains a
-  two-lobe Lambert+GGX subset rather than RTXPT-fork's split
-  `ShadingData`/`StandardBSDFData` model.
+- `StandardBSDFData` carries the shading normal `N`, while R5 aligns the
+  reflection model with bounded-VNDF GGX, Frostbite/Disney diffuse, and Turquin
+  multi-scatter specular compensation.
 - `evalVisibilitySmithGGXCorrelated` returns `G/(4*NoV*NoL)`, not RTXPT-fork's
   bare masking `G`.
 - Emissive-triangle area lights (R2/G4) are **two-sided** (`abs(cosTheta)` in both the

@@ -231,6 +231,23 @@ bool RTXPTMaterialIsAlphaTested(const GLTF::Material&         Material,
     return Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_MASK || ExtensionAlphaTested;
 }
 
+bool RTXPTMaterialIsAlphaBlended(const GLTF::Material&         Material,
+                                 const RTXPTMaterialExtension* pExtension)
+{
+    const bool ExtensionTransmission =
+        pExtension != nullptr && pExtension->Loaded &&
+        (pExtension->EnableTransmission || pExtension->TransmissionFactor > 0.0f || pExtension->DiffuseTransmissionFactor > 0.0f);
+    return Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_BLEND || ExtensionTransmission;
+}
+
+bool RTXPTMaterialNeedsAnyHit(const GLTF::Material&         Material,
+                              const RTXPTMaterialExtension* pExtension,
+                              bool                          HasBaseColorTexture)
+{
+    return RTXPTMaterialIsAlphaTested(Material, pExtension, HasBaseColorTexture) ||
+        RTXPTMaterialIsAlphaBlended(Material, pExtension);
+}
+
 bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&         Material,
                                       const RTXPTMaterialExtension* pExtension)
 {

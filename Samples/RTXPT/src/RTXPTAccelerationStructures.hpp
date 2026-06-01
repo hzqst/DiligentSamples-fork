@@ -60,15 +60,16 @@ constexpr Uint32 kSubInstanceFlag_Skinned = 0x2u;
 
 struct RTXPTAccelerationStructureStats
 {
-    bool        RayTracingSupported      = false;
-    bool        Built                    = false;
-    Uint32      GeometryCount            = 0;
-    Uint32      InstanceCount            = 0;
-    Uint32      BLASCount                = 0;
-    Uint32      SubInstanceCount         = 0;
-    Uint32      AlphaTestedGeometryCount = 0;
-    Uint64      BLASScratchSize          = 0;
-    Uint64      TLASScratchSize          = 0;
+    bool        RayTracingSupported       = false;
+    bool        Built                     = false;
+    Uint32      GeometryCount             = 0;
+    Uint32      InstanceCount             = 0;
+    Uint32      BLASCount                 = 0;
+    Uint32      SubInstanceCount          = 0;
+    Uint32      AlphaTestedGeometryCount  = 0;
+    Uint32      AlphaBlendedGeometryCount = 0;
+    Uint64      BLASScratchSize           = 0;
+    Uint64      TLASScratchSize           = 0;
     std::string DisabledReason;
 };
 

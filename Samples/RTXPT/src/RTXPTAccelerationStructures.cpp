@@ -190,14 +190,20 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
             return false;
         }
 
+        std::vector<Uint8> MaterialNeedsAnyHit(Model.Materials.size(), Uint8{0});
         std::vector<Uint8> MaterialAlphaTested(Model.Materials.size(), Uint8{0});
+        std::vector<Uint8> MaterialAlphaBlended(Model.Materials.size(), Uint8{0});
         std::vector<Uint8> MaterialEmissiveAreaLight(Model.Materials.size(), Uint8{0});
         for (Uint32 MatIdx = 0; MatIdx < Model.Materials.size(); ++MatIdx)
         {
             const GLTF::Material&         Material            = Model.Materials[MatIdx];
             const RTXPTMaterialExtension* pExtension          = RTXPTGetMaterialExtension(SceneData, Asset, MatIdx);
             const bool                    HasBaseColorTexture = RTXPTMaterialHasBaseColorTexture(Model, Material, pExtension);
-            MaterialAlphaTested[MatIdx]                       = RTXPTMaterialIsAlphaTested(Material, pExtension, HasBaseColorTexture) ? Uint8{1} : Uint8{0};
+            const bool                    IsAlphaTested       = RTXPTMaterialIsAlphaTested(Material, pExtension, HasBaseColorTexture);
+            const bool                    IsAlphaBlended      = RTXPTMaterialIsAlphaBlended(Material, pExtension);
+            MaterialAlphaTested[MatIdx]                       = IsAlphaTested ? Uint8{1} : Uint8{0};
+            MaterialAlphaBlended[MatIdx]                      = IsAlphaBlended ? Uint8{1} : Uint8{0};
+            MaterialNeedsAnyHit[MatIdx]                       = (IsAlphaTested || IsAlphaBlended) ? Uint8{1} : Uint8{0};
             MaterialEmissiveAreaLight[MatIdx]                 = RTXPTMaterialIsEmissiveAreaLight(Material, pExtension) ? Uint8{1} : Uint8{0};
         }
 
@@ -366,13 +372,19 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
                 BuildData.VertexValueType      = Position.ValueType;
                 BuildData.VertexComponentCount = Position.ComponentCount;
                 BuildData.PrimitiveCount       = TriangleDesc.MaxPrimitiveCount;
-                // Alpha-masked geometry must be non-opaque so the runtime invokes the alpha-test any-hit shader.
+                // Alpha-masked and alpha-blended geometry must be non-opaque so the runtime invokes any-hit.
                 // Everything else stays opaque to skip any-hit entirely.
+                const bool GeometryNeedsAnyHit = Primitive.MaterialId < MaterialNeedsAnyHit.size() &&
+                    MaterialNeedsAnyHit[Primitive.MaterialId] != 0;
+                BuildData.Flags                = GeometryNeedsAnyHit ? RAYTRACING_GEOMETRY_FLAG_NONE : RAYTRACING_GEOMETRY_FLAG_OPAQUE;
                 const bool GeometryAlphaTested = Primitive.MaterialId < MaterialAlphaTested.size() &&
                     MaterialAlphaTested[Primitive.MaterialId] != 0;
-                BuildData.Flags = GeometryAlphaTested ? RAYTRACING_GEOMETRY_FLAG_NONE : RAYTRACING_GEOMETRY_FLAG_OPAQUE;
                 if (GeometryAlphaTested)
                     ++m_Stats.AlphaTestedGeometryCount;
+                const bool GeometryAlphaBlended = Primitive.MaterialId < MaterialAlphaBlended.size() &&
+                    MaterialAlphaBlended[Primitive.MaterialId] != 0;
+                if (GeometryAlphaBlended)
+                    ++m_Stats.AlphaBlendedGeometryCount;
 
                 if (IsIndexed)
                 {

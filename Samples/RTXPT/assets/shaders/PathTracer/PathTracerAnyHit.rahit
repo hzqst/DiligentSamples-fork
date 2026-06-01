@@ -1,10 +1,10 @@
 #define ENABLE_HIT_BRIDGE 1
 #include "PathTracerBridge.hlsli"
 #include "Rendering/Materials/MaterialBridge.hlsli"
+#include "Utils/SampleGenerators.hlsli"
 
-// Alpha-test any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE
-// (set for ALPHA_MODE_MASK materials in RTXPTAccelerationStructures::BuildStaticScene). Opaque geometry never
-// reaches this shader. Compiled into the hit group only when ENABLE_MATERIAL_TEXTURES is defined.
+// Alpha-test / alpha-blend any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE.
+// Opaque geometry never reaches this shader.
 [shader("anyhit")]
 void main(inout PathPayload Payload,
           in BuiltInTriangleIntersectionAttributes Attributes)
@@ -15,8 +15,10 @@ void main(inout PathPayload Payload,
     const SubInstanceData subInstance = Bridge::getSubInstanceData();
     const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
 
-    if ((material.flags & kMaterialFlagAlphaTested) == 0u)
-        return; // Not alpha tested - accept.
+    const bool alphaTested  = (material.flags & kMaterialFlagAlphaTested) != 0u;
+    const bool alphaBlended = (material.flags & kMaterialFlagAlphaBlend) != 0u;
+    if (!alphaTested && !alphaBlended)
+        return;
 
     GeometryVertexData V0;
     GeometryVertexData V1;
@@ -24,8 +26,15 @@ void main(inout PathPayload Payload,
     Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
     const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
 
-    if (!Bridge::alphaTestPasses(material, texCoord))
+    if (alphaTested && !Bridge::alphaTestPasses(material, texCoord))
         IgnoreHit();
-}
 
-// TODO(RTXPT-Port Phase 5.3): Honor ALPHA_MODE_BLEND (stochastic transparency) in addition to ALPHA_MODE_MASK.
+    if (alphaBlended)
+    {
+        const float alpha = Bridge::getBaseColor(material, texCoord).a;
+        const uint  seed  = Hash32Combine(Hash32Combine(Hash32(PrimitiveIndex() + 0x2c9277b5u), DispatchRaysIndex().x),
+                                          Hash32Combine(DispatchRaysIndex().y, g_Const.ptConsts.sampleIndex));
+        if (Hash32ToFloat(seed) > saturate(alpha))
+            IgnoreHit();
+    }
+}

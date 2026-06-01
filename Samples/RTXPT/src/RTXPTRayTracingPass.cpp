@@ -87,6 +87,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                                      IDeviceObject* const* pMaterialTextures,
                                      Uint32                MaterialTextureCount,
                                      bool                  EnableMaterialTextures,
+                                     bool                  EnableAnyHit,
                                      bool                  EnableLDSamplerForBSDF,
                                      bool                  RayTracingSupported,
                                      bool                  StandaloneRTShadersSupported)
@@ -123,6 +124,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     }
 
     const bool UseTextures = FullPathTracer && EnableMaterialTextures && pMaterialTextures != nullptr && MaterialTextureCount > 0;
+    const bool UseAnyHit   = FullPathTracer && EnableAnyHit;
 
     m_TLAS = pTLAS;
 
@@ -178,7 +180,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     }
 
     RefCntAutoPtr<IShader> pAnyHit;
-    if (!ScreenPatternDiagnostic && UseTextures)
+    if (!ScreenPatternDiagnostic && UseAnyHit)
     {
         ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_ANY_HIT;
         ShaderCI.Desc.Name       = "RTXPT reference any hit";
@@ -187,9 +189,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         pDevice->CreateShader(ShaderCI, &pAnyHit);
     }
 
-    VERIFY(pRayGen && (ScreenPatternDiagnostic || (pMiss && pClosestHit && (!UseTextures || pAnyHit))),
+    VERIFY(pRayGen && (ScreenPatternDiagnostic || (pMiss && pClosestHit && (!UseAnyHit || pAnyHit))),
            "Failed to create RTXPT reference ray tracing shaders");
-    if (!pRayGen || (!ScreenPatternDiagnostic && (!pMiss || !pClosestHit || (UseTextures && !pAnyHit))))
+    if (!pRayGen || (!ScreenPatternDiagnostic && (!pMiss || !pClosestHit || (UseAnyHit && !pAnyHit))))
         return false;
 
     RayTracingPipelineStateCreateInfoX PSOCreateInfo;
@@ -199,7 +201,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     if (!ScreenPatternDiagnostic)
     {
         PSOCreateInfo.AddGeneralShader("PrimaryMiss", pMiss);
-        if (UseTextures)
+        if (UseAnyHit)
             PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit, pAnyHit);
         else
             PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
@@ -211,11 +213,12 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PSOCreateInfo.MaxPayloadSize = static_cast<Uint32>(sizeof(float) * 36);
 
     // Material data is read by raygen for nested dielectric media and by hit shaders for surface shading.
-    const SHADER_TYPE HitStages = UseTextures ?
+    const SHADER_TYPE HitStages = UseAnyHit ?
         (SHADER_TYPE_RAY_CLOSEST_HIT | SHADER_TYPE_RAY_ANY_HIT) :
         SHADER_TYPE_RAY_CLOSEST_HIT;
     const SHADER_TYPE MaterialStages = HitStages | SHADER_TYPE_RAY_GEN;
     const SHADER_TYPE EnvStages      = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS;
+    const SHADER_TYPE ConstStages    = UseAnyHit ? (EnvStages | SHADER_TYPE_RAY_ANY_HIT) : EnvStages;
 
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
@@ -226,7 +229,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     if (!ScreenPatternDiagnostic)
     {
         ResourceLayout
-            .AddVariable(EnvStages, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(ConstStages, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
             .AddVariable(SHADER_TYPE_RAY_GEN, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
     }
 
@@ -303,7 +306,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     };
 
     const bool FrameConstantsBound =
-        ScreenPatternDiagnostic || SetStaticForStages(EnvStages, "g_Const", pFrameConstants, "frame constants");
+        ScreenPatternDiagnostic || SetStaticForStages(ConstStages, "g_Const", pFrameConstants, "frame constants");
     const bool TLASBound =
         ScreenPatternDiagnostic || SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS, "TLAS");
 
@@ -444,19 +447,21 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     {
         IShaderResourceVariable* pClosestHitTexVar =
             m_SRB->GetVariableByName(SHADER_TYPE_RAY_CLOSEST_HIT, "t_BindlessTextures");
-        IShaderResourceVariable* pAnyHitTexVar =
-            m_SRB->GetVariableByName(SHADER_TYPE_RAY_ANY_HIT, "t_BindlessTextures");
-        if (pClosestHitTexVar == nullptr || pAnyHitTexVar == nullptr)
+        IShaderResourceVariable* pAnyHitTexVar = UseAnyHit ?
+            m_SRB->GetVariableByName(SHADER_TYPE_RAY_ANY_HIT, "t_BindlessTextures") :
+            nullptr;
+        if (pClosestHitTexVar == nullptr || (UseAnyHit && pAnyHitTexVar == nullptr))
         {
             UNEXPECTED("Failed to find RTXPT material texture array binding");
             return false;
         }
         pClosestHitTexVar->SetArray(pMaterialTextures, 0, MaterialTextureCount);
-        pAnyHitTexVar->SetArray(pMaterialTextures, 0, MaterialTextureCount);
+        if (pAnyHitTexVar != nullptr)
+            pAnyHitTexVar->SetArray(pMaterialTextures, 0, MaterialTextureCount);
         m_Stats.MaterialTexturesBound = true;
         m_Stats.MaterialTextureCount  = MaterialTextureCount;
     }
-    m_Stats.AnyHitEnabled = UseTextures;
+    m_Stats.AnyHitEnabled = UseAnyHit;
 
     ShaderBindingTableDesc SBTDesc;
     SBTDesc.Name = "RTXPT reference SBT";

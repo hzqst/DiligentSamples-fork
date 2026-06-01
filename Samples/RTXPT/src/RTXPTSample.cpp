@@ -634,6 +634,7 @@ void RTXPTSample::CreatePhase4Passes()
     // Material-texture sampling needs descriptor indexing. Gate it on bindless support; if the textured
     // pipeline fails to build, fall back to the Phase 5.2 factor-only path so the sample still renders.
     const bool EnableMaterialTextures = m_FeatureCaps.BindlessResources && m_Materials.GetTextureCount() > 0;
+    const bool EnableAnyHit           = EnableMaterialTextures || m_AccelerationStructures.GetStats().AlphaBlendedGeometryCount > 0;
 
     m_EmissiveTrianglePass.Initialize(m_pDevice,
                                       m_pEngineFactory,
@@ -675,6 +676,7 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_Materials.GetTextureBindings(),
                                     m_Materials.GetTextureCount(),
                                     EnableMaterialTextures,
+                                    EnableAnyHit,
                                     m_ReferenceUI.EnableLDSamplerForBSDF,
                                     m_FeatureCaps.RayTracing,
                                     m_FeatureCaps.StandaloneRayTracingShaders);
@@ -708,6 +710,7 @@ void RTXPTSample::CreatePhase4Passes()
                                     nullptr,
                                     0,
                                     false,
+                                    m_AccelerationStructures.GetStats().AlphaBlendedGeometryCount > 0,
                                     m_ReferenceUI.EnableLDSamplerForBSDF,
                                     m_FeatureCaps.RayTracing,
                                     m_FeatureCaps.StandaloneRayTracingShaders);
@@ -1286,6 +1289,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("RT geometries: %u", ASStats.GeometryCount);
         ImGui::Text("Sub-instances: %u", ASStats.SubInstanceCount);
         ImGui::Text("Alpha-tested geometries: %u", ASStats.AlphaTestedGeometryCount);
+        ImGui::Text("Alpha-blended geometries: %u", ASStats.AlphaBlendedGeometryCount);
         if (!ASStats.DisabledReason.empty())
             ImGui::TextWrapped("AS disabled: %s", ASStats.DisabledReason.c_str());
         ImGui::Separator();
@@ -1323,7 +1327,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Index buffer: %s", RTPassStats.IndexBufferBound ? "bound" : "fallback");
         ImGui::Text("Material textures loaded: %u", m_Materials.GetStats().TextureCount);
         ImGui::Text("Material textures bound: %s (%u)", RTPassStats.MaterialTexturesBound ? "yes" : "no", RTPassStats.MaterialTextureCount);
-        ImGui::Text("Alpha-test any-hit: %s", RTPassStats.AnyHitEnabled ? "enabled" : "disabled");
+        ImGui::Text("Alpha-test/blend any-hit: %s", RTPassStats.AnyHitEnabled ? "enabled" : "disabled");
         ImGui::Text("Accumulation target: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA8 fallback)");
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
@@ -1338,9 +1342,6 @@ void RTXPTSample::UpdateUI()
         if (!ComputeStats.DisabledReason.empty())
             ImGui::TextWrapped("Compute disabled: %s", ComputeStats.DisabledReason.c_str());
         ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
-        ImGui::Separator();
-        ImGui::TextColored(CategoryColor, "Roadmap (open work):");
-        ImGui::TextWrapped("TODO(RTXPT-Port Phase R6): ALPHA_MODE_BLEND.");
 
         ImGui::Unindent(Indent);
     }

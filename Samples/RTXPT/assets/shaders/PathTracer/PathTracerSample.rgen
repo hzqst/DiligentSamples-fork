@@ -277,8 +277,7 @@ void main()
                 rejectedDielectricHits >= PathTracer::GetMaxRejectedDielectricHits(g_Const.ptConsts.nestedDielectricsQuality))
                 break;
 
-            const float bias = max(1e-4, 1e-3 * payload.hitDistance);
-            rayOrigin = payload.worldPos - payload.faceNormal * bias;
+            rayOrigin = ComputeRayOrigin(payload.worldPos, -payload.faceNormal);
             continue;
         }
 
@@ -310,20 +309,32 @@ void main()
                                  payload.thinSurface != 0u,
                                  payload.frontFacing != 0u);
 
-        const float bias = max(1e-4, 1e-3 * payload.hitDistance);
-
         const bool useNEE = enableNEE && bounce < maxNEEBounces;
         bool       sampledEmissiveNEE = false;
         if (useNEE)
         {
             SampleGenerator sgNEELight = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NEELightSampler);
-            pathRadiance += throughput * PathTracer::SampleDirectLightNEE(bsdfData, payload.worldPos, payload.faceNormal, bias,
-                                                                          wo, pixel, sgNEELight, fireflyFilterK, sampledEmissiveNEE);
+            pathRadiance += throughput * PathTracer::SampleDirectLightNEE(bsdfData,
+                                                                          payload.worldPos,
+                                                                          payload.faceNormal,
+                                                                          payload.vertexNormal,
+                                                                          payload.shadowNoLFadeout,
+                                                                          wo,
+                                                                          pixel,
+                                                                          sgNEELight,
+                                                                          fireflyFilterK,
+                                                                          sampledEmissiveNEE);
             if (enableEnvNEE)
             {
                 SampleGenerator sgEnvNEE = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NextEventEstimation);
-                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData, payload.worldPos, payload.faceNormal, bias,
-                                                                              wo, sgEnvNEE, fireflyFilterK);
+                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData,
+                                                                              payload.worldPos,
+                                                                              payload.faceNormal,
+                                                                              payload.vertexNormal,
+                                                                              payload.shadowNoLFadeout,
+                                                                              wo,
+                                                                              sgEnvNEE,
+                                                                              fireflyFilterK);
             }
         }
 
@@ -347,7 +358,7 @@ void main()
             break;
 
         const bool   isTransmission = (lobe & kBSDFLobeTransmission) != 0u;
-        const float3 scatterOrigin  = payload.worldPos + (isTransmission ? -payload.faceNormal : payload.faceNormal) * bias;
+        const float3 scatterOrigin  = ComputeRayOrigin(payload.worldPos, isTransmission ? -payload.faceNormal : payload.faceNormal);
         throughput *= weight;
         if (g_Const.ptConsts.nestedDielectricsQuality != 0u)
             PathTracer::UpdateNestedDielectricsOnScatterTransmission(payload, lobe, interiorList);

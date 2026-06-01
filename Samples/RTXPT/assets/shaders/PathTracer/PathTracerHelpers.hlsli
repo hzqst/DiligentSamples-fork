@@ -1,6 +1,30 @@
 #ifndef __PATH_TRACER_HELPERS_HLSLI__
 #define __PATH_TRACER_HELPERS_HLSLI__
 
+float ComputeRayOriginComponent(float worldPosition, float faceNormal)
+{
+    const float originScale = 1.0 / 16.0;
+    const float floatScale  = 3.0 / 65536.0;
+    const float intScale    = 3.0 * 256.0;
+
+    const int   intOffset = int(faceNormal * intScale);
+    const int   intPos    = asint(worldPosition) + (worldPosition < 0.0 ? -intOffset : intOffset);
+    const float fpOffset  = worldPosition + faceNormal * floatScale;
+    return abs(worldPosition) < originScale ? fpOffset : asfloat(intPos);
+}
+
+float3 ComputeRayOrigin(float3 worldPosition, float3 faceNormal)
+{
+    return float3(ComputeRayOriginComponent(worldPosition.x, faceNormal.x),
+                  ComputeRayOriginComponent(worldPosition.y, faceNormal.y),
+                  ComputeRayOriginComponent(worldPosition.z, faceNormal.z));
+}
+
+float ComputeLowGrazingAngleFalloff(float3 lightDirection, float3 interpolatedGeometryNormal, float falloffFrom, float falloffRange)
+{
+    return saturate((dot(lightDirection, interpolatedGeometryNormal) - falloffFrom) / max(falloffRange, 1e-6));
+}
+
 // Power heuristic for MIS (Veach). Matches RTXPT-fork PathTracerHelpers.hlsli signature.
 float PowerHeuristic(float nf, float fPdf, float ng, float gPdf)
 {

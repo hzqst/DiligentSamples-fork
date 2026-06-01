@@ -8,7 +8,7 @@
 #include "Rendering/Volumes/HomogeneousVolumeSampler.hlsli"
 #include "PathTracerNestedDielectrics.hlsli"
 
-static const float kVisibilityRayTMin = 1e-4;
+static const float kVisibilityRayTMin = 0.0;
 static const float kVisibilityRayTMax = 1e30;
 
 namespace PathTracer
@@ -67,10 +67,17 @@ namespace PathTracer
         return payload.hitFlag == 0u;
     }
 
-    float3 MakeVisibilityOrigin(float3 hitPos, float3 faceNormal, float bias, float3 dir)
+    float3 MakeVisibilityOrigin(float3 hitPos, float3 faceNormal, float3 shadingNormal, float3 dir)
     {
-        const float side = dot(faceNormal, dir) >= 0.0 ? 1.0 : -1.0;
-        return hitPos + faceNormal * (bias * side);
+        const float side = dot(shadingNormal, dir) >= 0.0 ? 1.0 : -1.0;
+        return ComputeRayOrigin(hitPos, faceNormal * side);
+    }
+
+    float ComputeShadowNoLFadeout(float3 lightDir, float3 vertexNormal, float shadowNoLFadeout)
+    {
+        return shadowNoLFadeout > 0.0 ?
+            ComputeLowGrazingAngleFalloff(lightDir, vertexNormal, shadowNoLFadeout, 2.0 * shadowNoLFadeout) :
+            1.0;
     }
 
     float ComputeLightVsBSDFMISForLightSample(DirectLightSample sample, uint fullSamples)
@@ -82,8 +89,8 @@ namespace PathTracer
         return PowerHeuristic(1.0, lightPdf, 1.0, sample.bsdfPdf);
     }
 
-    float3 SampleEnvironmentNEE(StandardBSDFData bsdfData, float3 hitPos, float3 faceNormal, float bias,
-                                float3 wo, inout SampleGenerator sg, float fireflyFilterK)
+    float3 SampleEnvironmentNEE(StandardBSDFData bsdfData, float3 hitPos, float3 faceNormal, float3 vertexNormal,
+                                float shadowNoLFadeout, float3 wo, inout SampleGenerator sg, float fireflyFilterK)
     {
         EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
         const DistantLightSample envSample = envSampler.MIPDescentSample(sampleNext2D(sg));
@@ -97,12 +104,13 @@ namespace PathTracer
         if (bsdfPdf <= 0.0)
             return float3(0.0, 0.0, 0.0);
 
-        const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bias, envSample.Dir);
+        const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bsdfData.N, envSample.Dir);
         if (!TraceVisibilityRay(visibilityOrigin, envSample.Dir, kVisibilityRayTMax))
             return float3(0.0, 0.0, 0.0);
 
         const float misWeight = PowerHeuristic(1.0, envSample.Pdf, 1.0, bsdfPdf);
-        float3      contribution = f * envSample.Le * (misWeight / envSample.Pdf);
+        const float fadeOut   = ComputeShadowNoLFadeout(envSample.Dir, vertexNormal, shadowNoLFadeout);
+        float3      contribution = f * envSample.Le * (fadeOut * misWeight / envSample.Pdf);
 
         const float ffThreshold = g_Const.ptConsts.fireflyFilterThreshold;
         if (ffThreshold != 0.0)
@@ -127,9 +135,9 @@ namespace PathTracer
         return PowerHeuristic(1.0, bsdfPdf, 1.0, lightPdf);
     }
 
-    float3 SampleDirectLightNEE(StandardBSDFData bsdfData, float3 hitPos, float3 faceNormal, float bias,
-                                float3 wo, uint2 pixelPos, inout SampleGenerator sg, float fireflyFilterK,
-                                out bool sampledEmissive)
+    float3 SampleDirectLightNEE(StandardBSDFData bsdfData, float3 hitPos, float3 faceNormal, float3 vertexNormal,
+                                float shadowNoLFadeout, float3 wo, uint2 pixelPos, inout SampleGenerator sg,
+                                float fireflyFilterK, out bool sampledEmissive)
     {
         sampledEmissive = false;
 
@@ -159,13 +167,14 @@ namespace PathTracer
 
             const float visibilityDistance =
                 picked.kind == kLightProxyKindEmissiveBucket ? picked.distance * 0.9985 : picked.distance;
-            const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bias, picked.dir);
+            const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bsdfData.N, picked.dir);
             if (!TraceVisibilityRay(visibilityOrigin, picked.dir, visibilityDistance))
                 continue;
 
             const float wrsScale   = 1.0 / (candidateProbability * float(candidateSamples));
             const float misWeight  = ComputeLightVsBSDFMISForLightSample(picked, fullSamples);
-            float3      contribution = picked.bsdfF * picked.radianceOverPdf * (wrsScale * misWeight / float(fullSamples));
+            const float fadeOut    = ComputeShadowNoLFadeout(picked.dir, vertexNormal, shadowNoLFadeout);
+            float3      contribution = picked.bsdfF * picked.radianceOverPdf * (fadeOut * wrsScale * misWeight / float(fullSamples));
 
             const float ffThreshold = g_Const.ptConsts.fireflyFilterThreshold;
             if (ffThreshold != 0.0)

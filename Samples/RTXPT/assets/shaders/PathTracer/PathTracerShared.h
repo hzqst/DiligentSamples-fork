@@ -66,24 +66,18 @@ struct PrimaryPayload
     float4 ColorDepth;
 };
 
-// Reference path tracer payload (Phase 5.2 / 5.3 / G4). Size is 80 bytes (20 floats); do not grow without
-// updating RTXPTRayTracingPass::Initialize MaxPayloadSize.
-//   hitFlag    : 1 on closest hit, 0 on miss.
-//   hitDistance: RayTCurrent() on hit; <= 0 on miss.
-//   worldPos   : world-space hit position.
-//   worldNormal: world-space shading normal (interpolated, normal-mapped, renormalized).
-//   baseColor  : material base color RGB (sampled via the material bridge).
-//   metallic   : glTF metallic value at the hit (factor * texture .b).
-//   emission   : RGB emission written by miss/emissive paths and accumulated by raygen.
-//   roughness  : glTF perceptual roughness at the hit (factor * texture .g).
-//   emissiveLightPdf: area-light solid-angle pdf for G4 emissive BSDF-hit MIS (0 when not applicable).
+// Reference path tracer payload. Size is 144 bytes (36 floats); keep RTXPTRayTracingPass::Initialize
+// MaxPayloadSize in sync when this changes.
 struct PathPayload
 {
     float3 worldPos;
     float  hitDistance;
 
-    float3 worldNormal;
+    float3 worldNormal; // Shading normal oriented against the incoming ray.
     uint   hitFlag;
+
+    float3 faceNormal; // Geometric face normal oriented against the incoming ray.
+    uint   materialID;
 
     float3 baseColor;
     float  metallic;
@@ -92,9 +86,20 @@ struct PathPayload
     float  roughness;
 
     float emissiveLightPdf;
-    float _pad0;
-    float _pad1;
-    float _pad2;
+    float ior;
+    float transmissionFactor;
+    float diffuseTransmissionFactor;
+
+    float3 transmissionColor;
+    float  volumeAttenuationDistance;
+
+    float3 volumeAttenuationColor;
+    uint   materialFlags;
+
+    uint  nestedPriority;
+    uint  frontFacing;
+    uint  thinSurface;
+    float alpha;
 };
 
 // Mirrors Diligent::SubInstanceData in RTXPTAccelerationStructures.hpp.

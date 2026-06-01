@@ -207,8 +207,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth = 1; // Raygen drives bounces in a loop; chit/miss/anyhit do not recurse.
     PSOCreateInfo.RayTracingPipeline.ShaderRecordSize  = 0;
     PSOCreateInfo.MaxAttributeSize                     = static_cast<Uint32>(sizeof(float) * 2);
-    // PathPayload = 5 * float4 = 80 bytes (worldPos/normal/baseColor/emission + emissiveLightPdf for G4 MIS).
-    PSOCreateInfo.MaxPayloadSize = static_cast<Uint32>(sizeof(float) * 20);
+    // PathPayload = 9 * float4 = 144 bytes (R6 transmission/nested-dielectric surface data).
+    PSOCreateInfo.MaxPayloadSize = static_cast<Uint32>(sizeof(float) * 36);
 
     // Hit-bridge resources are referenced by the closest-hit shader and (when textured) the any-hit shader.
     const SHADER_TYPE HitStages = UseTextures ?

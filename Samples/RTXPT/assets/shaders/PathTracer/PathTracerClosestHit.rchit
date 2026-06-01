@@ -66,14 +66,18 @@ void main(inout PathPayload Payload,
                                 Attributes.barycentrics.y,
                                 1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
     float3 WorldNormal = -WorldRayDirection();
+    float3 FaceNormal  = -WorldRayDirection();
     float3 WorldPos    = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     float  Metallic    = 0.0;
     float  Roughness   = 1.0;
+    uint   MaterialID  = 0u;
+    bool   FrontFacing = true;
 
     if (Bridge::hasSubInstanceTable() && Bridge::hasMaterialTable())
     {
         const SubInstanceData subInstance = Bridge::getSubInstanceData();
         const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
+        MaterialID                        = subInstance.MaterialID;
 
         GeometryVertexData V0;
         GeometryVertexData V1;
@@ -84,14 +88,16 @@ void main(inout PathPayload Payload,
 
         const float3 RayDir = WorldRayDirection();
         const float3 geometricNormal = Bridge::computeGeometricNormal(V0, V1, V2);
+        const bool   frontFacing     = dot(-RayDir, geometricNormal) >= 0.0;
+        FrontFacing                  = frontFacing;
+        FaceNormal                   = frontFacing ? geometricNormal : -geometricNormal;
         WorldPos    = Bridge::computeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
         WorldNormal = Bridge::interpolateNormal(V0, V1, V2, Attributes.barycentrics);
         // Renormalize against the geometric normal if the interpolated normal is nearly zero
         // (degenerate vertex data) - keeps the shader robust on bad assets.
         if (dot(WorldNormal, WorldNormal) < 1e-6)
-            WorldNormal = geometricNormal;
-        // Flip the shading normal to face the camera (single-sided shading; transmission is deferred).
-        if (dot(WorldNormal, RayDir) > 0.0)
+            WorldNormal = FaceNormal;
+        if (dot(WorldNormal, FaceNormal) < 0.0)
             WorldNormal = -WorldNormal;
 
         // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
@@ -106,7 +112,7 @@ void main(inout PathPayload Payload,
             if (lenSq > 1e-8)
             {
                 WorldNormal = mappedNormal * rsqrt(lenSq);
-                if (dot(WorldNormal, RayDir) > 0.0)
+                if (dot(WorldNormal, FaceNormal) < 0.0)
                     WorldNormal = -WorldNormal;
             }
         }
@@ -115,8 +121,19 @@ void main(inout PathPayload Payload,
         Metallic                = metalRough.x;
         Roughness               = metalRough.y;
 
-        BaseColor        = Bridge::getBaseColor(material, texCoord).rgb;
-        Payload.emission = Bridge::getEmission(material, texCoord);
+        const float4 BaseColorWithAlpha = Bridge::getBaseColor(material, texCoord);
+        BaseColor                       = BaseColorWithAlpha.rgb;
+        Payload.emission                = Bridge::getEmission(material, texCoord);
+        Payload.ior                     = Bridge::loadIoR(MaterialID);
+        Payload.transmissionFactor      = Bridge::getTransmission(material, texCoord);
+        Payload.diffuseTransmissionFactor = Bridge::getDiffuseTransmission(material, texCoord);
+        Payload.transmissionColor       = BaseColorWithAlpha.rgb;
+        Payload.volumeAttenuationDistance = material.volumeAttenuationDistance;
+        Payload.volumeAttenuationColor  = material.volumeAttenuationColor;
+        Payload.materialFlags           = material.flags;
+        Payload.nestedPriority          = min(material.nestedPriority, 14u);
+        Payload.thinSurface             = Bridge::isThinSurface(material) ? 1u : 0u;
+        Payload.alpha                   = BaseColorWithAlpha.a;
 
         // Precompute the emissive triangle's area-light solid-angle pdf so raygen can MIS-weight
         // the BSDF-hit emission against emissive-triangle NEE. Only NEE-eligible constant emitters
@@ -141,6 +158,9 @@ void main(inout PathPayload Payload,
 
     Payload.worldPos    = WorldPos;
     Payload.worldNormal = normalize(WorldNormal);
+    Payload.faceNormal  = normalize(FaceNormal);
+    Payload.materialID  = MaterialID;
+    Payload.frontFacing = FrontFacing ? 1u : 0u;
     Payload.baseColor   = BaseColor;
     Payload.metallic    = Metallic;
     Payload.roughness   = Roughness;

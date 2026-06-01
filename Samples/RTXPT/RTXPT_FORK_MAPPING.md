@@ -370,6 +370,16 @@ Raygen locals become camelCase:
 - `RTXPTCommon.fxh`, `RTXPTDebugCompute.csh`, and `RTXPTBlit.vsh` / `psh` keep
   their `RTXPT`-prefixed names because they sit outside the algorithm layer.
 
+## Phase R4 EnvMapBaker Mapping
+
+| RTXPT-fork | Diligent RTXPT | Notes |
+|---|---|---|
+| `Lighting/Distant/EnvMapBaker.*` | `src/RTXPTEnvMapBaker.*` | Diligent-native resource owner; uses DiligentFX cubemap/BRDF precompute and local compute importance-map passes |
+| `Lighting/Distant/EnvMapImportanceSamplingBaker.*` | `src/RTXPTEnvMapBaker.*` + `Lighting/EnvMapImportanceBaker.hlsl` | Builds R32 importance and RGBA16F radiance mip chains for MIP descent |
+| `SampleProceduralSky` | procedural source path in `RTXPTEnvMapBaker` | Current port bakes the existing procedural gradient into the same env-map path; source sentinel is `==PROCEDURAL_SKY==` |
+| `PathTracer/Lighting/EnvMap.hlsli` | `PathTracer/Lighting/EnvMap.hlsli` | Runtime `EnvMapSampler`, MIP-descent sampling, and env pdf evaluation |
+| global env bindings `t_EnvironmentMap`, `t_EnvironmentMapImportanceMap`, `t_EnvironmentRadianceMap` | RT static resources in `RTXPTRayTracingPass` | Bound for raygen and miss with stable fallback views; BRDF LUT remains a baker output until a later composite path consumes it |
+
 ## Skinned glTF Current Geometry
 
 The Diligent RTXPT port uses a Diligent-native current-geometry path for skinned glTF:

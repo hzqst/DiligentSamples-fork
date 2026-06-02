@@ -876,8 +876,6 @@ void RTXPTSample::Render()
         return;
     }
 
-    // TODO(RTXPT-Port Phase 6/P3-P5): extend the current Trace -> accumulation -> optional
-    // debug compute -> blit path with HDR, tone mapping, and LDR post-processing stages.
     const bool TraceExecuted =
         m_RayTracingPass.Trace(m_pImmediateContext,
                                m_RenderTargets.GetOutputColorUAV(),
@@ -900,9 +898,6 @@ void RTXPTSample::Render()
     const float BloomRadius    = std::clamp(m_ReferenceUI.BloomRadius, 0.0f, 64.0f);
     const float BloomIntensity = std::clamp(m_ReferenceUI.BloomIntensity, 0.0f, 0.1f);
     const float EdgeThreshold  = std::clamp(m_ReferenceUI.PostProcessEdgeDetectionThreshold, 0.0f, 1.0f);
-    (void)BloomRadius;
-    (void)BloomIntensity;
-    (void)EdgeThreshold;
 
     const bool AccumulationExecuted =
         m_PostProcessPipeline.RunAccumulation(m_pImmediateContext,
@@ -915,6 +910,27 @@ void RTXPTSample::Render()
         return;
     }
 
+    RTXPTBloomParameters BloomParams;
+    BloomParams.Enabled   = m_ReferenceUI.EnableBloom;
+    BloomParams.Radius    = BloomRadius;
+    BloomParams.Intensity = BloomIntensity;
+
+    RTXPTPostProcessParameters PostProcessParams;
+    PostProcessParams.EnableHdrTest       = m_ReferenceUI.PostProcessTestPassHDR;
+    PostProcessParams.EnableEdgeDetection = m_ReferenceUI.PostProcessEdgeDetection;
+    PostProcessParams.EdgeThreshold       = EdgeThreshold;
+
+    const bool PreTonePostProcessExecuted =
+        m_PostProcessPipeline.RunPreToneMapping(m_pImmediateContext,
+                                                m_RenderTargets,
+                                                BloomParams,
+                                                PostProcessParams);
+    if (!PreTonePostProcessExecuted)
+    {
+        ClearFallback(float4{0.9f, 0.2f, 0.6f, 1.0f});
+        return;
+    }
+
     const bool ToneMappingExecuted =
         m_PostProcessPipeline.RunToneMapping(m_pImmediateContext,
                                              m_RenderTargets,
@@ -923,6 +939,16 @@ void RTXPTSample::Render()
     if (!ToneMappingExecuted)
     {
         ClearFallback(float4{0.0f, 0.8f, 0.3f, 1.0f});
+        return;
+    }
+
+    const bool PostTonePostProcessExecuted =
+        m_PostProcessPipeline.RunPostToneMapping(m_pImmediateContext,
+                                                 m_RenderTargets,
+                                                 PostProcessParams);
+    if (!PostTonePostProcessExecuted)
+    {
+        ClearFallback(float4{0.6f, 0.2f, 0.9f, 1.0f});
         return;
     }
 
@@ -1520,6 +1546,9 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("AccumulatedRadiance: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA32F unavailable)");
         ImGui::Text("Post-process targets: %s", m_RenderTargets.HasPostProcessTargets() ? "allocated" : "missing");
         ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");
+        const auto& PostStats = m_PostProcessPipeline.GetStats();
+        ImGui::Text("Bloom stage: %s", PostStats.BloomStageReady ? "ready" : "not ready");
+        ImGui::Text("P4 post-process stage: %s", PostStats.PostProcessStageReady ? "ready" : "not ready");
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);

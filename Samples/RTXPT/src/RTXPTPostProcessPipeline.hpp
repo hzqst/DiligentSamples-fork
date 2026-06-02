@@ -65,6 +65,7 @@ public:
 
 private:
     RTXPTPostProcessPipelineStats m_Stats;
+    std::string                   m_FeatureDisabledReason;
 };
 
 } // namespace Diligent

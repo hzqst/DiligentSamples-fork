@@ -170,8 +170,8 @@ static const float kSpecularRoughnessThreshold = 0.25;
 
 static float3 ToneMapACES(float3 x)
 {
-    // Krzysztof Narkowicz fitted ACES curve. Matches Phase 5.1 visual mood when the accumulation buffer
-    // is converted back to rgba8 for the blit pass.
+    // Krzysztof Narkowicz fitted ACES curve. Matches Phase 5.1 visual mood while raygen temporarily
+    // writes tone-mapped color into rgba16f OutputColor for the blit pass.
     const float a = 2.51;
     const float b = 0.03;
     const float c = 2.43;
@@ -405,7 +405,7 @@ void main()
     }
     u_AccumulationBuffer[pixel] = float4(accumulated, 1.0);
 
-    // OutputColor is the rgba8 image consumed by the existing blit/compute chain.
+    // OutputColor temporarily carries tone-mapped color in rgba16f until P3 moves tone mapping.
     u_Output[pixel] = float4(ToneMapACES(accumulated * g_Const.ptConsts.exposureScale), 1.0);
 }
 

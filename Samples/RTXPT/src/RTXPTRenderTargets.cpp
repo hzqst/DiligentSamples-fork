@@ -108,8 +108,13 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
     if (pDevice == nullptr || Width == 0 || Height == 0)
         return false;
 
+    const bool HasCorePostProcessTargets =
+        m_OutputColor != nullptr &&
+        m_ProcessedOutputColor != nullptr &&
+        m_LdrColor != nullptr &&
+        m_LdrColorScratch != nullptr;
     const bool HasRequestedTargets =
-        HasPostProcessTargets() &&
+        HasCorePostProcessTargets &&
         (!CreateComputeOutput || m_ComputeColor != nullptr) &&
         (CreateComputeOutput || m_ComputeColor == nullptr) &&
         (!CreateAccumulatedRadiance || m_AccumulatedRadiance != nullptr || m_AccumulatedRadianceUnavailable) &&
@@ -137,6 +142,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
     {
         LOG_ERROR_MESSAGE("RGBA32F UAV AccumulatedRadiance is not supported; reference accumulation is unavailable");
         m_AccumulatedRadianceUnavailable = true;
+        return false;
     }
 
     if (!SupportsBindFlags(pDevice, m_Formats.ProcessedOutputColor, HdrRtFlags))
@@ -178,6 +184,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
 bool RTXPTRenderTargets::HasPostProcessTargets() const
 {
     return m_OutputColor != nullptr &&
+        m_AccumulatedRadiance != nullptr &&
         m_ProcessedOutputColor != nullptr &&
         m_LdrColor != nullptr &&
         m_LdrColorScratch != nullptr;

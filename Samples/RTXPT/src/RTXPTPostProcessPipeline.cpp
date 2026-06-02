@@ -33,7 +33,8 @@ namespace Diligent
 
 void RTXPTPostProcessPipeline::Reset()
 {
-    m_Stats = {};
+    m_Stats                 = {};
+    m_FeatureDisabledReason = {};
 }
 
 bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
@@ -51,7 +52,10 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
 
     m_Stats.Ready = true;
     if (!ComputeSupported)
-        m_Stats.DisabledReason = "compute shaders are unavailable; post-process compute stages remain disabled";
+    {
+        m_FeatureDisabledReason = "compute shaders are unavailable; post-process compute stages remain disabled";
+        m_Stats.DisabledReason  = m_FeatureDisabledReason;
+    }
 
     return true;
 }
@@ -70,8 +74,9 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
         RenderTargets.GetLdrColorScratchSRV() != nullptr &&
         RenderTargets.GetLdrColorScratchUAV() != nullptr;
 
-    if (!m_Stats.ResourcesValid)
-        m_Stats.DisabledReason = "post-process render targets are incomplete";
+    m_Stats.DisabledReason = m_Stats.ResourcesValid ?
+        m_FeatureDisabledReason :
+        "post-process render targets are incomplete";
 
     return m_Stats.ResourcesValid;
 }

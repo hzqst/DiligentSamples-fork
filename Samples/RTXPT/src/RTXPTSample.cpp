@@ -802,11 +802,10 @@ bool RTXPTSample::EnsureRenderTargets()
                                                               Formats,
                                                               m_FeatureCaps.ComputeShaders,
                                                               m_FeatureCaps.RayTracing);
-    if (Ok)
-        m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
+    const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
 
     m_AccumulationActive = Ok && m_RenderTargets.IsAccumulationActive();
-    if (Ok &&
+    if (Ok && ResourcesValid &&
         (!WasValid ||
          OldWidth != SCDesc.Width ||
          OldHeight != SCDesc.Height ||
@@ -814,7 +813,7 @@ bool RTXPTSample::EnsureRenderTargets()
     {
         RequestAccumulationReset("Render targets (re)created");
     }
-    return Ok;
+    return Ok && ResourcesValid;
 }
 
 void RTXPTSample::ClearFallback(const float4& ClearColor)
@@ -953,10 +952,10 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
                                                               Formats,
                                                               m_FeatureCaps.ComputeShaders,
                                                               m_FeatureCaps.RayTracing);
-    if (Ok)
+    const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
+    m_AccumulationActive      = Ok && m_RenderTargets.IsAccumulationActive();
+    if (Ok && ResourcesValid)
     {
-        m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
-        m_AccumulationActive = m_RenderTargets.IsAccumulationActive();
         RequestAccumulationReset("Window resized");
         if (m_Scene.HasValidContent())
         {
@@ -1366,7 +1365,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Frame index: %u", m_FrameIndex);
         ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.viewportSizeAndFrameIndex.x, m_LastFrameConstants.viewportSizeAndFrameIndex.y);
         ImGui::Separator();
-        ImGui::Text("OutputColor: %s", m_RenderTargets.IsValid() ? "created" : "missing");
+        ImGui::Text("OutputColor: %s", m_RenderTargets.GetOutputColorSRV() != nullptr ? "created" : "missing");
         ImGui::Text("TraceRays pass: %s", m_RayTracingPass.IsReady() ? "ready" : "not ready");
         ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
         ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");

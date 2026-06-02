@@ -380,7 +380,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
     RefCntAutoPtr<IShader> pToneMapPS;
     RefCntAutoPtr<IShader> pCaptureCS;
     const bool             GraphicsShadersReady =
-        CreateShader(pDevice, ShaderCI, SHADER_TYPE_VERTEX, "RTXPT tone mapping VS", "RTXPTBlit.vsh", "main", m_FullscreenVS) &&
+        CreateShader(pDevice, ShaderCI, SHADER_TYPE_VERTEX, "RTXPT tone mapping VS", "PostProcessing/RTXPTFullscreen.vsh", "main", m_FullscreenVS) &&
         CreateShader(pDevice, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT tone mapping PS", "PostProcessing/ToneMapper/ToneMapping.hlsl", "main_ps", pToneMapPS);
     if (!GraphicsShadersReady)
     {

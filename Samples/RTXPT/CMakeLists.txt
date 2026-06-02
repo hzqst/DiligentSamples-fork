@@ -81,6 +81,7 @@ set(SHADERS
     assets/shaders/PathTracer/EmissiveTriangleBuild.hlsl
     assets/shaders/PathTracer/PathTracerAnyHit.rahit
     assets/shaders/PathTracer/SkinnedVertexBuild.csh
+    assets/shaders/PostProcessing/RTXPTFullscreen.vsh
     assets/shaders/PostProcessing/RTXPTAccumulation.csh
     assets/shaders/PostProcessing/ToneMapper/ToneMappingShared.h
     assets/shaders/PostProcessing/ToneMapper/ToneMapping.hlsl

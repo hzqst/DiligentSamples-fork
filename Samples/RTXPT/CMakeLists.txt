@@ -16,6 +16,7 @@ set(SOURCE
     src/RTXPTAccelerationStructures.cpp
     src/RTXPTSkinnedGeometry.cpp
     src/RTXPTRenderTargets.cpp
+    src/RTXPTPostProcessPipeline.cpp
     src/RTXPTRayTracingPass.cpp
     src/RTXPTEmissiveTrianglePass.cpp
     src/RTXPTComputePass.cpp
@@ -38,6 +39,7 @@ set(INCLUDE
     src/RTXPTAccelerationStructures.hpp
     src/RTXPTSkinnedGeometry.hpp
     src/RTXPTRenderTargets.hpp
+    src/RTXPTPostProcessPipeline.hpp
     src/RTXPTRayTracingPass.hpp
     src/RTXPTEmissiveTrianglePass.hpp
     src/RTXPTComputePass.hpp

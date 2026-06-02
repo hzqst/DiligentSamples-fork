@@ -11,7 +11,7 @@
 
 #if RTXPT_SCREEN_PATTERN_DIAGNOSTIC
 
-VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   u_Output;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
 VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
 
 [shader("raygeneration")]
@@ -37,7 +37,7 @@ RaytracingAccelerationStructure                t_SceneBVH;
 
 #include "RTXPTCommon.fxh"
 
-VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   u_Output;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
 VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
 
 struct DiagnosticPayload
@@ -164,7 +164,7 @@ RaytracingAccelerationStructure                t_SceneBVH;
 #include "Utils/StatelessSampleGenerators.hlsli"
 #include "PathTracer.hlsli"
 
-VK_IMAGE_FORMAT("rgba8") RWTexture2D<float4>   u_Output;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
 VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
 static const float kSpecularRoughnessThreshold = 0.25;
 

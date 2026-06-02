@@ -34,45 +34,69 @@
 namespace Diligent
 {
 
-// TODO(RTXPT-Port Phase 6/P1): Split the current display-ready OutputColor
-// contract into RTXPT-fork-style raw HDR OutputColor, AccumulatedRadiance,
-// ProcessedOutputColor, LdrColor, and LdrColorScratch targets.
+struct RTXPTRenderTargetFormats
+{
+    TEXTURE_FORMAT OutputColor          = TEX_FORMAT_RGBA16_FLOAT;
+    TEXTURE_FORMAT AccumulatedRadiance  = TEX_FORMAT_RGBA32_FLOAT;
+    TEXTURE_FORMAT ProcessedOutputColor = TEX_FORMAT_RGBA16_FLOAT;
+    TEXTURE_FORMAT LdrColor             = TEX_FORMAT_RGBA8_UNORM;
+    TEXTURE_FORMAT ComputeColor         = TEX_FORMAT_RGBA8_UNORM;
+};
+
 class RTXPTRenderTargets
 {
 public:
     void Reset();
-    bool Resize(IRenderDevice* pDevice,
-                Uint32         Width,
-                Uint32         Height,
-                TEXTURE_FORMAT Format,
-                bool           CreateComputeOutput,
-                bool           CreateAccumulation);
+    bool Resize(IRenderDevice*                  pDevice,
+                Uint32                          Width,
+                Uint32                          Height,
+                const RTXPTRenderTargetFormats& Formats,
+                bool                            CreateComputeOutput,
+                bool                            CreateAccumulatedRadiance);
 
-    bool IsValid() const { return m_OutputColor != nullptr; }
-    bool IsAccumulationActive() const { return m_AccumColor != nullptr; }
+    bool IsValid() const { return HasPostProcessTargets(); }
+    bool HasPostProcessTargets() const;
+    bool IsAccumulationActive() const { return m_AccumulatedRadiance != nullptr; }
 
     ITextureView* GetOutputColorUAV() const;
     ITextureView* GetOutputColorSRV() const;
+    ITextureView* GetAccumulatedRadianceUAV() const;
+    ITextureView* GetAccumulatedRadianceSRV() const;
+    ITextureView* GetProcessedOutputColorUAV() const;
+    ITextureView* GetProcessedOutputColorSRV() const;
+    ITextureView* GetLdrColorUAV() const;
+    ITextureView* GetLdrColorSRV() const;
+    ITextureView* GetLdrColorScratchUAV() const;
+    ITextureView* GetLdrColorScratchSRV() const;
     ITextureView* GetComputeColorUAV() const;
     ITextureView* GetComputeColorSRV() const;
-    ITextureView* GetAccumColorUAV() const;
-    ITextureView* GetAccumColorSRV() const;
     ITextureView* GetDisplaySRV(bool UseComputeOutput) const;
 
     Uint32         GetWidth() const { return m_Width; }
     Uint32         GetHeight() const { return m_Height; }
-    TEXTURE_FORMAT GetFormat() const { return m_Format; }
+    TEXTURE_FORMAT GetOutputColorFormat() const { return m_Formats.OutputColor; }
+    TEXTURE_FORMAT GetAccumulatedRadianceFormat() const { return m_Formats.AccumulatedRadiance; }
+    TEXTURE_FORMAT GetProcessedOutputColorFormat() const { return m_Formats.ProcessedOutputColor; }
+    TEXTURE_FORMAT GetLdrColorFormat() const { return m_Formats.LdrColor; }
 
 private:
-    bool CreateTarget(IRenderDevice* pDevice, const char* Name, RefCntAutoPtr<ITexture>& Target);
+    bool CreateTarget(IRenderDevice* pDevice,
+                      const char*    Name,
+                      TEXTURE_FORMAT TargetFormat,
+                      BIND_FLAGS     BindFlags,
+                      RefCntAutoPtr<ITexture>& Target);
+    bool SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMAT TargetFormat, BIND_FLAGS BindFlags) const;
 
-    RefCntAutoPtr<ITexture> m_OutputColor;
-    RefCntAutoPtr<ITexture> m_ComputeColor;
-    RefCntAutoPtr<ITexture> m_AccumColor;
-    bool                    m_AccumulationUnavailable = false;
-    Uint32                  m_Width                   = 0;
-    Uint32                  m_Height                  = 0;
-    TEXTURE_FORMAT          m_Format                  = TEX_FORMAT_UNKNOWN;
+    RefCntAutoPtr<ITexture>  m_OutputColor;
+    RefCntAutoPtr<ITexture>  m_AccumulatedRadiance;
+    RefCntAutoPtr<ITexture>  m_ProcessedOutputColor;
+    RefCntAutoPtr<ITexture>  m_LdrColor;
+    RefCntAutoPtr<ITexture>  m_LdrColorScratch;
+    RefCntAutoPtr<ITexture>  m_ComputeColor;
+    bool                     m_AccumulatedRadianceUnavailable = false;
+    Uint32                   m_Width                          = 0;
+    Uint32                   m_Height                         = 0;
+    RTXPTRenderTargetFormats m_Formats;
 };
 
 } // namespace Diligent

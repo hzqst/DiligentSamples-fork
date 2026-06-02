@@ -308,6 +308,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
     m_EmissiveTrianglePass.Reset();
+    m_PostProcessPipeline.Reset();
 
     m_SelectedSceneCamera   = -1;
     m_EnableSceneAnimations = !kReferencePathTraceMode;
@@ -670,6 +671,10 @@ bool RTXPTSample::UpdateLightsBaker(bool ResetFeedback)
 void RTXPTSample::CreatePhase4Passes()
 {
     m_BlitPass.Initialize(m_pDevice, m_pEngineFactory, m_pSwapChain);
+    m_PostProcessPipeline.Initialize(m_pDevice,
+                                     m_pEngineFactory,
+                                     m_pSwapChain,
+                                     m_FeatureCaps.ComputeShaders);
 
     // Material-texture sampling needs descriptor indexing. Gate it on bindless support; if the textured
     // pipeline fails to build, fall back to the Phase 5.2 factor-only path so the sample still renders.
@@ -790,12 +795,15 @@ bool RTXPTSample::EnsureRenderTargets()
     const Uint32         OldHeight             = m_RenderTargets.GetHeight();
     const bool           WasAccumulationActive = m_RenderTargets.IsAccumulationActive();
 
-    const bool Ok = m_RenderTargets.Resize(m_pDevice,
-                                           SCDesc.Width,
-                                           SCDesc.Height,
-                                           TEX_FORMAT_RGBA8_UNORM,
-                                           m_FeatureCaps.ComputeShaders,
-                                           m_FeatureCaps.RayTracing);
+    const RTXPTRenderTargetFormats Formats;
+    const bool                     Ok = m_RenderTargets.Resize(m_pDevice,
+                                                              SCDesc.Width,
+                                                              SCDesc.Height,
+                                                              Formats,
+                                                              m_FeatureCaps.ComputeShaders,
+                                                              m_FeatureCaps.RayTracing);
+    if (Ok)
+        m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
 
     m_AccumulationActive = Ok && m_RenderTargets.IsAccumulationActive();
     if (Ok &&
@@ -838,7 +846,7 @@ void RTXPTSample::Render()
     const bool TraceExecuted =
         m_RayTracingPass.Trace(m_pImmediateContext,
                                m_RenderTargets.GetOutputColorUAV(),
-                               m_RenderTargets.GetAccumColorUAV(),
+                               m_RenderTargets.GetAccumulatedRadianceUAV(),
                                m_RenderTargets.GetWidth(),
                                m_RenderTargets.GetHeight());
 
@@ -848,7 +856,7 @@ void RTXPTSample::Render()
             ClearFallback(float4{1.0f, 0.0f, 1.0f, 1.0f});
         else if (m_RenderTargets.GetOutputColorUAV() == nullptr)
             ClearFallback(float4{1.0f, 0.45f, 0.0f, 1.0f});
-        else if (m_RenderTargets.GetAccumColorUAV() == nullptr)
+        else if (m_RenderTargets.GetAccumulatedRadianceUAV() == nullptr)
             ClearFallback(float4{0.0f, 0.2f, 1.0f, 1.0f});
         else if (m_RenderTargets.GetWidth() == 0 || m_RenderTargets.GetHeight() == 0)
             ClearFallback(float4{1.0f, 1.0f, 1.0f, 1.0f});
@@ -938,13 +946,16 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     UpdateCameraProjection(Width, Height);
     m_HasLastCameraMatrices = false;
 
-    if (m_RenderTargets.Resize(m_pDevice,
-                               Width,
-                               Height,
-                               TEX_FORMAT_RGBA8_UNORM,
-                               m_FeatureCaps.ComputeShaders,
-                               m_FeatureCaps.RayTracing))
+    const RTXPTRenderTargetFormats Formats;
+    const bool                     Ok = m_RenderTargets.Resize(m_pDevice,
+                                                              Width,
+                                                              Height,
+                                                              Formats,
+                                                              m_FeatureCaps.ComputeShaders,
+                                                              m_FeatureCaps.RayTracing);
+    if (Ok)
     {
+        m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
         m_AccumulationActive = m_RenderTargets.IsAccumulationActive();
         RequestAccumulationReset("Window resized");
         if (m_Scene.HasValidContent())
@@ -1386,7 +1397,11 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Material textures loaded: %u", m_Materials.GetStats().TextureCount);
         ImGui::Text("Material textures bound: %s (%u)", RTPassStats.MaterialTexturesBound ? "yes" : "no", RTPassStats.MaterialTextureCount);
         ImGui::Text("Alpha-test/blend any-hit: %s", RTPassStats.AnyHitEnabled ? "enabled" : "disabled");
-        ImGui::Text("Accumulation target: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA8 fallback)");
+        ImGui::Text("AccumulatedRadiance: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA32F unavailable)");
+        ImGui::Text("Post-process targets: %s", m_RenderTargets.HasPostProcessTargets() ? "allocated" : "missing");
+        ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");
+        if (!m_PostProcessPipeline.GetStats().DisabledReason.empty())
+            ImGui::TextWrapped("Post-process disabled: %s", m_PostProcessPipeline.GetStats().DisabledReason.c_str());
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);

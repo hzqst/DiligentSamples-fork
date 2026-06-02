@@ -30,26 +30,47 @@
 namespace Diligent
 {
 
+namespace
+{
+
+bool FormatsMatch(const RTXPTRenderTargetFormats& Lhs, const RTXPTRenderTargetFormats& Rhs)
+{
+    return Lhs.OutputColor == Rhs.OutputColor &&
+        Lhs.AccumulatedRadiance == Rhs.AccumulatedRadiance &&
+        Lhs.ProcessedOutputColor == Rhs.ProcessedOutputColor &&
+        Lhs.LdrColor == Rhs.LdrColor &&
+        Lhs.ComputeColor == Rhs.ComputeColor;
+}
+
+} // namespace
+
 void RTXPTRenderTargets::Reset()
 {
     m_OutputColor.Release();
+    m_AccumulatedRadiance.Release();
+    m_ProcessedOutputColor.Release();
+    m_LdrColor.Release();
+    m_LdrColorScratch.Release();
     m_ComputeColor.Release();
-    m_AccumColor.Release();
-    m_AccumulationUnavailable = false;
-    m_Width                   = 0;
-    m_Height                  = 0;
-    m_Format                  = TEX_FORMAT_UNKNOWN;
+    m_AccumulatedRadianceUnavailable = false;
+    m_Width                          = 0;
+    m_Height                         = 0;
+    m_Formats                        = {};
 }
 
-bool RTXPTRenderTargets::CreateTarget(IRenderDevice* pDevice, const char* Name, RefCntAutoPtr<ITexture>& Target)
+bool RTXPTRenderTargets::CreateTarget(IRenderDevice* pDevice,
+                                      const char*    Name,
+                                      TEXTURE_FORMAT TargetFormat,
+                                      BIND_FLAGS     BindFlags,
+                                      RefCntAutoPtr<ITexture>& Target)
 {
     TextureDesc Desc;
     Desc.Name      = Name;
     Desc.Type      = RESOURCE_DIM_TEX_2D;
     Desc.Width     = m_Width;
     Desc.Height    = m_Height;
-    Desc.Format    = m_Format;
-    Desc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+    Desc.Format    = TargetFormat;
+    Desc.BindFlags = BindFlags;
 
     Target.Release();
     pDevice->CreateTexture(Desc, nullptr, &Target);
@@ -59,10 +80,11 @@ bool RTXPTRenderTargets::CreateTarget(IRenderDevice* pDevice, const char* Name, 
         return false;
     }
 
-    if (Target->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) == nullptr ||
-        Target->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) == nullptr)
+    if (((BindFlags & BIND_SHADER_RESOURCE) != 0 && Target->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) == nullptr) ||
+        ((BindFlags & BIND_UNORDERED_ACCESS) != 0 && Target->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) == nullptr) ||
+        ((BindFlags & BIND_RENDER_TARGET) != 0 && Target->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET) == nullptr))
     {
-        LOG_ERROR_MESSAGE(Name, " is missing SRV or UAV");
+        LOG_ERROR_MESSAGE(Name, " is missing one or more required default views");
         Target.Release();
         return false;
     }
@@ -70,66 +92,95 @@ bool RTXPTRenderTargets::CreateTarget(IRenderDevice* pDevice, const char* Name, 
     return true;
 }
 
-bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice,
-                                Uint32         Width,
-                                Uint32         Height,
-                                TEXTURE_FORMAT Format,
-                                bool           CreateComputeOutput,
-                                bool           CreateAccumulation)
+bool RTXPTRenderTargets::SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMAT TargetFormat, BIND_FLAGS BindFlags) const
 {
-    if (Width == 0 || Height == 0)
+    const auto& FmtInfo = pDevice->GetTextureFormatInfoExt(TargetFormat);
+    return (FmtInfo.BindFlags & BindFlags) == BindFlags;
+}
+
+bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
+                                Uint32                          Width,
+                                Uint32                          Height,
+                                const RTXPTRenderTargetFormats& Formats,
+                                bool                            CreateComputeOutput,
+                                bool                            CreateAccumulatedRadiance)
+{
+    if (pDevice == nullptr || Width == 0 || Height == 0)
         return false;
 
     const bool HasRequestedTargets =
-        m_OutputColor != nullptr &&
+        HasPostProcessTargets() &&
         (!CreateComputeOutput || m_ComputeColor != nullptr) &&
         (CreateComputeOutput || m_ComputeColor == nullptr) &&
-        (!CreateAccumulation || m_AccumColor != nullptr || m_AccumulationUnavailable) &&
-        (CreateAccumulation || m_AccumColor == nullptr);
+        (!CreateAccumulatedRadiance || m_AccumulatedRadiance != nullptr || m_AccumulatedRadianceUnavailable) &&
+        (CreateAccumulatedRadiance || m_AccumulatedRadiance == nullptr);
 
-    if (HasRequestedTargets && m_Width == Width && m_Height == Height && m_Format == Format)
+    if (HasRequestedTargets && m_Width == Width && m_Height == Height && FormatsMatch(m_Formats, Formats))
         return true;
 
     Reset();
-    m_Width  = Width;
-    m_Height = Height;
-    m_Format = Format;
+    m_Width   = Width;
+    m_Height  = Height;
+    m_Formats = Formats;
 
-    // TODO(RTXPT-Port Phase 6/P1): OutputColor becomes a raw HDR UAV
-    // (prefer RGBA16F) instead of the current RGBA8 display target.
-    if (!CreateTarget(pDevice, "RTXPT OutputColor", m_OutputColor))
-        return false;
+    const BIND_FLAGS HdrUavFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+    const BIND_FLAGS HdrRtFlags  = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
+    const BIND_FLAGS LdrRtFlags  = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
 
-    if (CreateComputeOutput && !CreateTarget(pDevice, "RTXPT ComputeColor", m_ComputeColor))
-        return false;
-
-    if (CreateAccumulation)
+    if (!SupportsBindFlags(pDevice, m_Formats.OutputColor, HdrUavFlags))
     {
-        const TEXTURE_FORMAT AccumFormat = TEX_FORMAT_RGBA32_FLOAT;
-        const auto&          FmtInfo     = pDevice->GetTextureFormatInfoExt(AccumFormat);
-        const bool           SupportsUAV = (FmtInfo.BindFlags & BIND_UNORDERED_ACCESS) != 0;
-        if (!SupportsUAV)
-        {
-            LOG_ERROR_MESSAGE("RGBA32F UAV is not supported; reference path tracer accumulation is disabled");
-            m_AccumulationUnavailable = true;
-            return true;
-        }
-
-        TextureDesc Desc;
-        Desc.Name      = "RTXPT AccumColor";
-        Desc.Type      = RESOURCE_DIM_TEX_2D;
-        Desc.Width     = m_Width;
-        Desc.Height    = m_Height;
-        Desc.Format    = AccumFormat;
-        Desc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
-        pDevice->CreateTexture(Desc, nullptr, &m_AccumColor);
-
-        VERIFY(m_AccumColor, "Failed to create RTXPT AccumColor");
-        if (!m_AccumColor)
-            return false;
+        LOG_ERROR_MESSAGE("RGBA16F UAV OutputColor is not supported; RTXPT post-processing resource graph is unavailable");
+        return false;
     }
 
+    if (CreateAccumulatedRadiance && !SupportsBindFlags(pDevice, m_Formats.AccumulatedRadiance, HdrUavFlags))
+    {
+        LOG_ERROR_MESSAGE("RGBA32F UAV AccumulatedRadiance is not supported; reference accumulation is unavailable");
+        m_AccumulatedRadianceUnavailable = true;
+    }
+
+    if (!SupportsBindFlags(pDevice, m_Formats.ProcessedOutputColor, HdrRtFlags))
+    {
+        LOG_ERROR_MESSAGE("HDR UAV/RTV ProcessedOutputColor is not supported; RTXPT post-processing resource graph is unavailable");
+        return false;
+    }
+
+    if (!SupportsBindFlags(pDevice, m_Formats.LdrColor, LdrRtFlags))
+    {
+        LOG_ERROR_MESSAGE("LDR UAV/RTV targets are not supported; RTXPT post-processing resource graph is unavailable");
+        return false;
+    }
+
+    if (!CreateTarget(pDevice, "RTXPT OutputColor", m_Formats.OutputColor, HdrUavFlags, m_OutputColor))
+        return false;
+
+    if (CreateAccumulatedRadiance &&
+        !m_AccumulatedRadianceUnavailable &&
+        !CreateTarget(pDevice, "RTXPT AccumulatedRadiance", m_Formats.AccumulatedRadiance, HdrUavFlags, m_AccumulatedRadiance))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT ProcessedOutputColor", m_Formats.ProcessedOutputColor, HdrRtFlags, m_ProcessedOutputColor))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT LdrColor", m_Formats.LdrColor, LdrRtFlags, m_LdrColor))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT LdrColorScratch", m_Formats.LdrColor, LdrRtFlags, m_LdrColorScratch))
+        return false;
+
+    if (CreateComputeOutput &&
+        !CreateTarget(pDevice, "RTXPT ComputeColor", m_Formats.ComputeColor, HdrUavFlags, m_ComputeColor))
+        return false;
+
     return true;
+}
+
+bool RTXPTRenderTargets::HasPostProcessTargets() const
+{
+    return m_OutputColor != nullptr &&
+        m_ProcessedOutputColor != nullptr &&
+        m_LdrColor != nullptr &&
+        m_LdrColorScratch != nullptr;
 }
 
 ITextureView* RTXPTRenderTargets::GetOutputColorUAV() const
@@ -142,6 +193,46 @@ ITextureView* RTXPTRenderTargets::GetOutputColorSRV() const
     return m_OutputColor ? m_OutputColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
 }
 
+ITextureView* RTXPTRenderTargets::GetAccumulatedRadianceUAV() const
+{
+    return m_AccumulatedRadiance ? m_AccumulatedRadiance->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetAccumulatedRadianceSRV() const
+{
+    return m_AccumulatedRadiance ? m_AccumulatedRadiance->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetProcessedOutputColorUAV() const
+{
+    return m_ProcessedOutputColor ? m_ProcessedOutputColor->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetProcessedOutputColorSRV() const
+{
+    return m_ProcessedOutputColor ? m_ProcessedOutputColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetLdrColorUAV() const
+{
+    return m_LdrColor ? m_LdrColor->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetLdrColorSRV() const
+{
+    return m_LdrColor ? m_LdrColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetLdrColorScratchUAV() const
+{
+    return m_LdrColorScratch ? m_LdrColorScratch->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetLdrColorScratchSRV() const
+{
+    return m_LdrColorScratch ? m_LdrColorScratch->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
 ITextureView* RTXPTRenderTargets::GetComputeColorUAV() const
 {
     return m_ComputeColor ? m_ComputeColor->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
@@ -150,16 +241,6 @@ ITextureView* RTXPTRenderTargets::GetComputeColorUAV() const
 ITextureView* RTXPTRenderTargets::GetComputeColorSRV() const
 {
     return m_ComputeColor ? m_ComputeColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
-}
-
-ITextureView* RTXPTRenderTargets::GetAccumColorUAV() const
-{
-    return m_AccumColor ? m_AccumColor->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
-}
-
-ITextureView* RTXPTRenderTargets::GetAccumColorSRV() const
-{
-    return m_AccumColor ? m_AccumColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
 }
 
 ITextureView* RTXPTRenderTargets::GetDisplaySRV(bool UseComputeOutput) const

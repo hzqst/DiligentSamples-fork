@@ -44,6 +44,7 @@
 #include "RTXPTMaterials.hpp"
 #include "RTXPTRayTracingPass.hpp"
 #include "RTXPTRenderTargets.hpp"
+#include "RTXPTPostProcessPipeline.hpp"
 #include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
 #include "RTXPTSkinnedGeometry.hpp"
@@ -143,6 +144,7 @@ private:
     RTXPTComputePass               m_DebugComputePass;
     RTXPTEmissiveTrianglePass      m_EmissiveTrianglePass;
     RTXPTBlitPass                  m_BlitPass;
+    RTXPTPostProcessPipeline       m_PostProcessPipeline;
     FirstPersonCamera              m_Camera;
     RefCntAutoPtr<IBuffer>         m_FrameConstantsCB;
     SampleConstants                m_LastFrameConstants;

@@ -1,7 +1,7 @@
 #pragma pack_matrix(row_major)
 
-#include "PostProcessing/ToneMapper/ToneMappingShared.h"
-#include "PostProcessing/ToneMapper/ToneMapping.ps.hlsli"
+#include "ToneMappingShared.h"
+#include "ToneMapping.ps.hlsli"
 
 struct PSInput
 {

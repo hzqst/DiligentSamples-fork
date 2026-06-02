@@ -1,7 +1,7 @@
 #ifndef __RTXPT_TONE_MAPPING_PS_HLSLI__
 #define __RTXPT_TONE_MAPPING_PS_HLSLI__
 
-#include "PostProcessing/ToneMapper/ToneMappingShared.h"
+#include "ToneMappingShared.h"
 
 SamplerState      s_LuminanceSampler;
 SamplerState      s_ColorSampler;

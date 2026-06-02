@@ -36,7 +36,9 @@ namespace Diligent
 void RTXPTPostProcessPipeline::Reset()
 {
     m_AccumulationPass.Reset();
+    m_BloomPass.Reset();
     m_ToneMappingPass.Reset();
+    m_PostProcessPass.Reset();
     m_Device.Release();
     m_Stats = {};
 }
@@ -74,6 +76,20 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     if (!m_Stats.ToneMappingStageReady)
     {
         DEV_ERROR("RTXPT tone mapping pass failed to initialize");
+        return false;
+    }
+
+    m_Stats.BloomStageReady = m_BloomPass.Initialize(pDevice, pEngineFactory);
+    if (!m_Stats.BloomStageReady)
+    {
+        DEV_ERROR("RTXPT bloom pass failed to initialize");
+        return false;
+    }
+
+    m_Stats.PostProcessStageReady = m_PostProcessPass.Initialize(pDevice, pEngineFactory, ComputeSupported);
+    if (!m_Stats.PostProcessStageReady)
+    {
+        DEV_ERROR("RTXPT P4 post-process pass failed to initialize");
         return false;
     }
 
@@ -130,6 +146,55 @@ bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*            pConte
     return Executed;
 }
 
+bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*                    pContext,
+                                                 const RTXPTRenderTargets&         RenderTargets,
+                                                 const RTXPTBloomParameters&       BloomParams,
+                                                 const RTXPTPostProcessParameters& PostProcessParams)
+{
+    const bool BloomEnabled =
+        BloomParams.Enabled &&
+        BloomParams.Intensity > 0.0f &&
+        BloomParams.Radius > 0.0f;
+    if (BloomEnabled && !m_BloomPass.ResizeResources(m_Device, RenderTargets.GetWidth(), RenderTargets.GetHeight(), RenderTargets.GetProcessedOutputColorFormat()))
+    {
+        m_Stats.BloomStageReady = m_BloomPass.IsReady();
+        DEV_ERROR("RTXPT bloom pass failed to resize resources");
+        return false;
+    }
+
+    RTXPTBloomRenderAttribs BloomAttribs;
+    BloomAttribs.pSourceSRV = RenderTargets.GetProcessedOutputColorSRV();
+    BloomAttribs.pTargetRTV = RenderTargets.GetProcessedOutputColorRTV();
+    BloomAttribs.Width      = RenderTargets.GetWidth();
+    BloomAttribs.Height     = RenderTargets.GetHeight();
+    BloomAttribs.Format     = RenderTargets.GetProcessedOutputColorFormat();
+    BloomAttribs.Params     = BloomParams;
+
+    const bool BloomExecuted = m_BloomPass.Render(pContext, BloomAttribs);
+    m_Stats.BloomStageReady = m_BloomPass.IsReady();
+    if (!BloomExecuted)
+    {
+        DEV_ERROR("RTXPT bloom pass failed to render");
+        return false;
+    }
+
+    RTXPTPostProcessRenderAttribs PostAttribs;
+    PostAttribs.pProcessedOutputUAV = RenderTargets.GetProcessedOutputColorUAV();
+    PostAttribs.Width               = RenderTargets.GetWidth();
+    PostAttribs.Height              = RenderTargets.GetHeight();
+    PostAttribs.Params              = PostProcessParams;
+
+    const bool HdrTestExecuted = m_PostProcessPass.RunHdrTest(pContext, PostAttribs);
+    m_Stats.PostProcessStageReady = m_PostProcessPass.IsReady();
+    if (!HdrTestExecuted)
+    {
+        DEV_ERROR("RTXPT HDR post-process test failed");
+        return false;
+    }
+
+    return true;
+}
+
 bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                    pContext,
                                               const RTXPTRenderTargets&         RenderTargets,
                                               const RTXPTToneMappingParameters& Params,
@@ -155,6 +220,30 @@ bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   
     if (!Executed)
         DEV_ERROR("RTXPT tone mapping pass failed to render");
     return Executed;
+}
+
+bool RTXPTPostProcessPipeline::RunPostToneMapping(IDeviceContext*                    pContext,
+                                                  const RTXPTRenderTargets&         RenderTargets,
+                                                  const RTXPTPostProcessParameters& PostProcessParams)
+{
+    RTXPTPostProcessRenderAttribs Attribs;
+    Attribs.pLdrColorTexture        = RenderTargets.GetLdrColorTexture();
+    Attribs.pLdrColorScratchTexture = RenderTargets.GetLdrColorScratchTexture();
+    Attribs.pLdrColorScratchSRV     = RenderTargets.GetLdrColorScratchSRV();
+    Attribs.pLdrColorUAV            = RenderTargets.GetLdrColorUAV();
+    Attribs.Width                   = RenderTargets.GetWidth();
+    Attribs.Height                  = RenderTargets.GetHeight();
+    Attribs.Params                  = PostProcessParams;
+
+    const bool EdgeDetectionExecuted = m_PostProcessPass.RunEdgeDetection(pContext, Attribs);
+    m_Stats.PostProcessStageReady = m_PostProcessPass.IsReady();
+    if (!EdgeDetectionExecuted)
+    {
+        DEV_ERROR("RTXPT LDR edge detection failed");
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace Diligent

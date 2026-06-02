@@ -28,51 +28,57 @@
 
 #include <string>
 
+#include "BasicMath.hpp"
+#include "Buffer.h"
 #include "DeviceContext.h"
 #include "EngineFactory.h"
+#include "PipelineState.h"
+#include "RefCntAutoPtr.hpp"
 #include "RenderDevice.h"
-#include "RTXPTAccumulationPass.hpp"
-#include "RTXPTRenderTargets.hpp"
-#include "SwapChain.h"
+#include "Sampler.h"
+#include "ShaderResourceBinding.h"
+#include "TextureView.h"
 
 namespace Diligent
 {
 
-struct RTXPTPostProcessPipelineStats
+struct RTXPTAccumulationPassStats
 {
-    bool        Ready                  = false;
-    bool        ResourcesValid         = false;
-    bool        AccumulationStageReady = false;
-    bool        HdrStageReady          = false;
-    bool        ToneMappingStageReady  = false;
-    bool        LdrStageReady          = false;
+    bool        Ready                = false;
+    bool        LastDispatchExecuted = false;
+    Uint32      DispatchCount        = 0;
     std::string DisabledReason;
 };
 
-class RTXPTPostProcessPipeline
+struct RTXPTAccumulationDispatch
+{
+    ITextureView* pInputColorSRV          = nullptr;
+    ITextureView* pAccumulatedRadianceUAV = nullptr;
+    ITextureView* pProcessedOutputUAV     = nullptr;
+    Uint32        InputWidth              = 0;
+    Uint32        InputHeight             = 0;
+    Uint32        OutputWidth             = 0;
+    Uint32        OutputHeight            = 0;
+    float2        PixelOffset             = float2{0.0f, 0.0f};
+    float         BlendFactor             = 1.0f;
+};
+
+class RTXPTAccumulationPass
 {
 public:
     void Reset();
+    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, bool ComputeSupported);
+    bool Render(IDeviceContext* pContext, const RTXPTAccumulationDispatch& Dispatch);
 
-    bool Initialize(IRenderDevice*  pDevice,
-                    IEngineFactory* pEngineFactory,
-                    ISwapChain*     pSwapChain,
-                    bool            ComputeSupported);
-
-    bool ValidateRenderTargets(const RTXPTRenderTargets& RenderTargets);
-
-    bool RunAccumulation(IDeviceContext*            pContext,
-                         const RTXPTRenderTargets& RenderTargets,
-                         Uint32                    SampleIndex,
-                         bool                      ResetAccumulation);
-
-    bool                                  IsReady() const { return m_Stats.Ready; }
-    const RTXPTPostProcessPipelineStats& GetStats() const { return m_Stats; }
+    bool                              IsReady() const { return m_Stats.Ready; }
+    const RTXPTAccumulationPassStats& GetStats() const { return m_Stats; }
 
 private:
-    RTXPTPostProcessPipelineStats m_Stats;
-    std::string                   m_FeatureDisabledReason;
-    RTXPTAccumulationPass         m_AccumulationPass;
+    RefCntAutoPtr<IPipelineState>         m_PSO;
+    RefCntAutoPtr<IShaderResourceBinding> m_SRB;
+    RefCntAutoPtr<IBuffer>                m_Constants;
+    RefCntAutoPtr<ISampler>               m_LinearSampler;
+    RTXPTAccumulationPassStats            m_Stats;
 };
 
 } // namespace Diligent

@@ -57,7 +57,6 @@ struct RTXPTRayTracingPassStats
     bool        VertexBufferBound        = false;
     bool        SkinnedVertexBufferBound = false;
     bool        IndexBufferBound         = false;
-    bool        AccumulationBound        = false;
     bool        MaterialTexturesBound    = false;
     bool        AnyHitEnabled            = false;
     Uint32      MaterialTextureCount     = 0;
@@ -104,7 +103,6 @@ public:
 
     bool Trace(IDeviceContext* pContext,
                ITextureView*   pOutputUAV,
-               ITextureView*   pAccumulationUAV,
                Uint32          Width,
                Uint32          Height);
 

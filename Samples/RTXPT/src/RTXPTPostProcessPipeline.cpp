@@ -26,6 +26,8 @@
 
 #include "RTXPTPostProcessPipeline.hpp"
 
+#include <algorithm>
+
 #include "DebugUtilities.hpp"
 
 namespace Diligent
@@ -33,6 +35,7 @@ namespace Diligent
 
 void RTXPTPostProcessPipeline::Reset()
 {
+    m_AccumulationPass.Reset();
     m_Stats                 = {};
     m_FeatureDisabledReason = {};
 }
@@ -55,6 +58,17 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     {
         m_FeatureDisabledReason = "compute shaders are unavailable; post-process compute stages remain disabled";
         m_Stats.DisabledReason  = m_FeatureDisabledReason;
+    }
+    else
+    {
+        m_Stats.AccumulationStageReady = m_AccumulationPass.Initialize(pDevice, pEngineFactory, ComputeSupported);
+        if (!m_Stats.AccumulationStageReady)
+        {
+            m_FeatureDisabledReason = m_AccumulationPass.GetStats().DisabledReason.empty() ?
+                "RTXPT accumulation pass failed to initialize" :
+                m_AccumulationPass.GetStats().DisabledReason;
+            m_Stats.DisabledReason = m_FeatureDisabledReason;
+        }
     }
 
     return true;
@@ -79,6 +93,33 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
         "post-process render targets are incomplete";
 
     return m_Stats.ResourcesValid;
+}
+
+bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*            pContext,
+                                               const RTXPTRenderTargets& RenderTargets,
+                                               Uint32                    SampleIndex,
+                                               bool                      ResetAccumulation)
+{
+    if (!m_AccumulationPass.IsReady())
+        return false;
+
+    const Uint32 ClampedSampleIndex = std::max(SampleIndex, 1u);
+    const float  BlendFactor        = ResetAccumulation ? 1.0f : 1.0f / static_cast<float>(ClampedSampleIndex);
+
+    RTXPTAccumulationDispatch Dispatch;
+    Dispatch.pInputColorSRV          = RenderTargets.GetOutputColorSRV();
+    Dispatch.pAccumulatedRadianceUAV = RenderTargets.GetAccumulatedRadianceUAV();
+    Dispatch.pProcessedOutputUAV     = RenderTargets.GetProcessedOutputColorUAV();
+    Dispatch.InputWidth              = RenderTargets.GetWidth();
+    Dispatch.InputHeight             = RenderTargets.GetHeight();
+    Dispatch.OutputWidth             = RenderTargets.GetWidth();
+    Dispatch.OutputHeight            = RenderTargets.GetHeight();
+    Dispatch.PixelOffset             = float2{0.0f, 0.0f};
+    Dispatch.BlendFactor             = BlendFactor;
+
+    const bool Executed = m_AccumulationPass.Render(pContext, Dispatch);
+    m_Stats.AccumulationStageReady = m_AccumulationPass.IsReady();
+    return Executed;
 }
 
 } // namespace Diligent

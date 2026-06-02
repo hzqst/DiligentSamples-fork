@@ -12,7 +12,6 @@
 #if RTXPT_SCREEN_PATTERN_DIAGNOSTIC
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
-VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
 
 [shader("raygeneration")]
 void main()
@@ -27,8 +26,7 @@ void main()
     const float3 patternB   = float3(1.0 - uv.x, uv.y, 0.85);
     const float3 debugColor = lerp(patternA, patternB, checker);
 
-    u_AccumulationBuffer[pixel] = float4(debugColor, 1.0);
-    u_Output[pixel]             = float4(debugColor, 1.0);
+    u_Output[pixel] = float4(debugColor, 1.0);
 }
 
 #elif RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
@@ -38,7 +36,6 @@ RaytracingAccelerationStructure                t_SceneBVH;
 #include "RTXPTCommon.fxh"
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
-VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
 
 struct DiagnosticPayload
 {
@@ -120,9 +117,7 @@ void main()
 
     if (invalidRay)
     {
-        const float4 debugColor = float4(diagnosticColor, 1.0);
-        u_AccumulationBuffer[pixel] = debugColor;
-        u_Output[pixel]             = debugColor;
+        u_Output[pixel] = float4(diagnosticColor, 1.0);
         return;
     }
 
@@ -149,8 +144,7 @@ void main()
              ray,
              payload);
 
-    u_AccumulationBuffer[pixel] = float4(payload.color, 1.0);
-    u_Output[pixel]             = float4(payload.color, 1.0);
+    u_Output[pixel] = float4(payload.color, 1.0);
 }
 
 #else
@@ -165,20 +159,7 @@ RaytracingAccelerationStructure                t_SceneBVH;
 #include "PathTracer.hlsli"
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
-VK_IMAGE_FORMAT("rgba32f") RWTexture2D<float4> u_AccumulationBuffer;
 static const float kSpecularRoughnessThreshold = 0.25;
-
-static float3 ToneMapACES(float3 x)
-{
-    // Krzysztof Narkowicz fitted ACES curve. Matches Phase 5.1 visual mood while raygen temporarily
-    // writes tone-mapped color into rgba16f OutputColor for the blit pass.
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
-}
 
 [shader("raygeneration")]
 void main()
@@ -393,25 +374,7 @@ void main()
         ++bounce;
     }
 
-    // Blend into the accumulation buffer. resetAccumulation == 1 means this is the first sample after a reset.
-    float3     accumulated = pathRadiance;
-    const uint reset       = g_Const.ptConsts.resetAccumulation;
-    const uint frame       = max(g_Const.ptConsts.sampleIndex, 1u);
-    if (reset == 0u)
-    {
-        const float4 previous = u_AccumulationBuffer[pixel];
-        const float  invN     = 1.0 / float(frame);
-        accumulated           = previous.rgb + (pathRadiance - previous.rgb) * invN;
-    }
-    u_AccumulationBuffer[pixel] = float4(accumulated, 1.0);
-
-    // OutputColor temporarily carries tone-mapped color in rgba16f until P3 moves tone mapping.
-    u_Output[pixel] = float4(ToneMapACES(accumulated * g_Const.ptConsts.exposureScale), 1.0);
+    u_Output[pixel] = float4(pathRadiance, 1.0);
 }
-
-// TODO(RTXPT-Port Phase 6/P2): write raw HDR pathRadiance to u_Output and move
-// reference accumulation from raygen into RTXPTAccumulationPass.
-// TODO(RTXPT-Port Phase 6/P3): remove raygen ToneMapACES/exposureScale use after
-// RTXPTToneMappingPass owns ProcessedOutputColor -> LdrColor.
 
 #endif

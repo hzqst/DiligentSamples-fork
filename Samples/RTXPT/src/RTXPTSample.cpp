@@ -793,7 +793,7 @@ bool RTXPTSample::EnsureRenderTargets()
     const bool           WasValid              = m_RenderTargets.IsValid();
     const Uint32         OldWidth              = m_RenderTargets.GetWidth();
     const Uint32         OldHeight             = m_RenderTargets.GetHeight();
-    const bool           WasAccumulationActive = m_RenderTargets.IsAccumulationActive();
+    const bool           WasAccumulationActive = m_AccumulationActive;
 
     const RTXPTRenderTargetFormats Formats;
     const bool                     Ok = m_RenderTargets.Resize(m_pDevice,
@@ -804,7 +804,10 @@ bool RTXPTSample::EnsureRenderTargets()
                                                               m_FeatureCaps.RayTracing);
     const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
 
-    m_AccumulationActive = Ok && m_RenderTargets.IsAccumulationActive();
+    m_AccumulationActive =
+        Ok && ResourcesValid &&
+        m_RenderTargets.IsAccumulationActive() &&
+        m_PostProcessPipeline.GetStats().AccumulationStageReady;
     if (Ok && ResourcesValid &&
         (!WasValid ||
          OldWidth != SCDesc.Width ||
@@ -812,6 +815,15 @@ bool RTXPTSample::EnsureRenderTargets()
          WasAccumulationActive != m_AccumulationActive))
     {
         RequestAccumulationReset("Render targets (re)created");
+        m_AccumulationFrame                              = 1;
+        m_LastFrameConstants.ptConsts.sampleIndex       = 1;
+        m_LastFrameConstants.ptConsts.resetAccumulation = 1u;
+        if (m_FrameConstantsCB)
+        {
+            MapHelper<SampleConstants> Constants{m_pImmediateContext, m_FrameConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
+            *Constants = m_LastFrameConstants;
+            m_ResetAccumulationPending = false;
+        }
     }
     return Ok && ResourcesValid;
 }
@@ -839,13 +851,11 @@ void RTXPTSample::Render()
         return;
     }
 
-    // TODO(RTXPT-Port Phase 6/P1-P5): replace the direct Trace -> optional debug
-    // compute -> blit path with OutputColor -> ProcessedOutputColor -> LdrColor
-    // post-processing, keeping RTXPTBlitPass as the final swapchain copy.
+    // TODO(RTXPT-Port Phase 6/P3-P5): extend the current Trace -> accumulation -> optional
+    // debug compute -> blit path with HDR, tone mapping, and LDR post-processing stages.
     const bool TraceExecuted =
         m_RayTracingPass.Trace(m_pImmediateContext,
                                m_RenderTargets.GetOutputColorUAV(),
-                               m_RenderTargets.GetAccumulatedRadianceUAV(),
                                m_RenderTargets.GetWidth(),
                                m_RenderTargets.GetHeight());
 
@@ -855,12 +865,21 @@ void RTXPTSample::Render()
             ClearFallback(float4{1.0f, 0.0f, 1.0f, 1.0f});
         else if (m_RenderTargets.GetOutputColorUAV() == nullptr)
             ClearFallback(float4{1.0f, 0.45f, 0.0f, 1.0f});
-        else if (m_RenderTargets.GetAccumulatedRadianceUAV() == nullptr)
-            ClearFallback(float4{0.0f, 0.2f, 1.0f, 1.0f});
         else if (m_RenderTargets.GetWidth() == 0 || m_RenderTargets.GetHeight() == 0)
             ClearFallback(float4{1.0f, 1.0f, 1.0f, 1.0f});
         else
             ClearFallback(float4{1.0f, 1.0f, 0.0f, 1.0f});
+        return;
+    }
+
+    const bool AccumulationExecuted =
+        m_PostProcessPipeline.RunAccumulation(m_pImmediateContext,
+                                              m_RenderTargets,
+                                              m_LastFrameConstants.ptConsts.sampleIndex,
+                                              m_LastFrameConstants.ptConsts.resetAccumulation != 0);
+    if (!AccumulationExecuted)
+    {
+        ClearFallback(float4{0.0f, 0.2f, 1.0f, 1.0f});
         return;
     }
 
@@ -872,7 +891,8 @@ void RTXPTSample::Render()
                                     m_RenderTargets.GetWidth(),
                                     m_RenderTargets.GetHeight());
 
-    ITextureView* pDisplaySRV = m_RenderTargets.GetDisplaySRV(ComputeExecuted);
+    ITextureView* pDisplaySRV = ComputeExecuted ? m_RenderTargets.GetComputeColorSRV() :
+                                                  m_RenderTargets.GetProcessedOutputColorSRV();
     if (!m_BlitPass.Render(m_pImmediateContext, m_pSwapChain, pDisplaySRV))
     {
         ClearFallback(float4{0.0f, 1.0f, 1.0f, 1.0f});
@@ -953,7 +973,10 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
                                                               m_FeatureCaps.ComputeShaders,
                                                               m_FeatureCaps.RayTracing);
     const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
-    m_AccumulationActive      = Ok && m_RenderTargets.IsAccumulationActive();
+    m_AccumulationActive =
+        Ok && ResourcesValid &&
+        m_RenderTargets.IsAccumulationActive() &&
+        m_PostProcessPipeline.GetStats().AccumulationStageReady;
     if (Ok && ResourcesValid)
     {
         RequestAccumulationReset("Window resized");
@@ -964,7 +987,13 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
                 m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, Width, Height, m_FeatureCaps.ComputeShaders);
             const bool LightsUpdated = LightsResourcesReady && UpdateLightsBaker(true);
             if (EnvUpdated && LightsUpdated)
+            {
                 CreatePhase4Passes();
+                m_AccumulationActive =
+                    Ok && ResourcesValid &&
+                    m_RenderTargets.IsAccumulationActive() &&
+                    m_PostProcessPipeline.GetStats().AccumulationStageReady;
+            }
             else
             {
                 if (!LightsResourcesReady)

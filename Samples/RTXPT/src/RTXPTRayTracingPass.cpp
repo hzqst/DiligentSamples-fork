@@ -223,10 +223,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
-        .AddVariable(SHADER_TYPE_RAY_GEN, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
-        // TODO(RTXPT-Port Phase 6/P2): remove this raygen accumulation UAV
-        // binding after RTXPTAccumulationPass owns accumulation.
-        .AddVariable(SHADER_TYPE_RAY_GEN, "u_AccumulationBuffer", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
+        .AddVariable(SHADER_TYPE_RAY_GEN, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
 
     if (!ScreenPatternDiagnostic)
     {
@@ -487,29 +484,24 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
 bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext,
                                 ITextureView*   pOutputUAV,
-                                ITextureView*   pAccumulationUAV,
                                 Uint32          Width,
                                 Uint32          Height)
 {
     m_Stats.LastTraceExecuted = false;
-    m_Stats.AccumulationBound = false;
 
     if (!IsReady())
         return false;
-    if (pOutputUAV == nullptr || pAccumulationUAV == nullptr || Width == 0 || Height == 0)
+    if (pOutputUAV == nullptr || Width == 0 || Height == 0)
         return false;
 
     IShaderResourceVariable* pOutputColorVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Output");
-    IShaderResourceVariable* pAccumColorVar  = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_AccumulationBuffer");
-    if (pOutputColorVar == nullptr || pAccumColorVar == nullptr)
+    if (pOutputColorVar == nullptr)
     {
-        UNEXPECTED("Failed to find RTXPT output bindings");
+        UNEXPECTED("Failed to find RTXPT output binding");
         return false;
     }
 
     pOutputColorVar->Set(pOutputUAV);
-    pAccumColorVar->Set(pAccumulationUAV);
-    m_Stats.AccumulationBound = true;
 
     pContext->SetPipelineState(m_PSO);
     pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

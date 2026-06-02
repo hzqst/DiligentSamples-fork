@@ -897,6 +897,13 @@ void RTXPTSample::Render()
         return;
     }
 
+    const float BloomRadius    = std::clamp(m_ReferenceUI.BloomRadius, 0.0f, 64.0f);
+    const float BloomIntensity = std::clamp(m_ReferenceUI.BloomIntensity, 0.0f, 0.1f);
+    const float EdgeThreshold  = std::clamp(m_ReferenceUI.PostProcessEdgeDetectionThreshold, 0.0f, 1.0f);
+    (void)BloomRadius;
+    (void)BloomIntensity;
+    (void)EdgeThreshold;
+
     const bool AccumulationExecuted =
         m_PostProcessPipeline.RunAccumulation(m_pImmediateContext,
                                               m_RenderTargets,
@@ -1134,6 +1141,15 @@ void RTXPTSample::UpdateUI()
         ImGui::TextColored(CategoryColor, "Post processing:");
         ImGui::Indent(Indent);
         {
+            ImGui::Checkbox("PostProcessTestPass", &m_ReferenceUI.PostProcessTestPassHDR);
+
+            if (ImGui::CollapsingHeader("Bloom"))
+            {
+                ImGui::Checkbox("Enable Bloom", &m_ReferenceUI.EnableBloom);
+                ImGui::SliderFloat("Bloom Width (Pixels)", &m_ReferenceUI.BloomRadius, 0.0f, 64.0f);
+                ImGui::SliderFloat("Bloom Intensity", &m_ReferenceUI.BloomIntensity, 0.0f, 0.1f);
+            }
+
             ImGui::Checkbox("Enable tone mapping", &m_ReferenceUI.EnableToneMapping);
 
             RTXPTToneMappingParameters& ToneMapping = m_ReferenceUI.ToneMapping;
@@ -1180,6 +1196,12 @@ void RTXPTSample::UpdateUI()
 
             ImGui::Checkbox("Enable Clamp", &ToneMapping.Clamped);
             SanitizeToneMappingParameters(ToneMapping);
+
+            if (ImGui::CollapsingHeader("Late (LDR) post-process"))
+            {
+                ImGui::Checkbox("EdgeDetection", &m_ReferenceUI.PostProcessEdgeDetection);
+                ImGui::SliderFloat("EdgeDetectionThreshold", &m_ReferenceUI.PostProcessEdgeDetectionThreshold, 0.0f, 1.0f);
+            }
         }
         ImGui::Unindent(Indent); // end Post processing
 

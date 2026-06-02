@@ -73,8 +73,14 @@ struct RTXPTReferenceUIState
     bool  ReferenceFireflyFilterEnabled      = true;   // Phase R1 (G1): adaptive firefly filter.
     float ReferenceFireflyFilterThreshold    = 5.0f;   // Phase R1 (G1).
     int   DiffuseBounceCount                 = 2;      // Phase R5 (G9): separate diffuse-bounce limit.
-    bool                       EnableToneMapping = true; // Phase 6: configurable tone-map pass.
-    RTXPTToneMappingParameters ToneMapping;              // Phase 6/P3: post-process tone-mapping controls.
+    bool                       EnableToneMapping                 = true;  // Phase 6: configurable tone-map pass.
+    RTXPTToneMappingParameters ToneMapping;                      // Phase 6/P3: post-process tone-mapping controls.
+    bool                       PostProcessTestPassHDR            = false; // Phase 6/P4: RTXPT-fork HDR test hook.
+    bool                       PostProcessEdgeDetection          = false; // Phase 6/P4: RTXPT-fork LDR edge detection.
+    float                      PostProcessEdgeDetectionThreshold = 0.1f;
+    bool                       EnableBloom                       = true;
+    float                      BloomRadius                       = 8.0f;
+    float                      BloomIntensity                    = 0.004f;
     int                        NEEType           = 1;    // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
     int   NEECandidateSamples                = 5;      // Phase R3 (G5): RIS candidate count.
     int   NEEFullSamples                     = 1;      // Phase R3 (G5): visibility-tested full samples.

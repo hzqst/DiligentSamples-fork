@@ -26,8 +26,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "BasicMath.hpp"
 #include "Buffer.h"
 #include "DeviceContext.h"
@@ -44,10 +42,9 @@ namespace Diligent
 
 struct RTXPTAccumulationPassStats
 {
-    bool        Ready                = false;
-    bool        LastDispatchExecuted = false;
-    Uint32      DispatchCount        = 0;
-    std::string DisabledReason;
+    bool   Ready                = false;
+    bool   LastDispatchExecuted = false;
+    Uint32 DispatchCount        = 0;
 };
 
 struct RTXPTAccumulationDispatch

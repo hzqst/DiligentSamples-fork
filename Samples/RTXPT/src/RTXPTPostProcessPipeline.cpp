@@ -38,8 +38,7 @@ void RTXPTPostProcessPipeline::Reset()
     m_AccumulationPass.Reset();
     m_ToneMappingPass.Reset();
     m_Device.Release();
-    m_Stats                 = {};
-    m_FeatureDisabledReason = {};
+    m_Stats = {};
 }
 
 bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
@@ -51,39 +50,34 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
 
     if (pDevice == nullptr || pEngineFactory == nullptr || pSwapChain == nullptr)
     {
-        m_Stats.DisabledReason = "post-process pipeline missing device, engine factory, or swap chain";
+        DEV_ERROR("RTXPT post-process pipeline requires a device, engine factory, and swap chain");
         return false;
     }
 
-    m_Stats.Ready = true;
-    m_Device      = pDevice;
     if (!ComputeSupported)
     {
-        m_FeatureDisabledReason = "compute shaders are unavailable; post-process compute stages remain disabled";
-        m_Stats.DisabledReason  = m_FeatureDisabledReason;
+        DEV_ERROR("RTXPT post-process pipeline requires compute shader support");
+        return false;
     }
-    else
+
+    m_Device = pDevice;
+
+    m_Stats.AccumulationStageReady = m_AccumulationPass.Initialize(pDevice, pEngineFactory, ComputeSupported);
+    if (!m_Stats.AccumulationStageReady)
     {
-        m_Stats.AccumulationStageReady = m_AccumulationPass.Initialize(pDevice, pEngineFactory, ComputeSupported);
-        if (!m_Stats.AccumulationStageReady)
-        {
-            m_FeatureDisabledReason = m_AccumulationPass.GetStats().DisabledReason.empty() ?
-                "RTXPT accumulation pass failed to initialize" :
-                m_AccumulationPass.GetStats().DisabledReason;
-            m_Stats.DisabledReason = m_FeatureDisabledReason;
-        }
+        DEV_ERROR("RTXPT accumulation pass failed to initialize");
+        return false;
     }
 
     m_Stats.ToneMappingStageReady =
         m_ToneMappingPass.Initialize(pDevice, pEngineFactory, TEX_FORMAT_RGBA8_UNORM, ComputeSupported);
-    if (!m_Stats.ToneMappingStageReady && m_Stats.DisabledReason.empty())
+    if (!m_Stats.ToneMappingStageReady)
     {
-        m_FeatureDisabledReason = m_ToneMappingPass.GetStats().DisabledReason.empty() ?
-            "RTXPT tone mapping pass failed to initialize" :
-            m_ToneMappingPass.GetStats().DisabledReason;
-        m_Stats.DisabledReason = m_FeatureDisabledReason;
+        DEV_ERROR("RTXPT tone mapping pass failed to initialize");
+        return false;
     }
 
+    m_Stats.Ready = true;
     return true;
 }
 
@@ -103,9 +97,8 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
         RenderTargets.GetLdrColorScratchSRV() != nullptr &&
         RenderTargets.GetLdrColorScratchUAV() != nullptr;
 
-    m_Stats.DisabledReason = m_Stats.ResourcesValid ?
-        m_FeatureDisabledReason :
-        "post-process render targets are incomplete";
+    if (!m_Stats.ResourcesValid)
+        DEV_ERROR("RTXPT post-process render targets are incomplete");
 
     return m_Stats.ResourcesValid;
 }
@@ -145,9 +138,7 @@ bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   
     if (!m_ToneMappingPass.ResizeResources(m_Device, RenderTargets.GetWidth(), RenderTargets.GetHeight(), RenderTargets.GetProcessedOutputColorFormat()))
     {
         m_Stats.ToneMappingStageReady = m_ToneMappingPass.IsReady();
-        m_Stats.DisabledReason        = m_ToneMappingPass.GetStats().DisabledReason.empty() ?
-            "RTXPT tone mapping pass failed to resize resources" :
-            m_ToneMappingPass.GetStats().DisabledReason;
+        DEV_ERROR("RTXPT tone mapping pass failed to resize resources");
         return false;
     }
 
@@ -162,11 +153,7 @@ bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   
     const bool Executed = m_ToneMappingPass.Render(pContext, Attribs);
     m_Stats.ToneMappingStageReady = m_ToneMappingPass.IsReady();
     if (!Executed)
-    {
-        m_Stats.DisabledReason = m_ToneMappingPass.GetStats().DisabledReason.empty() ?
-            "RTXPT tone mapping pass failed to render" :
-            m_ToneMappingPass.GetStats().DisabledReason;
-    }
+        DEV_ERROR("RTXPT tone mapping pass failed to render");
     return Executed;
 }
 

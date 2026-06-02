@@ -42,10 +42,9 @@ namespace Diligent
 
 struct RTXPTComputePassStats
 {
-    bool        Ready                = false;
-    bool        LastDispatchExecuted = false;
-    Uint32      DispatchCount        = 0;
-    std::string DisabledReason;
+    bool   Ready                = false;
+    bool   LastDispatchExecuted = false;
+    Uint32 DispatchCount        = 0;
 };
 
 class RTXPTComputePass

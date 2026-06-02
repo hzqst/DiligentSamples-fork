@@ -26,8 +26,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "DeviceContext.h"
 #include "EngineFactory.h"
 #include "RefCntAutoPtr.hpp"
@@ -42,13 +40,12 @@ namespace Diligent
 
 struct RTXPTPostProcessPipelineStats
 {
-    bool        Ready                  = false;
-    bool        ResourcesValid         = false;
-    bool        AccumulationStageReady = false;
-    bool        HdrStageReady          = false;
-    bool        ToneMappingStageReady  = false;
-    bool        LdrStageReady          = false;
-    std::string DisabledReason;
+    bool Ready                  = false;
+    bool ResourcesValid         = false;
+    bool AccumulationStageReady = false;
+    bool HdrStageReady          = false;
+    bool ToneMappingStageReady  = false;
+    bool LdrStageReady          = false;
 };
 
 class RTXPTPostProcessPipeline
@@ -78,7 +75,6 @@ public:
 
 private:
     RTXPTPostProcessPipelineStats m_Stats;
-    std::string                   m_FeatureDisabledReason;
     RefCntAutoPtr<IRenderDevice>  m_Device;
     RTXPTAccumulationPass         m_AccumulationPass;
     RTXPTToneMappingPass          m_ToneMappingPass;

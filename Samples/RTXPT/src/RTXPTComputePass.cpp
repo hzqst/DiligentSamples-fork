@@ -52,13 +52,19 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
 
     if (!ComputeSupported)
     {
-        m_Stats.DisabledReason = "Compute shaders are not supported by this device";
+        DEV_ERROR(m_Name, " requires compute shader support");
+        return false;
+    }
+
+    if (pDevice == nullptr || pEngineFactory == nullptr)
+    {
+        DEV_ERROR(m_Name, " requires a render device and engine factory");
         return false;
     }
 
     if (pFrameConstants == nullptr)
     {
-        m_Stats.DisabledReason = "Frame constants are unavailable";
+        DEV_ERROR(m_Name, " requires frame constants");
         return false;
     }
 

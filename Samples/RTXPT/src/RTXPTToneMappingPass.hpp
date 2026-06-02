@@ -26,8 +26,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "Buffer.h"
 #include "BufferView.h"
 #include "DeviceContext.h"
@@ -81,12 +79,11 @@ struct RTXPTToneMappingParameters
 
 struct RTXPTToneMappingPassStats
 {
-    bool        Ready              = false;
-    bool        AutoExposureReady  = false;
-    bool        LastRenderExecuted = false;
-    Uint32      RenderCount        = 0;
-    float       LastAvgLuminance   = 1.0f;
-    std::string DisabledReason;
+    bool   Ready              = false;
+    bool   AutoExposureReady  = false;
+    bool   LastRenderExecuted = false;
+    Uint32 RenderCount        = 0;
+    float  LastAvgLuminance   = 1.0f;
 };
 
 struct RTXPTToneMappingRenderAttribs

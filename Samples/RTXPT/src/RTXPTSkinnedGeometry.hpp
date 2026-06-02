@@ -26,7 +26,6 @@
 
 #pragma once
 
-#include <string>
 #include <vector>
 
 #include "Buffer.h"
@@ -72,14 +71,13 @@ struct RTXPTSkinnedSceneAssetBinding
 
 struct RTXPTSkinnedSceneGeometryStats
 {
-    bool        Ready                = false;
-    bool        LastDispatchExecuted = false;
-    Uint32      SkinnedInstanceCount = 0;
-    Uint32      SkinningJobCount     = 0;
-    Uint32      SkinnedVertexCount   = 0;
-    Uint32      JointMatrixCount     = 0;
-    Uint32      DispatchCount        = 0;
-    std::string DisabledReason;
+    bool   Ready                = false;
+    bool   LastDispatchExecuted = false;
+    Uint32 SkinnedInstanceCount = 0;
+    Uint32 SkinningJobCount     = 0;
+    Uint32 SkinnedVertexCount   = 0;
+    Uint32 JointMatrixCount     = 0;
+    Uint32 DispatchCount        = 0;
 };
 
 class RTXPTSkinnedSceneGeometry

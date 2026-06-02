@@ -318,7 +318,7 @@ bool RTXPTSkinnedSceneGeometry::Initialize(IRenderDevice*             pDevice,
 
     if (!ComputeSupported)
     {
-        m_Stats.DisabledReason = "Skinned RTXPT geometry requires compute shaders";
+        DEV_ERROR("RTXPT skinned geometry requires compute shader support");
         return false;
     }
 

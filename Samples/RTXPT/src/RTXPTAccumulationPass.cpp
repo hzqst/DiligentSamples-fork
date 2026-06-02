@@ -65,19 +65,19 @@ bool RTXPTAccumulationPass::Initialize(IRenderDevice* pDevice, IEngineFactory* p
 
     if (!ComputeSupported)
     {
-        m_Stats.DisabledReason = "Compute shaders are not supported by this device";
+        DEV_ERROR("RTXPT accumulation pass requires compute shader support");
         return false;
     }
 
     if (pDevice == nullptr)
     {
-        m_Stats.DisabledReason = "RTXPT accumulation pass requires a render device";
+        DEV_ERROR("RTXPT accumulation pass requires a render device");
         return false;
     }
 
     if (pEngineFactory == nullptr)
     {
-        m_Stats.DisabledReason = "RTXPT accumulation pass requires an engine factory";
+        DEV_ERROR("RTXPT accumulation pass requires an engine factory");
         return false;
     }
 

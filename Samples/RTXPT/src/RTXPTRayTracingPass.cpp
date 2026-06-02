@@ -96,13 +96,13 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
     if (!RayTracingSupported)
     {
-        m_Stats.DisabledReason = "Ray tracing is not supported by this device";
+        DEV_ERROR("RTXPT reference path tracer requires ray tracing support");
         return false;
     }
 
     if (!StandaloneRTShadersSupported)
     {
-        m_Stats.DisabledReason = "Standalone ray tracing shaders are not supported by this device";
+        DEV_ERROR("RTXPT reference path tracer requires standalone ray tracing shader support");
         return false;
     }
 
@@ -113,13 +113,13 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
     if (!ScreenPatternDiagnostic && (pFrameConstants == nullptr || pTLAS == nullptr))
     {
-        m_Stats.DisabledReason = "Frame constants or TLAS are unavailable";
+        DEV_ERROR("RTXPT reference path tracer requires frame constants and TLAS");
         return false;
     }
 
     if (FullPathTracer && (pVertexBuffer == nullptr || pSkinnedVertexBuffer == nullptr || pIndexBuffer == nullptr))
     {
-        m_Stats.DisabledReason = "Vertex, skinned vertex, or index buffer is unavailable for the reference path tracer";
+        DEV_ERROR("RTXPT reference path tracer requires vertex, skinned vertex, and index buffers");
         return false;
     }
 

@@ -56,7 +56,7 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
 
     if (!ComputeSupported)
     {
-        m_Stats.DisabledReason = "Compute shaders are not supported by this device";
+        DEV_ERROR("RTXPT emissive triangle pass requires compute shader support");
         return false;
     }
 
@@ -64,13 +64,13 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
         pSubInstanceTransformBuffer == nullptr || pVertexBuffer == nullptr || pSkinnedVertexBuffer == nullptr ||
         pIndexBuffer == nullptr || pEmissiveTriangleBuffer == nullptr)
     {
-        m_Stats.DisabledReason = "RTXPT emissive triangle pass requires all scene buffers";
+        DEV_ERROR("RTXPT emissive triangle pass requires all scene buffers");
         return false;
     }
 
     if (IndexValueType != VT_UINT16 && IndexValueType != VT_UINT32)
     {
-        m_Stats.DisabledReason = "RTXPT emissive triangle pass requires VT_UINT16 or VT_UINT32 indices";
+        DEV_ERROR("RTXPT emissive triangle pass requires VT_UINT16 or VT_UINT32 indices");
         return false;
     }
 

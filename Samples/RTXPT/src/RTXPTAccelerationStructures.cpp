@@ -133,7 +133,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
 
     if (!RayTracingSupported)
     {
-        m_Stats.DisabledReason = "Ray tracing is not supported by this device";
+        DEV_ERROR("RTXPT acceleration structure build requires ray tracing support");
         return false;
     }
 

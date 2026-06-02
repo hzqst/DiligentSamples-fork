@@ -26,8 +26,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "Buffer.h"
 #include "BufferView.h"
 #include "DeviceContext.h"
@@ -46,22 +44,21 @@ namespace Diligent
 
 struct RTXPTRayTracingPassStats
 {
-    bool        Ready                    = false;
-    bool        LastTraceExecuted        = false;
-    bool        MaterialBridgeBound      = false;
-    bool        SubInstanceBound         = false;
-    bool        LightBridgeBound         = false;
-    bool        LightsBakerBridgeBound   = false;
-    bool        EnvironmentBridgeBound   = false;
-    bool        EmissiveLightBridgeBound = false;
-    bool        VertexBufferBound        = false;
-    bool        SkinnedVertexBufferBound = false;
-    bool        IndexBufferBound         = false;
-    bool        MaterialTexturesBound    = false;
-    bool        AnyHitEnabled            = false;
-    Uint32      MaterialTextureCount     = 0;
-    Uint32      TraceCount               = 0;
-    std::string DisabledReason;
+    bool   Ready                    = false;
+    bool   LastTraceExecuted        = false;
+    bool   MaterialBridgeBound      = false;
+    bool   SubInstanceBound         = false;
+    bool   LightBridgeBound         = false;
+    bool   LightsBakerBridgeBound   = false;
+    bool   EnvironmentBridgeBound   = false;
+    bool   EmissiveLightBridgeBound = false;
+    bool   VertexBufferBound        = false;
+    bool   SkinnedVertexBufferBound = false;
+    bool   IndexBufferBound         = false;
+    bool   MaterialTexturesBound    = false;
+    bool   AnyHitEnabled            = false;
+    Uint32 MaterialTextureCount     = 0;
+    Uint32 TraceCount               = 0;
 };
 
 class RTXPTRayTracingPass

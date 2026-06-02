@@ -351,7 +351,13 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
 
     if (pDevice == nullptr || pEngineFactory == nullptr)
     {
-        m_Stats.DisabledReason = "RTXPT tone mapping pass requires a render device and engine factory";
+        DEV_ERROR("RTXPT tone mapping pass requires a render device and engine factory");
+        return false;
+    }
+
+    if (!ComputeSupported)
+    {
+        DEV_ERROR("RTXPT tone mapping pass requires compute shader support");
         return false;
     }
 
@@ -359,12 +365,12 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
 
     if (!CreateSamplers(pDevice))
     {
-        m_Stats.DisabledReason = "RTXPT tone mapping pass failed to create samplers";
+        DEV_ERROR("RTXPT tone mapping pass failed to create samplers");
         return false;
     }
     if (!CreateFallbackLuminanceTexture(pDevice, m_FallbackLuminanceTexture, m_FallbackLuminanceSRV))
     {
-        m_Stats.DisabledReason = "RTXPT tone mapping pass failed to create fallback luminance";
+        DEV_ERROR("RTXPT tone mapping pass failed to create fallback luminance");
         return false;
     }
 
@@ -384,7 +390,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
         CreateShader(pDevice, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT tone mapping PS", "PostProcessing/ToneMapper/ToneMapping.hlsl", "main_ps", pToneMapPS);
     if (!GraphicsShadersReady)
     {
-        m_Stats.DisabledReason = "RTXPT tone mapping pass failed to create shaders";
+        DEV_ERROR("RTXPT tone mapping pass failed to create shaders");
         return false;
     }
     if (m_ComputeSupported)
@@ -394,7 +400,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
             CreateShader(pDevice, ShaderCI, SHADER_TYPE_COMPUTE, "RTXPT luminance capture CS", "PostProcessing/ToneMapper/ToneMapping.hlsl", "capture_cs", pCaptureCS);
         if (!AutoExposureShadersReady)
         {
-            m_Stats.DisabledReason = "RTXPT tone mapping pass failed to create auto-exposure shaders";
+            DEV_ERROR("RTXPT tone mapping pass failed to create auto-exposure shaders");
             return false;
         }
     }
@@ -408,7 +414,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
     pDevice->CreateBuffer(ConstantsDesc, nullptr, &m_ToneMappingCB);
     if (!m_ToneMappingCB)
     {
-        m_Stats.DisabledReason = "RTXPT tone mapping pass failed to create constants";
+        DEV_ERROR("RTXPT tone mapping pass failed to create constants");
         return false;
     }
 
@@ -436,7 +442,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
     pDevice->CreateGraphicsPipelineState(ToneMapPSOCreateInfo, &m_ToneMapPSO);
     if (!m_ToneMapPSO)
     {
-        m_Stats.DisabledReason = "RTXPT tone mapping pass failed to create tone-map PSO";
+        DEV_ERROR("RTXPT tone mapping pass failed to create tone-map PSO");
         return false;
     }
 
@@ -457,7 +463,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
         pDevice->CreateComputePipelineState(CapturePSOCreateInfo, &m_CapturePSO);
         if (!m_CapturePSO)
         {
-            m_Stats.DisabledReason = "RTXPT tone mapping pass failed to create capture PSO";
+            DEV_ERROR("RTXPT tone mapping pass failed to create capture PSO");
             return false;
         }
     }
@@ -468,7 +474,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
         SetStaticVariable(m_ToneMapPSO, SHADER_TYPE_PIXEL, "s_LuminanceSampler", m_LinearSampler, false);
     if (!StaticBound)
     {
-        m_Stats.DisabledReason = "RTXPT tone mapping pass failed to bind static resources";
+        DEV_ERROR("RTXPT tone mapping pass failed to bind static resources");
         return false;
     }
 
@@ -477,16 +483,12 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
         m_CapturePSO->CreateShaderResourceBinding(&m_CaptureSRB, true);
     if (!m_ToneMapSRB || (m_ComputeSupported && !m_CaptureSRB))
     {
-        m_Stats.DisabledReason = "RTXPT tone mapping pass failed to create SRBs";
+        DEV_ERROR("RTXPT tone mapping pass failed to create SRBs");
         return false;
     }
 
     m_Stats.Ready             = true;
     m_Stats.AutoExposureReady = false;
-    if (m_ComputeSupported)
-        m_Stats.DisabledReason.clear();
-    else
-        m_Stats.DisabledReason = "RTXPT tone mapping auto exposure requires compute shader support";
     return true;
 }
 
@@ -570,8 +572,8 @@ bool RTXPTToneMappingPass::ResizeResources(IRenderDevice* pDevice, Uint32 Width,
     if (!m_ComputeSupported)
     {
         m_Stats.AutoExposureReady = false;
-        m_Stats.DisabledReason    = "RTXPT tone mapping auto exposure requires compute shader support";
-        return true;
+        DEV_ERROR("RTXPT tone mapping pass requires compute shader support");
+        return false;
     }
 
     const TEXTURE_FORMAT LuminanceFormat = SourceFormat == TEX_FORMAT_RGBA32_FLOAT ? TEX_FORMAT_R32_FLOAT : TEX_FORMAT_R16_FLOAT;
@@ -587,10 +589,7 @@ bool RTXPTToneMappingPass::ResizeResources(IRenderDevice* pDevice, Uint32 Width,
         m_AvgLuminanceReadback[0] &&
         m_AvgLuminanceReadback[1] &&
         m_AvgLuminanceReadback[2])
-    {
-        m_Stats.DisabledReason.clear();
         return true;
-    }
 
     if (!m_LuminancePSO || !m_LuminanceSRB || m_LuminanceFormat != LuminanceFormat)
     {
@@ -619,27 +618,26 @@ bool RTXPTToneMappingPass::ResizeResources(IRenderDevice* pDevice, Uint32 Width,
             !SetStaticVariable(m_LuminancePSO, SHADER_TYPE_PIXEL, "s_ColorSampler", m_LinearSampler, true))
         {
             m_Stats.AutoExposureReady = false;
-            m_Stats.DisabledReason    = "RTXPT tone mapping pass failed to create luminance PSO";
-            return true;
+            DEV_ERROR("RTXPT tone mapping pass failed to create luminance PSO");
+            return false;
         }
 
         m_LuminancePSO->CreateShaderResourceBinding(&m_LuminanceSRB, true);
         if (!m_LuminanceSRB)
         {
             m_Stats.AutoExposureReady = false;
-            m_Stats.DisabledReason    = "RTXPT tone mapping pass failed to create luminance SRB";
-            return true;
+            DEV_ERROR("RTXPT tone mapping pass failed to create luminance SRB");
+            return false;
         }
     }
 
     if (!CreateLuminanceResources(pDevice, Width, Height, SourceFormat))
     {
         m_Stats.AutoExposureReady = false;
-        m_Stats.DisabledReason    = "RTXPT tone mapping pass failed to create luminance resources";
-        return true;
+        DEV_ERROR("RTXPT tone mapping pass failed to create luminance resources");
+        return false;
     }
 
-    m_Stats.DisabledReason.clear();
     return true;
 }
 

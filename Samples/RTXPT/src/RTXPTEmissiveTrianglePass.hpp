@@ -26,8 +26,6 @@
 
 #pragma once
 
-#include <string>
-
 #include "Buffer.h"
 #include "BufferView.h"
 #include "DeviceContext.h"
@@ -43,10 +41,9 @@ namespace Diligent
 
 struct RTXPTEmissiveTrianglePassStats
 {
-    bool        Ready                = false;
-    bool        LastDispatchExecuted = false;
-    Uint32      DispatchCount        = 0;
-    std::string DisabledReason;
+    bool   Ready                = false;
+    bool   LastDispatchExecuted = false;
+    Uint32 DispatchCount        = 0;
 };
 
 class RTXPTEmissiveTrianglePass

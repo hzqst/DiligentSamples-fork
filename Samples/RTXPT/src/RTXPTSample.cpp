@@ -1463,8 +1463,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Sub-instances: %u", ASStats.SubInstanceCount);
         ImGui::Text("Alpha-tested geometries: %u", ASStats.AlphaTestedGeometryCount);
         ImGui::Text("Alpha-blended geometries: %u", ASStats.AlphaBlendedGeometryCount);
-        if (!ASStats.DisabledReason.empty())
-            ImGui::TextWrapped("AS disabled: %s", ASStats.DisabledReason.c_str());
         ImGui::Separator();
         ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
         ImGui::Text("Frame index: %u", m_FrameIndex);
@@ -1490,13 +1488,9 @@ void RTXPTSample::UpdateUI()
         m_EnvMapBaker.DebugGUI(Indent);
         ImGui::Text("Emissive triangle pass: %s", m_EmissiveTrianglePass.IsReady() ? "ready" : "not ready");
         ImGui::Text("Emissive triangle dispatch count: %u", m_EmissiveTrianglePass.GetStats().DispatchCount);
-        if (!m_EmissiveTrianglePass.GetStats().DisabledReason.empty())
-            ImGui::TextWrapped("Emissive triangle pass disabled: %s", m_EmissiveTrianglePass.GetStats().DisabledReason.c_str());
         ImGui::Text("Vertex buffer: %s", RTPassStats.VertexBufferBound ? "bound" : "fallback");
         ImGui::Text("Skinned vertex buffer: %s", RTPassStats.SkinnedVertexBufferBound ? "bound" : "fallback");
         ImGui::Text("Skinning pass: %s", m_SkinnedGeometry.IsReady() ? "ready" : "not ready");
-        if (!m_SkinnedGeometry.GetStats().DisabledReason.empty())
-            ImGui::TextWrapped("Skinning disabled: %s", m_SkinnedGeometry.GetStats().DisabledReason.c_str());
         ImGui::Text("Index buffer: %s", RTPassStats.IndexBufferBound ? "bound" : "fallback");
         ImGui::Text("Material textures loaded: %u", m_Materials.GetStats().TextureCount);
         ImGui::Text("Material textures bound: %s (%u)", RTPassStats.MaterialTexturesBound ? "yes" : "no", RTPassStats.MaterialTextureCount);
@@ -1504,20 +1498,14 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("AccumulatedRadiance: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA32F unavailable)");
         ImGui::Text("Post-process targets: %s", m_RenderTargets.HasPostProcessTargets() ? "allocated" : "missing");
         ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");
-        if (!m_PostProcessPipeline.GetStats().DisabledReason.empty())
-            ImGui::TextWrapped("Post-process disabled: %s", m_PostProcessPipeline.GetStats().DisabledReason.c_str());
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
-        if (!RTPassStats.DisabledReason.empty())
-            ImGui::TextWrapped("TraceRays disabled: %s", RTPassStats.DisabledReason.c_str());
         ImGui::Separator();
         ImGui::Checkbox("Debug compute pass", &m_EnableDebugComputePass);
         ImGui::Text("Compute dispatch: %s", m_DebugComputePass.IsReady() ? "ready" : "not ready");
         ImGui::Text("Compute executed: %s", ComputeStats.LastDispatchExecuted ? "yes" : "no");
         ImGui::Text("Compute dispatch count: %u", ComputeStats.DispatchCount);
-        if (!ComputeStats.DisabledReason.empty())
-            ImGui::TextWrapped("Compute disabled: %s", ComputeStats.DisabledReason.c_str());
         ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
 
         ImGui::Unindent(Indent);

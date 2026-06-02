@@ -70,7 +70,6 @@ struct RTXPTAccelerationStructureStats
     Uint32      AlphaBlendedGeometryCount = 0;
     Uint64      BLASScratchSize           = 0;
     Uint64      TLASScratchSize           = 0;
-    std::string DisabledReason;
 };
 
 class RTXPTAccelerationStructures

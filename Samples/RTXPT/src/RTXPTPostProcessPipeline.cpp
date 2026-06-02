@@ -36,6 +36,8 @@ namespace Diligent
 void RTXPTPostProcessPipeline::Reset()
 {
     m_AccumulationPass.Reset();
+    m_ToneMappingPass.Reset();
+    m_Device.Release();
     m_Stats                 = {};
     m_FeatureDisabledReason = {};
 }
@@ -54,6 +56,7 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     }
 
     m_Stats.Ready = true;
+    m_Device      = pDevice;
     if (!ComputeSupported)
     {
         m_FeatureDisabledReason = "compute shaders are unavailable; post-process compute stages remain disabled";
@@ -71,6 +74,16 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
         }
     }
 
+    m_Stats.ToneMappingStageReady =
+        m_ToneMappingPass.Initialize(pDevice, pEngineFactory, TEX_FORMAT_RGBA8_UNORM, ComputeSupported);
+    if (!m_Stats.ToneMappingStageReady && m_Stats.DisabledReason.empty())
+    {
+        m_FeatureDisabledReason = m_ToneMappingPass.GetStats().DisabledReason.empty() ?
+            "RTXPT tone mapping pass failed to initialize" :
+            m_ToneMappingPass.GetStats().DisabledReason;
+        m_Stats.DisabledReason = m_FeatureDisabledReason;
+    }
+
     return true;
 }
 
@@ -83,8 +96,10 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
         RenderTargets.GetAccumulatedRadianceUAV() != nullptr &&
         RenderTargets.GetProcessedOutputColorSRV() != nullptr &&
         RenderTargets.GetProcessedOutputColorUAV() != nullptr &&
+        RenderTargets.GetProcessedOutputColorRTV() != nullptr &&
         RenderTargets.GetLdrColorSRV() != nullptr &&
         RenderTargets.GetLdrColorUAV() != nullptr &&
+        RenderTargets.GetLdrColorRTV() != nullptr &&
         RenderTargets.GetLdrColorScratchSRV() != nullptr &&
         RenderTargets.GetLdrColorScratchUAV() != nullptr;
 
@@ -119,6 +134,39 @@ bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*            pConte
 
     const bool Executed = m_AccumulationPass.Render(pContext, Dispatch);
     m_Stats.AccumulationStageReady = m_AccumulationPass.IsReady();
+    return Executed;
+}
+
+bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                    pContext,
+                                              const RTXPTRenderTargets&         RenderTargets,
+                                              const RTXPTToneMappingParameters& Params,
+                                              bool                              Enabled)
+{
+    if (!m_ToneMappingPass.ResizeResources(m_Device, RenderTargets.GetWidth(), RenderTargets.GetHeight(), RenderTargets.GetProcessedOutputColorFormat()))
+    {
+        m_Stats.ToneMappingStageReady = m_ToneMappingPass.IsReady();
+        m_Stats.DisabledReason        = m_ToneMappingPass.GetStats().DisabledReason.empty() ?
+            "RTXPT tone mapping pass failed to resize resources" :
+            m_ToneMappingPass.GetStats().DisabledReason;
+        return false;
+    }
+
+    RTXPTToneMappingRenderAttribs Attribs;
+    Attribs.pSourceSRV = RenderTargets.GetProcessedOutputColorSRV();
+    Attribs.pLdrRTV    = RenderTargets.GetLdrColorRTV();
+    Attribs.Width      = RenderTargets.GetWidth();
+    Attribs.Height     = RenderTargets.GetHeight();
+    Attribs.Enabled    = Enabled;
+    Attribs.pParams    = &Params;
+
+    const bool Executed = m_ToneMappingPass.Render(pContext, Attribs);
+    m_Stats.ToneMappingStageReady = m_ToneMappingPass.IsReady();
+    if (!Executed)
+    {
+        m_Stats.DisabledReason = m_ToneMappingPass.GetStats().DisabledReason.empty() ?
+            "RTXPT tone mapping pass failed to render" :
+            m_ToneMappingPass.GetStats().DisabledReason;
+    }
     return Executed;
 }
 

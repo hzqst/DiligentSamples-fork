@@ -44,6 +44,7 @@
 #include "RTXPTMaterials.hpp"
 #include "RTXPTRayTracingPass.hpp"
 #include "RTXPTRenderTargets.hpp"
+#include "RTXPTToneMappingPass.hpp"
 #include "RTXPTPostProcessPipeline.hpp"
 #include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
@@ -64,8 +65,7 @@ struct RTXPTFeatureCaps
 };
 
 // Reference-mode UI state, mirroring the reference subset of RTXPT-fork's SampleUIData
-// (D:/RTXPT-fork/Rtxpt/SampleUI.h). Phase 6/P3 moves tone-mapping exposure
-// from raygen-side exposureScale into the dedicated tone-mapping pass state.
+// (D:/RTXPT-fork/Rtxpt/SampleUI.h).
 struct RTXPTReferenceUIState
 {
     bool  AccumulationAA                     = true;   // Jitter AA: always on in our port (no toggle yet).
@@ -73,13 +73,9 @@ struct RTXPTReferenceUIState
     bool  ReferenceFireflyFilterEnabled      = true;   // Phase R1 (G1): adaptive firefly filter.
     float ReferenceFireflyFilterThreshold    = 5.0f;   // Phase R1 (G1).
     int   DiffuseBounceCount                 = 2;      // Phase R5 (G9): separate diffuse-bounce limit.
-    bool  EnableToneMapping                  = true;   // Phase 6: configurable tone-map pass (ACES is always applied now).
-    bool  ToneMappingAutoExposure            = false;  // Phase 6: scene camera exposure metadata.
-    float ToneMappingExposureCompensation    = 0.0f;   // Phase 6.
-    float ToneMappingExposureValue           = 0.0f;   // Phase 6.
-    float ToneMappingExposureValueMin        = -16.0f; // Phase 6.
-    float ToneMappingExposureValueMax        = 16.0f;  // Phase 6.
-    int   NEEType                            = 1;      // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
+    bool                       EnableToneMapping = true; // Phase 6: configurable tone-map pass.
+    RTXPTToneMappingParameters ToneMapping;              // Phase 6/P3: post-process tone-mapping controls.
+    int                        NEEType           = 1;    // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
     int   NEECandidateSamples                = 5;      // Phase R3 (G5): RIS candidate count.
     int   NEEFullSamples                     = 1;      // Phase R3 (G5): visibility-tested full samples.
     int   NEEMISType                         = 0;      // Phase R3 (G5): 0=Full, 1=ApproxInRealtime, 2=Approximate (deferred).

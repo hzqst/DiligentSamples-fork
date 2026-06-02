@@ -220,6 +220,11 @@ ITextureView* RTXPTRenderTargets::GetProcessedOutputColorSRV() const
     return m_ProcessedOutputColor ? m_ProcessedOutputColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
 }
 
+ITextureView* RTXPTRenderTargets::GetProcessedOutputColorRTV() const
+{
+    return m_ProcessedOutputColor ? m_ProcessedOutputColor->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET) : nullptr;
+}
+
 ITextureView* RTXPTRenderTargets::GetLdrColorUAV() const
 {
     return m_LdrColor ? m_LdrColor->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
@@ -228,6 +233,11 @@ ITextureView* RTXPTRenderTargets::GetLdrColorUAV() const
 ITextureView* RTXPTRenderTargets::GetLdrColorSRV() const
 {
     return m_LdrColor ? m_LdrColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetLdrColorRTV() const
+{
+    return m_LdrColor ? m_LdrColor->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET) : nullptr;
 }
 
 ITextureView* RTXPTRenderTargets::GetLdrColorScratchUAV() const
@@ -255,7 +265,7 @@ ITextureView* RTXPTRenderTargets::GetDisplaySRV(bool UseComputeOutput) const
     if (UseComputeOutput && m_ComputeColor)
         return GetComputeColorSRV();
 
-    return GetOutputColorSRV();
+    return GetLdrColorSRV();
 }
 
 } // namespace Diligent

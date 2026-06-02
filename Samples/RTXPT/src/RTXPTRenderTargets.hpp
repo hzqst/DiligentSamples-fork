@@ -64,8 +64,10 @@ public:
     ITextureView* GetAccumulatedRadianceSRV() const;
     ITextureView* GetProcessedOutputColorUAV() const;
     ITextureView* GetProcessedOutputColorSRV() const;
+    ITextureView* GetProcessedOutputColorRTV() const;
     ITextureView* GetLdrColorUAV() const;
     ITextureView* GetLdrColorSRV() const;
+    ITextureView* GetLdrColorRTV() const;
     ITextureView* GetLdrColorScratchUAV() const;
     ITextureView* GetLdrColorScratchSRV() const;
     ITextureView* GetComputeColorUAV() const;

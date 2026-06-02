@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 
 namespace Diligent
 {
@@ -46,15 +47,18 @@ constexpr float       kDefaultCameraNearPlane                 = 1.0f;
 constexpr float       kDefaultCameraFarPlane                  = 10000.0f;
 constexpr float       kMinClipPlaneSeparation                 = 1e-3f;
 constexpr int         kMaxBounceSliderValue                   = 48;
-constexpr bool        kDefaultToneMappingAutoExposure         = false;
-constexpr float       kDefaultToneMappingExposureCompensation = 0.0f;
-constexpr float       kDefaultToneMappingExposureValue        = 0.0f;
-constexpr float       kDefaultToneMappingExposureValueMin     = -16.0f;
-constexpr float       kDefaultToneMappingExposureValueMax     = 16.0f;
 constexpr const char* kPreferredSceneName                     = "bistro-programmer-art.scene.json";
 constexpr const char* kSceneFileSuffix                        = ".scene.json";
 constexpr Uint32      kMaxPackedEmissiveTriangleCount         = 0x7fffffffu;
 constexpr bool        kReferencePathTraceMode                 = true;
+const float           kPhysicalEVMin                          = std::log2(0.1f * 0.1f * 0.1f);
+const float           kPhysicalEVMax                          = std::log2(100000.0f * 100.0f * 100.0f);
+constexpr int         kToneMapOperatorMin                     = static_cast<int>(RTXPTToneMapperOperator::Linear);
+constexpr int         kToneMapOperatorMax                     = static_cast<int>(RTXPTToneMapperOperator::Aces);
+constexpr int         kExposureModeMin                        = static_cast<int>(RTXPTExposureMode::AperturePriority);
+constexpr int         kExposureModeMax                        = static_cast<int>(RTXPTExposureMode::ShutterPriority);
+static_assert(kToneMapOperatorMin == 0 && kToneMapOperatorMax == 5, "Tone-map UI assumes contiguous operator values");
+static_assert(kExposureModeMin == 0 && kExposureModeMax == 1, "Tone-map UI assumes contiguous exposure mode values");
 
 Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 EmissiveTriangleCount)
 {
@@ -230,19 +234,40 @@ void SanitizeCameraClipPlanes(float& NearPlane, float& FarPlane)
         FarPlane = NearPlane + kMinClipPlaneSeparation;
 }
 
-void ResetToneMappingSettings(RTXPTReferenceUIState& UI)
+float ClampFinite(float Value, float Fallback, float MinValue, float MaxValue)
 {
-    UI.ToneMappingAutoExposure         = kDefaultToneMappingAutoExposure;
-    UI.ToneMappingExposureCompensation = kDefaultToneMappingExposureCompensation;
-    UI.ToneMappingExposureValue        = kDefaultToneMappingExposureValue;
-    UI.ToneMappingExposureValueMin     = kDefaultToneMappingExposureValueMin;
-    UI.ToneMappingExposureValueMax     = kDefaultToneMappingExposureValueMax;
+    if (!std::isfinite(Value))
+        Value = Fallback;
+    return std::clamp(Value, MinValue, MaxValue);
 }
 
-float ComputeToneMappingExposureScale(const RTXPTReferenceUIState& UI)
+void SanitizeToneMappingParameters(RTXPTToneMappingParameters& Params)
 {
-    const float ExposureValue = UI.ToneMappingAutoExposure ? 0.0f : UI.ToneMappingExposureValue;
-    return std::pow(2.0f, UI.ToneMappingExposureCompensation - ExposureValue);
+    Params.ToneMapOperator = static_cast<RTXPTToneMapperOperator>(
+        std::clamp(static_cast<int>(Params.ToneMapOperator), kToneMapOperatorMin, kToneMapOperatorMax));
+    Params.ExposureMode = static_cast<RTXPTExposureMode>(
+        std::clamp(static_cast<int>(Params.ExposureMode), kExposureModeMin, kExposureModeMax));
+
+    Params.ExposureCompensation = ClampFinite(Params.ExposureCompensation, 0.0f, -12.0f, 12.0f);
+    Params.ExposureValue        = ClampFinite(Params.ExposureValue, 0.0f, kPhysicalEVMin, kPhysicalEVMax);
+    Params.FilmSpeed            = ClampFinite(Params.FilmSpeed, 100.0f, 1.0f, 6400.0f);
+    Params.FNumber              = ClampFinite(Params.FNumber, 1.0f, 0.1f, 100.0f);
+    Params.Shutter              = ClampFinite(Params.Shutter, 1.0f, 0.1f, 10000.0f);
+    Params.WhitePoint           = ClampFinite(Params.WhitePoint, 6500.0f, 1905.0f, 25000.0f);
+    Params.WhiteMaxLuminance    = ClampFinite(Params.WhiteMaxLuminance, 1.0f, 0.1f, std::numeric_limits<float>::max());
+    Params.WhiteScale           = ClampFinite(Params.WhiteScale, 5.1f, 0.0f, 100.0f);
+    Params.ExposureValueMin     = ClampFinite(Params.ExposureValueMin, -16.0f, kPhysicalEVMin, kPhysicalEVMax);
+    Params.ExposureValueMax     = ClampFinite(Params.ExposureValueMax, 16.0f, kPhysicalEVMin, kPhysicalEVMax);
+    if (Params.ExposureValueMin > Params.ExposureValueMax)
+        std::swap(Params.ExposureValueMin, Params.ExposureValueMax);
+}
+
+void ResetToneMappingSettings(RTXPTReferenceUIState& UI)
+{
+    UI.EnableToneMapping              = true;
+    UI.ToneMapping                    = {};
+    UI.ToneMapping.ToneMapOperator    = RTXPTToneMapperOperator::HableUc2;
+    SanitizeToneMappingParameters(UI.ToneMapping);
 }
 
 } // namespace
@@ -514,11 +539,12 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
         m_CameraFarPlane  = pCamera->FarPlane;
     }
 
-    m_ReferenceUI.ToneMappingAutoExposure         = pCamera->EnableAutoExposure.value_or(kDefaultToneMappingAutoExposure);
-    m_ReferenceUI.ToneMappingExposureCompensation = pCamera->ExposureCompensation.value_or(kDefaultToneMappingExposureCompensation);
-    m_ReferenceUI.ToneMappingExposureValue        = pCamera->ExposureValue.value_or(kDefaultToneMappingExposureValue);
-    m_ReferenceUI.ToneMappingExposureValueMin     = pCamera->ExposureValueMin.value_or(kDefaultToneMappingExposureValueMin);
-    m_ReferenceUI.ToneMappingExposureValueMax     = pCamera->ExposureValueMax.value_or(kDefaultToneMappingExposureValueMax);
+    m_ReferenceUI.ToneMapping.AutoExposure         = pCamera->EnableAutoExposure.value_or(false);
+    m_ReferenceUI.ToneMapping.ExposureCompensation = pCamera->ExposureCompensation.value_or(0.0f);
+    m_ReferenceUI.ToneMapping.ExposureValue        = pCamera->ExposureValue.value_or(0.0f);
+    m_ReferenceUI.ToneMapping.ExposureValueMin     = pCamera->ExposureValueMin.value_or(-16.0f);
+    m_ReferenceUI.ToneMapping.ExposureValueMax     = pCamera->ExposureValueMax.value_or(16.0f);
+    SanitizeToneMappingParameters(m_ReferenceUI.ToneMapping);
 
     // Align scene-camera basis with original RTXPT (Donut): Donut flips local Z for scene cameras
     // and builds the image-plane U vector as cross(CameraW, camUp). Using a left-handed
@@ -625,8 +651,7 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     // converged image is identical to the filter-on image (only per-sample variance differs).
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
         m_ReferenceUI.ReferenceFireflyFilterEnabled ? m_ReferenceUI.ReferenceFireflyFilterThreshold : 0.0f;
-    m_LastFrameConstants.ptConsts.exposureScale = ComputeToneMappingExposureScale(m_ReferenceUI);
-    m_LastFrameConstants.envMap                 = m_EnvMapBaker.GetConstants();
+    m_LastFrameConstants.envMap = m_EnvMapBaker.GetConstants();
 
     if (m_FrameConstantsCB)
     {
@@ -883,6 +908,17 @@ void RTXPTSample::Render()
         return;
     }
 
+    const bool ToneMappingExecuted =
+        m_PostProcessPipeline.RunToneMapping(m_pImmediateContext,
+                                             m_RenderTargets,
+                                             m_ReferenceUI.ToneMapping,
+                                             m_ReferenceUI.EnableToneMapping);
+    if (!ToneMappingExecuted)
+    {
+        ClearFallback(float4{0.0f, 0.8f, 0.3f, 1.0f});
+        return;
+    }
+
     const bool ComputeExecuted =
         m_EnableDebugComputePass &&
         m_DebugComputePass.Dispatch(m_pImmediateContext,
@@ -892,7 +928,7 @@ void RTXPTSample::Render()
                                     m_RenderTargets.GetHeight());
 
     ITextureView* pDisplaySRV = ComputeExecuted ? m_RenderTargets.GetComputeColorSRV() :
-                                                  m_RenderTargets.GetProcessedOutputColorSRV();
+                                                  m_RenderTargets.GetLdrColorSRV();
     if (!m_BlitPass.Render(m_pImmediateContext, m_pSwapChain, pDisplaySRV))
     {
         ClearFallback(float4{0.0f, 1.0f, 1.0f, 1.0f});
@@ -1098,12 +1134,52 @@ void RTXPTSample::UpdateUI()
         ImGui::TextColored(CategoryColor, "Post processing:");
         ImGui::Indent(Indent);
         {
-            // TODO(RTXPT-Port Phase 6/P3): make this live when RTXPTToneMappingPass
-            // owns ProcessedOutputColor -> LdrColor.
-            ImGui::BeginDisabled(true);
             ImGui::Checkbox("Enable tone mapping", &m_ReferenceUI.EnableToneMapping);
-            ImGui::EndDisabled();
-            PlaceholderTooltip("Tone mapping is still raygen-side ACES; Phase 6/P3 moves it into the post-process chain.");
+
+            RTXPTToneMappingParameters& ToneMapping = m_ReferenceUI.ToneMapping;
+
+            const char* ToneMapOperatorItems = "Linear\0Reinhard\0Reinhard Modified\0Heji Hable ALU\0Hable UC2\0Aces\0\0";
+            int         ToneMapOperator      = std::clamp(static_cast<int>(ToneMapping.ToneMapOperator), kToneMapOperatorMin, kToneMapOperatorMax);
+            if (ImGui::Combo("Operator", &ToneMapOperator, ToneMapOperatorItems))
+                ToneMapping.ToneMapOperator = static_cast<RTXPTToneMapperOperator>(std::clamp(ToneMapOperator, kToneMapOperatorMin, kToneMapOperatorMax));
+            else
+                ToneMapping.ToneMapOperator = static_cast<RTXPTToneMapperOperator>(ToneMapOperator);
+
+            ImGui::Checkbox("Auto Exposure", &ToneMapping.AutoExposure);
+
+            if (ToneMapping.AutoExposure)
+            {
+                ImGui::InputFloat("Auto Exposure Min", &ToneMapping.ExposureValueMin);
+                ImGui::InputFloat("Auto Exposure Max", &ToneMapping.ExposureValueMax);
+            }
+
+            const char* ExposureModeItems = "Aperture Priority\0Shutter Priority\0\0";
+            int         ExposureMode      = std::clamp(static_cast<int>(ToneMapping.ExposureMode), kExposureModeMin, kExposureModeMax);
+            if (ImGui::Combo("Exposure Mode", &ExposureMode, ExposureModeItems))
+                ToneMapping.ExposureMode = static_cast<RTXPTExposureMode>(std::clamp(ExposureMode, kExposureModeMin, kExposureModeMax));
+            else
+                ToneMapping.ExposureMode = static_cast<RTXPTExposureMode>(ExposureMode);
+
+            ImGui::InputFloat("Exposure Compensation", &ToneMapping.ExposureCompensation);
+
+            ImGui::InputFloat("Exposure Value", &ToneMapping.ExposureValue);
+
+            ImGui::InputFloat("Film Speed", &ToneMapping.FilmSpeed);
+
+            ImGui::InputFloat("fNumber", &ToneMapping.FNumber);
+
+            ImGui::InputFloat("Shutter", &ToneMapping.Shutter);
+
+            ImGui::Checkbox("Enable White Balance", &ToneMapping.WhiteBalance);
+
+            ImGui::InputFloat("White Point", &ToneMapping.WhitePoint);
+
+            ImGui::InputFloat("White Max Luminance", &ToneMapping.WhiteMaxLuminance);
+
+            ImGui::InputFloat("White Scale", &ToneMapping.WhiteScale);
+
+            ImGui::Checkbox("Enable Clamp", &ToneMapping.Clamped);
+            SanitizeToneMappingParameters(ToneMapping);
         }
         ImGui::Unindent(Indent); // end Post processing
 

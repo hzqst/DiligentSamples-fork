@@ -30,9 +30,11 @@
 
 #include "DeviceContext.h"
 #include "EngineFactory.h"
+#include "RefCntAutoPtr.hpp"
 #include "RenderDevice.h"
 #include "RTXPTAccumulationPass.hpp"
 #include "RTXPTRenderTargets.hpp"
+#include "RTXPTToneMappingPass.hpp"
 #include "SwapChain.h"
 
 namespace Diligent
@@ -66,13 +68,20 @@ public:
                          Uint32                    SampleIndex,
                          bool                      ResetAccumulation);
 
+    bool RunToneMapping(IDeviceContext*                    pContext,
+                        const RTXPTRenderTargets&         RenderTargets,
+                        const RTXPTToneMappingParameters& Params,
+                        bool                              Enabled);
+
     bool                                  IsReady() const { return m_Stats.Ready; }
     const RTXPTPostProcessPipelineStats& GetStats() const { return m_Stats; }
 
 private:
     RTXPTPostProcessPipelineStats m_Stats;
     std::string                   m_FeatureDisabledReason;
+    RefCntAutoPtr<IRenderDevice>  m_Device;
     RTXPTAccumulationPass         m_AccumulationPass;
+    RTXPTToneMappingPass          m_ToneMappingPass;
 };
 
 } // namespace Diligent

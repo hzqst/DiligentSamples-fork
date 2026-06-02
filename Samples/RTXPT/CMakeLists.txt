@@ -21,6 +21,7 @@ set(SOURCE
     src/RTXPTEmissiveTrianglePass.cpp
     src/RTXPTComputePass.cpp
     src/RTXPTAccumulationPass.cpp
+    src/RTXPTToneMappingPass.cpp
     src/RTXPTBlitPass.cpp
 )
 
@@ -46,6 +47,7 @@ set(INCLUDE
     src/RTXPTComputePass.hpp
     src/RTXPTAccumulationPass.hpp
     src/RTXPTBlitPass.hpp
+    src/RTXPTToneMappingPass.hpp
     RTXPT_FORK_MAPPING.md
 )
 
@@ -80,6 +82,10 @@ set(SHADERS
     assets/shaders/PathTracer/PathTracerAnyHit.rahit
     assets/shaders/PathTracer/SkinnedVertexBuild.csh
     assets/shaders/PostProcessing/RTXPTAccumulation.csh
+    assets/shaders/PostProcessing/ToneMapper/ToneMappingShared.h
+    assets/shaders/PostProcessing/ToneMapper/ToneMapping.hlsl
+    assets/shaders/PostProcessing/ToneMapper/ToneMapping.ps.hlsli
+    assets/shaders/PostProcessing/ToneMapper/Luminance.psh
     assets/shaders/RTXPTDebugCompute.csh
     assets/shaders/RTXPTBlit.vsh
     assets/shaders/RTXPTBlit.psh

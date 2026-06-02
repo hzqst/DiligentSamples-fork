@@ -1,0 +1,48 @@
+#pragma pack_matrix(row_major)
+
+#include "RTXPTBloomShared.h"
+
+cbuffer g_BloomConstants
+{
+    RTXPTBloomConstants g_Bloom;
+};
+
+SamplerState      s_LinearSampler;
+Texture2D<float4> t_Source;
+
+struct PSInput
+{
+    float4 Pos : SV_POSITION;
+    float2 UV  : TEX_COORD;
+};
+
+struct PSOutput
+{
+    float4 Color : SV_TARGET;
+};
+
+float Square(float X)
+{
+    return X * X;
+}
+
+void main(in PSInput Input,
+          out PSOutput Output)
+{
+    float3 Result = t_Source.Load(int3(Input.Pos.xy, 0)).rgb;
+
+    for (float X = 1.0; X < g_Bloom.NumSamples; X += 2.0)
+    {
+        const float W1  = exp(Square(X) * g_Bloom.ArgumentScale);
+        const float W2  = exp(Square(X + 1.0) * g_Bloom.ArgumentScale);
+        const float W12 = W1 + W2;
+        const float P   = W2 / W12;
+        const float2 Offset = g_Bloom.PixStep * (X + P);
+
+        Result += t_Source.SampleLevel(s_LinearSampler, Input.UV + Offset, 0.0).rgb * W12;
+        Result += t_Source.SampleLevel(s_LinearSampler, Input.UV - Offset, 0.0).rgb * W12;
+    }
+
+    Result *= g_Bloom.NormalizationScale;
+    Output.Color = float4(Result, 1.0);
+}

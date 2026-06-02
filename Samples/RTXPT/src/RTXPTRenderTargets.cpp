@@ -240,6 +240,11 @@ ITextureView* RTXPTRenderTargets::GetLdrColorRTV() const
     return m_LdrColor ? m_LdrColor->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET) : nullptr;
 }
 
+ITexture* RTXPTRenderTargets::GetLdrColorTexture() const
+{
+    return m_LdrColor;
+}
+
 ITextureView* RTXPTRenderTargets::GetLdrColorScratchUAV() const
 {
     return m_LdrColorScratch ? m_LdrColorScratch->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
@@ -248,6 +253,11 @@ ITextureView* RTXPTRenderTargets::GetLdrColorScratchUAV() const
 ITextureView* RTXPTRenderTargets::GetLdrColorScratchSRV() const
 {
     return m_LdrColorScratch ? m_LdrColorScratch->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITexture* RTXPTRenderTargets::GetLdrColorScratchTexture() const
+{
+    return m_LdrColorScratch;
 }
 
 ITextureView* RTXPTRenderTargets::GetComputeColorUAV() const

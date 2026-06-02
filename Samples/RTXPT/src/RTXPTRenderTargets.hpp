@@ -68,8 +68,10 @@ public:
     ITextureView* GetLdrColorUAV() const;
     ITextureView* GetLdrColorSRV() const;
     ITextureView* GetLdrColorRTV() const;
+    ITexture*     GetLdrColorTexture() const;
     ITextureView* GetLdrColorScratchUAV() const;
     ITextureView* GetLdrColorScratchSRV() const;
+    ITexture*     GetLdrColorScratchTexture() const;
     ITextureView* GetComputeColorUAV() const;
     ITextureView* GetComputeColorSRV() const;
     ITextureView* GetDisplaySRV(bool UseComputeOutput) const;

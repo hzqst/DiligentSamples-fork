@@ -55,7 +55,7 @@ void main(inout DiagnosticPayload Payload,
 #include "Rendering/Materials/MaterialBridge.hlsli"
 
 [shader("closesthit")]
-void main(inout PathPayload Payload,
+void main(inout RTXPTMaterialHitPayload Payload,
           in BuiltInTriangleIntersectionAttributes Attributes)
 {
     Payload.hitFlag     = 1u;

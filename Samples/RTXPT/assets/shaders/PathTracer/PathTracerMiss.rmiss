@@ -38,7 +38,7 @@ void main(inout DiagnosticPayload Payload)
 #include "Lighting/EnvMap.hlsli"
 
 [shader("miss")]
-void main(inout PathPayload Payload)
+void main(inout RTXPTMaterialHitPayload Payload)
 {
     Payload.worldPos    = float3(0.0, 0.0, 0.0);
     Payload.hitDistance = -1.0;

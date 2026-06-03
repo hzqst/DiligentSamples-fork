@@ -173,7 +173,7 @@ struct PrimaryPayload
 
 // Reference path tracer payload. Size is 160 bytes (40 floats); keep RTXPTRayTracingPass::Initialize
 // MaxPayloadSize in sync when this changes.
-struct PathPayload
+struct RTXPTMaterialHitPayload
 {
     float3 worldPos;
     float  hitDistance;

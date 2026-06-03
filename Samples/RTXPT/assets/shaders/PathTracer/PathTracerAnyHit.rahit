@@ -5,7 +5,7 @@
 
 // Alpha-test / alpha-blend any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE.
 // Opaque geometry never reaches this shader.
-[shader("anyhit")] void main(inout PathPayload                        Payload,
+[shader("anyhit")] void main(inout RTXPTMaterialHitPayload            Payload,
                              in BuiltInTriangleIntersectionAttributes Attributes) {
     if (!Bridge::hasSubInstanceTable() || !Bridge::hasMaterialTable())
         return; // No material data - accept the hit.

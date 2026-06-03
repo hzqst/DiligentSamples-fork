@@ -230,7 +230,7 @@ void main()
         ray.TMin      = bounce == 0u ? cameraRay.tMin : 0.0;
         ray.TMax      = bounce == 0u ? cameraRay.tMax : 10000.0;
 
-        PathPayload payload = PathTracer::MakeEmptyPayload(0u);
+        RTXPTMaterialHitPayload payload = PathTracer::MakeEmptyPayload(0u);
 
         // RAY_FLAG_NONE lets alpha-test and alpha-blend any-hit run for non-opaque geometry.
         // Opaque geometry still skips any-hit via its BLAS RAYTRACING_GEOMETRY_FLAG_OPAQUE flag.

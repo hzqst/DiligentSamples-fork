@@ -13,9 +13,9 @@ static const float kVisibilityRayTMax = 1e30;
 
 namespace PathTracer
 {
-    PathPayload MakeEmptyPayload(uint hitFlag)
+    RTXPTMaterialHitPayload MakeEmptyPayload(uint hitFlag)
     {
-        PathPayload payload;
+        RTXPTMaterialHitPayload payload;
         payload.worldPos    = float3(0.0, 0.0, 0.0);
         payload.hitDistance = -1.0;
         payload.worldNormal = float3(0.0, 1.0, 0.0);
@@ -55,7 +55,7 @@ namespace PathTracer
         ray.TMax      = tMax;
 
         // Initial HitFlag = blocked. A true miss runs the miss shader, which clears HitFlag to visible.
-        PathPayload payload = MakeEmptyPayload(1u);
+        RTXPTMaterialHitPayload payload = MakeEmptyPayload(1u);
         TraceRay(t_SceneBVH,
                  RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
                  0xFF,

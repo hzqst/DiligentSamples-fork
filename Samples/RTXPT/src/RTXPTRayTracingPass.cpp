@@ -501,9 +501,9 @@ bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext,
         Width == 0 || Height == 0)
         return false;
 
-    IShaderResourceVariable* pOutputColorVar          = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Output");
-    IShaderResourceVariable* pDepthVar                = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Depth");
-    IShaderResourceVariable* pScreenMotionVectorsVar  = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_ScreenMotionVectors");
+    IShaderResourceVariable* pOutputColorVar         = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Output");
+    IShaderResourceVariable* pDepthVar               = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Depth");
+    IShaderResourceVariable* pScreenMotionVectorsVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_ScreenMotionVectors");
     if (pOutputColorVar == nullptr || pDepthVar == nullptr || pScreenMotionVectorsVar == nullptr)
     {
         UNEXPECTED("Failed to find RTXPT output guide bindings");

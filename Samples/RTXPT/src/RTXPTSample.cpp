@@ -75,7 +75,7 @@ PathTracerCameraData MakePathTracerCameraData(const FirstPersonCamera& Camera,
                                               float                    ApertureRadius,
                                               const float2&            Jitter)
 {
-    const auto&  Proj             = Camera.GetProjAttribs();
+    const auto&  Proj              = Camera.GetProjAttribs();
     const Uint32 SafeDisplayWidth  = std::max(DisplayWidth, Uint32{1});
     const Uint32 SafeDisplayHeight = std::max(DisplayHeight, Uint32{1});
     const float  SafeRenderHeight  = static_cast<float>(std::max(RenderHeight, Uint32{1}));
@@ -604,22 +604,18 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 
 void RTXPTSample::UpdateRenderTargetDimensions(float TimeDeltaSeconds)
 {
-    const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
-    const RTXPTRenderTargetFormats Formats;
+    const SwapChainDesc&               SCDesc = m_pSwapChain->GetDesc();
+    const RTXPTRenderTargetFormats     Formats;
+    const RTXPTSuperResolutionSettings DisabledSuperResolution;
 
     m_CurrentSuperResolutionFrame =
-        m_PostProcessPipeline.ResolveSuperResolutionFrameDesc(m_ReferenceUI.SuperResolution,
+        m_PostProcessPipeline.ResolveSuperResolutionFrameDesc(DisabledSuperResolution,
                                                               SCDesc.Width,
                                                               SCDesc.Height,
                                                               Formats.ProcessedOutputColor,
-                                                              m_ResetSuperResolutionHistory || m_ResetAccumulationPending,
+                                                              false,
                                                               TimeDeltaSeconds);
     m_CurrentTargetDimensions = m_CurrentSuperResolutionFrame.Dimensions;
-}
-
-float2 RTXPTSample::GetCurrentSuperResolutionJitter() const
-{
-    return m_CurrentSuperResolutionFrame.Enabled ? m_CurrentSuperResolutionFrame.Jitter : float2{0.0f, 0.0f};
 }
 
 void RTXPTSample::UpdateFrameConstants(double CurrTime)
@@ -641,13 +637,13 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     m_LastFrameConstants.cameraPositionAndTime     = float4{CameraPosition.x, CameraPosition.y, CameraPosition.z, static_cast<float>(CurrTime)};
     m_LastFrameConstants.viewportSizeAndFrameIndex = float4{Width, Height, Width > 0.0f ? 1.0f / Width : 0.0f, static_cast<float>(m_FrameIndex)};
     m_LastFrameConstants.camera                    = MakePathTracerCameraData(m_Camera,
-                                                                              RenderWidth,
-                                                                              RenderHeight,
-                                                                              DisplayWidth,
-                                                                              DisplayHeight,
-                                                                              m_ReferenceUI.CameraFocalDistance,
-                                                                              m_ReferenceUI.CameraAperture,
-                                                                              GetCurrentSuperResolutionJitter());
+                                                           RenderWidth,
+                                                           RenderHeight,
+                                                           DisplayWidth,
+                                                           DisplayHeight,
+                                                           m_ReferenceUI.CameraFocalDistance,
+                                                           m_ReferenceUI.CameraAperture,
+                                                           float2{0.0f, 0.0f});
 
     if (m_AccumulationActive)
     {
@@ -682,7 +678,7 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
         static_cast<Uint32>(std::clamp(m_ReferenceUI.DiffuseBounceCount, 0, 16));
     m_LastFrameConstants.ptConsts.nestedDielectricsQuality =
         static_cast<Uint32>(std::clamp(m_ReferenceUI.NestedDielectricsQuality, 0, 2));
-    m_LastFrameConstants.ptConsts.superResolutionActive = m_CurrentSuperResolutionFrame.Enabled ? 1u : 0u;
+    m_LastFrameConstants.ptConsts.superResolutionActive = 0u;
     // G1: a disabled firefly filter uploads a zero threshold, so the soft cap is a no-op and the
     // converged image is identical to the filter-on image (only per-sample variance differs).
     m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
@@ -850,10 +846,10 @@ bool RTXPTSample::EnsureRenderTargets()
     const RTXPTRenderTargetFormats Formats;
     constexpr bool                 CreateComputeOutput = false;
     const bool                     Ok                  = m_RenderTargets.Resize(m_pDevice,
-                                                                                 m_CurrentTargetDimensions,
-                                                                                 Formats,
-                                                                                 CreateComputeOutput,
-                                                                                 m_FeatureCaps.RayTracing);
+                                           m_CurrentTargetDimensions,
+                                           Formats,
+                                           CreateComputeOutput,
+                                           m_FeatureCaps.RayTracing);
     const bool                     ResourcesValid      = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
 
     m_AccumulationActive =
@@ -866,7 +862,6 @@ bool RTXPTSample::EnsureRenderTargets()
          WasAccumulationActive != m_AccumulationActive))
     {
         RequestAccumulationReset("Render targets (re)created");
-        m_CurrentSuperResolutionFrame.ResetHistory      = true;
         m_AccumulationFrame                             = 1;
         m_LastFrameConstants.ptConsts.sampleIndex       = 1;
         m_LastFrameConstants.ptConsts.resetAccumulation = 1u;
@@ -941,24 +936,6 @@ void RTXPTSample::Render()
         ClearFallback(float4{0.0f, 0.2f, 1.0f, 1.0f});
         return;
     }
-
-    RTXPTSuperResolutionFrameDesc CurrentSRFrame = m_CurrentSuperResolutionFrame;
-    CurrentSRFrame.ResetHistory                  = CurrentSRFrame.ResetHistory || m_ResetSuperResolutionHistory || m_ResetAccumulationPending;
-
-    const bool SuperResolutionExecuted =
-        m_PostProcessPipeline.RunSuperResolution(m_pImmediateContext,
-                                                 m_RenderTargets,
-                                                 CurrentSRFrame,
-                                                 m_CameraNearPlane,
-                                                 m_CameraFarPlane,
-                                                 m_CameraVerticalFov);
-    if (!SuperResolutionExecuted)
-    {
-        ClearFallback(float4{0.0f, 0.2f, 1.0f, 1.0f});
-        return;
-    }
-    if (CurrentSRFrame.Enabled && SuperResolutionExecuted)
-        m_ResetSuperResolutionHistory = false;
 
     RTXPTBloomParameters BloomParams;
     BloomParams.Enabled   = m_ReferenceUI.EnableBloom;
@@ -1059,17 +1036,16 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
         return;
 
     UpdateCameraProjection(Width, Height);
-    m_ResetSuperResolutionHistory = true;
     UpdateRenderTargetDimensions(m_LastElapsedTimeSeconds);
     m_HasLastCameraMatrices = false;
 
     const RTXPTRenderTargetFormats Formats;
     constexpr bool                 CreateComputeOutput = false;
     const bool                     Ok                  = m_RenderTargets.Resize(m_pDevice,
-                                                                                 m_CurrentTargetDimensions,
-                                                                                 Formats,
-                                                                                 CreateComputeOutput,
-                                                                                 m_FeatureCaps.RayTracing);
+                                           m_CurrentTargetDimensions,
+                                           Formats,
+                                           CreateComputeOutput,
+                                           m_FeatureCaps.RayTracing);
     const bool                     ResourcesValid      = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
     m_AccumulationActive =
         Ok && ResourcesValid &&
@@ -1083,10 +1059,10 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
             const bool EnvUpdated = UpdateEnvMapBaker(false);
             const bool LightsResourcesReady =
                 m_LightsBaker.CreateResources(m_pDevice,
-                                               m_pEngineFactory,
-                                               m_CurrentTargetDimensions.DisplayWidth,
-                                               m_CurrentTargetDimensions.DisplayHeight,
-                                               m_FeatureCaps.ComputeShaders);
+                                              m_pEngineFactory,
+                                              m_CurrentTargetDimensions.DisplayWidth,
+                                              m_CurrentTargetDimensions.DisplayHeight,
+                                              m_FeatureCaps.ComputeShaders);
             const bool LightsUpdated = LightsResourcesReady && UpdateLightsBaker(true);
             if (EnvUpdated && LightsUpdated)
             {
@@ -1159,12 +1135,6 @@ void RTXPTSample::UpdateUI()
             ImGui::SameLine();
             ImGui::Text("Accumulated samples: %u", m_AccumulationFrame);
 
-            // Jitter AA: always on in our port; shown checked + disabled.
-            ImGui::BeginDisabled(true);
-            ImGui::Checkbox("Jitter anti-aliasing", &m_ReferenceUI.AccumulationAA);
-            ImGui::EndDisabled();
-            PlaceholderTooltip("Per-sample pixel jitter is always enabled in the reference path tracer.");
-
             int MaxBouncesUI = static_cast<int>(m_MaxBounces);
             if (ResetOnChange(ImGui::SliderInt("Max bounces", &MaxBouncesUI, 1, kMaxBounceSliderValue), "Max bounces changed"))
                 m_MaxBounces = static_cast<Uint32>(MaxBouncesUI);
@@ -1205,62 +1175,6 @@ void RTXPTSample::UpdateUI()
                 ImGui::Checkbox("Enable Bloom", &m_ReferenceUI.EnableBloom);
                 ImGui::SliderFloat("Bloom Width (Pixels)", &m_ReferenceUI.BloomRadius, 0.0f, 64.0f);
                 ImGui::SliderFloat("Bloom Intensity", &m_ReferenceUI.BloomIntensity, 0.0f, 0.1f);
-            }
-
-            const auto& SRPass     = m_PostProcessPipeline.GetSuperResolutionPass();
-            const auto& SRVariants = SRPass.GetVariants();
-            if (!SRVariants.empty())
-            {
-                RTXPTSuperResolutionSettings& SRSettings = m_ReferenceUI.SuperResolution;
-                ResetOnChange(ImGui::Checkbox("Enable Super Resolution", &SRSettings.Enabled),
-                              "Super resolution toggled");
-
-                const Int32 LastVariantIdx = static_cast<Int32>(SRVariants.size() - 1);
-                Int32       ActiveIdx      = std::clamp(SRSettings.ActiveVariantIdx, Int32{0}, LastVariantIdx);
-                SRSettings.ActiveVariantIdx = ActiveIdx;
-
-                auto GetSRModeName = [](const SuperResolutionInfo& Info) {
-                    if (Info.Name[0] != '\0')
-                        return Info.Name;
-                    return Info.Type == SUPER_RESOLUTION_TYPE_TEMPORAL ? "Temporal" : "Spatial";
-                };
-
-                if (ImGui::BeginCombo("Super Resolution Mode", GetSRModeName(SRVariants[static_cast<size_t>(ActiveIdx)])))
-                {
-                    for (Int32 VariantIdx = 0; VariantIdx <= LastVariantIdx; ++VariantIdx)
-                    {
-                        const bool Selected = VariantIdx == ActiveIdx;
-                        if (ImGui::Selectable(GetSRModeName(SRVariants[static_cast<size_t>(VariantIdx)]), Selected) && !Selected)
-                        {
-                            ActiveIdx                    = VariantIdx;
-                            SRSettings.ActiveVariantIdx = ActiveIdx;
-                            RequestAccumulationReset("Super resolution mode changed");
-                        }
-                        if (Selected)
-                            ImGui::SetItemDefaultFocus();
-                    }
-                    ImGui::EndCombo();
-                }
-
-                const char* SRQualityItems =
-                    "Maximum Quality\0High Quality\0Balanced\0High Performance\0Maximum Performance\0\0";
-                constexpr int SRQualityMin = static_cast<int>(SUPER_RESOLUTION_OPTIMIZATION_TYPE_MAX_QUALITY);
-                constexpr int SRQualityMax = static_cast<int>(SUPER_RESOLUTION_OPTIMIZATION_TYPE_COUNT) - 1;
-                int           SRQuality    = std::clamp(static_cast<int>(SRSettings.OptimizationType), SRQualityMin, SRQualityMax);
-                if (ResetOnChange(ImGui::Combo("Super Resolution Quality", &SRQuality, SRQualityItems),
-                                  "Super resolution quality changed"))
-                    SRSettings.OptimizationType = static_cast<SUPER_RESOLUTION_OPTIMIZATION_TYPE>(std::clamp(SRQuality, SRQualityMin, SRQualityMax));
-                else
-                    SRSettings.OptimizationType = static_cast<SUPER_RESOLUTION_OPTIMIZATION_TYPE>(SRQuality);
-
-                if (SRPass.SupportsSharpness(SRVariants[static_cast<size_t>(ActiveIdx)]))
-                {
-                    if (ResetOnChange(ImGui::SliderFloat("Super Resolution Sharpness", &SRSettings.Sharpness, 0.0f, 1.0f),
-                                      "Super resolution sharpness changed"))
-                        SRSettings.Sharpness = std::clamp(SRSettings.Sharpness, 0.0f, 1.0f);
-                    else
-                        SRSettings.Sharpness = std::clamp(SRSettings.Sharpness, 0.0f, 1.0f);
-                }
             }
 
             ImGui::Checkbox("Enable tone mapping", &m_ReferenceUI.EnableToneMapping);
@@ -1628,12 +1542,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");
         const auto& PostStats = m_PostProcessPipeline.GetStats();
         ImGui::Text("Bloom stage: %s", PostStats.BloomStageReady ? "ready" : "not ready");
-        const auto& SRStats = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
-        ImGui::Text("Super resolution: %s", SRStats.LastFrameTemporal ? "temporal" : "direct");
-        ImGui::Text("SR input: %u x %u", SRStats.RenderWidth, SRStats.RenderHeight);
-        ImGui::Text("SR output: %u x %u", SRStats.DisplayWidth, SRStats.DisplayHeight);
-        if (!SRStats.DisabledReason.empty())
-            ImGui::Text("SR disabled: %s", SRStats.DisabledReason.c_str());
+        ImGui::Text("Super resolution: disabled in reference mode");
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
@@ -1649,9 +1558,8 @@ void RTXPTSample::UpdateUI()
 
 void RTXPTSample::RequestAccumulationReset(const char* /*Reason*/)
 {
-    m_AccumulationFrame             = 0;
-    m_ResetAccumulationPending      = true;
-    m_ResetSuperResolutionHistory   = true;
+    m_AccumulationFrame        = 0;
+    m_ResetAccumulationPending = true;
     m_LightsBaker.RequestFeedbackReset();
 }
 

@@ -12,6 +12,8 @@
 #if RTXPT_SCREEN_PATTERN_DIAGNOSTIC
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
+VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
+VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
 
 [shader("raygeneration")]
 void main()
@@ -26,7 +28,9 @@ void main()
     const float3 patternB   = float3(1.0 - uv.x, uv.y, 0.85);
     const float3 debugColor = lerp(patternA, patternB, checker);
 
-    u_Output[pixel] = float4(debugColor, 1.0);
+    u_Output[pixel]              = float4(debugColor, 1.0);
+    u_Depth[pixel]               = 1.0;
+    u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
 }
 
 #elif RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
@@ -36,6 +40,8 @@ RaytracingAccelerationStructure                t_SceneBVH;
 #include "RTXPTCommon.fxh"
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
+VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
+VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
 
 struct DiagnosticPayload
 {
@@ -117,7 +123,9 @@ void main()
 
     if (invalidRay)
     {
-        u_Output[pixel] = float4(diagnosticColor, 1.0);
+        u_Output[pixel]              = float4(diagnosticColor, 1.0);
+        u_Depth[pixel]               = 1.0;
+        u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
         return;
     }
 
@@ -144,7 +152,9 @@ void main()
              ray,
              payload);
 
-    u_Output[pixel] = float4(payload.color, 1.0);
+    u_Output[pixel]              = float4(payload.color, 1.0);
+    u_Depth[pixel]               = payload.hit != 0u ? ray.TMax : 1.0;
+    u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
 }
 
 #else
@@ -159,6 +169,8 @@ RaytracingAccelerationStructure                t_SceneBVH;
 #include "PathTracer.hlsli"
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
+VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
+VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
 static const float kSpecularRoughnessThreshold = 0.25;
 
 [shader("raygeneration")]
@@ -173,8 +185,9 @@ void main()
 
     // Jitter inside the pixel - free anti-aliasing across accumulated samples (vertex 0 / Base effect).
     SampleGenerator sgCamera = SampleGenerator_makeStateless(pixel, 0u, sampleIndex, kSampleEffect_Base);
-    const float2    jitter          = sampleNext2D(sgCamera);
-    const float2    subPixelOffset  = jitter - 0.5.xx;
+    const float2    randomJitter    = sampleNext2D(sgCamera) - 0.5.xx;
+    const float2    srJitter        = g_Const.camera.Jitter;
+    const float2    subPixelOffset  = g_Const.ptConsts.superResolutionActive != 0u ? srJitter : randomJitter;
     const float2    cameraDoFSample = sampleNext2D(sgCamera);
     CameraRay       cameraRay       = ComputeRayThinlens(g_Const.camera, pixel, subPixelOffset, cameraDoFSample);
 
@@ -201,6 +214,7 @@ void main()
     uint bounce                   = 0u;
     uint rejectedDielectricHits   = 0u;
     InteriorList interiorList     = InteriorList::make();
+    float        primaryDepth     = g_Const.camera.FarZ;
 
     [loop]
     while (bounce < maxBounces || terminateAtNextEndpoint)
@@ -225,6 +239,9 @@ void main()
                  0,
                  ray,
                  payload);
+
+        if (bounce == 0u)
+            primaryDepth = payload.hitFlag != 0u ? payload.hitDistance : g_Const.camera.FarZ;
 
         if (payload.hitFlag == 0u)
         {
@@ -374,7 +391,9 @@ void main()
         ++bounce;
     }
 
-    u_Output[pixel] = float4(pathRadiance, 1.0);
+    u_Output[pixel]              = float4(pathRadiance, 1.0);
+    u_Depth[pixel]               = primaryDepth;
+    u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
 }
 
 #endif

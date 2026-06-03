@@ -78,7 +78,7 @@ struct PathTracerConstants
     float  _paddingP3_0             = 0.0f;
     Uint32 diffuseBounceCount       = 2; // R5/G9: max diffuse bounces and BSDF LD sampling window.
     Uint32 nestedDielectricsQuality = 1; // Nested dielectrics quality: 0=Off, 1=Fast, 2=Quality.
-    Uint32 _paddingR6_0             = 0;
+    Uint32 superResolutionActive    = 0; // P6: non-zero means camera.Jitter comes from ISuperResolution.
     Uint32 _paddingR6_1             = 0;
 };
 static_assert(sizeof(PathTracerConstants) == 80, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");

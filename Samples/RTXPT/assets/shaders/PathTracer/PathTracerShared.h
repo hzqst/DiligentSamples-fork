@@ -53,7 +53,7 @@ struct PathTracerConstants
     float _paddingP3_0;
     uint  diffuseBounceCount;       // R5/G9: max diffuse bounces and BSDF LD sampling window.
     uint  nestedDielectricsQuality; // R6/G10: 0=Off, 1=Fast, 2=Quality.
-    uint  _paddingR6_0;
+    uint  superResolutionActive;    // P6: non-zero means camera.Jitter comes from ISuperResolution.
     uint  _paddingR6_1;
 };
 

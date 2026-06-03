@@ -223,7 +223,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
-        .AddVariable(SHADER_TYPE_RAY_GEN, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
+        .AddVariable(SHADER_TYPE_RAY_GEN, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "u_Depth", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_RAY_GEN, "u_ScreenMotionVectors", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
 
     if (!ScreenPatternDiagnostic)
     {
@@ -484,6 +486,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
 bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext,
                                 ITextureView*   pOutputUAV,
+                                ITextureView*   pDepthUAV,
+                                ITextureView*   pScreenMotionVectorsUAV,
                                 Uint32          Width,
                                 Uint32          Height)
 {
@@ -491,17 +495,24 @@ bool RTXPTRayTracingPass::Trace(IDeviceContext* pContext,
 
     if (!IsReady())
         return false;
-    if (pOutputUAV == nullptr || Width == 0 || Height == 0)
+    if (pOutputUAV == nullptr ||
+        pDepthUAV == nullptr ||
+        pScreenMotionVectorsUAV == nullptr ||
+        Width == 0 || Height == 0)
         return false;
 
-    IShaderResourceVariable* pOutputColorVar = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Output");
-    if (pOutputColorVar == nullptr)
+    IShaderResourceVariable* pOutputColorVar          = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Output");
+    IShaderResourceVariable* pDepthVar                = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_Depth");
+    IShaderResourceVariable* pScreenMotionVectorsVar  = m_SRB->GetVariableByName(SHADER_TYPE_RAY_GEN, "u_ScreenMotionVectors");
+    if (pOutputColorVar == nullptr || pDepthVar == nullptr || pScreenMotionVectorsVar == nullptr)
     {
-        UNEXPECTED("Failed to find RTXPT output binding");
+        UNEXPECTED("Failed to find RTXPT output guide bindings");
         return false;
     }
 
     pOutputColorVar->Set(pOutputUAV);
+    pDepthVar->Set(pDepthUAV);
+    pScreenMotionVectorsVar->Set(pScreenMotionVectorsUAV);
 
     pContext->SetPipelineState(m_PSO);
     pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

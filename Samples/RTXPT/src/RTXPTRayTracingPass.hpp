@@ -100,6 +100,8 @@ public:
 
     bool Trace(IDeviceContext* pContext,
                ITextureView*   pOutputUAV,
+               ITextureView*   pDepthUAV,
+               ITextureView*   pScreenMotionVectorsUAV,
                Uint32          Width,
                Uint32          Height);
 

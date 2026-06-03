@@ -1175,10 +1175,6 @@ bool RTXPTSample::PathTrace()
         m_LastRealtimePathTraceExecuted = true;
         RecordRealtimePathTraceStatus("Realtime PathTrace dispatched; RTXDI/ReSTIR and DenoisingGuides hooks disabled");
     }
-    else
-    {
-        RecordRealtimePathTraceStatus("Reference PathTrace dispatched");
-    }
 
     return true;
 }
@@ -1306,8 +1302,21 @@ bool RTXPTSample::RunRealtimePathTraceOnly()
 
 void RTXPTSample::Render()
 {
+    if (m_RealtimeUI.RealtimeMode)
+    {
+        m_LastRealtimePathTraceExecuted = false;
+        m_LastRealtimeFinalMergeReady   = false;
+        RecordRealtimePathTraceStatus("");
+    }
+
     if (!EnsureRenderTargets())
     {
+        if (m_RealtimeUI.RealtimeMode)
+        {
+            const char* LastFailureReason = m_RenderTargets.GetLastFailureReason();
+            RecordRealtimePathTraceStatus(
+                LastFailureReason[0] != '\0' ? LastFailureReason : "Realtime render target setup failed");
+        }
         ClearFallback(float4{1.0f, 0.0f, 0.0f, 1.0f});
         return;
     }

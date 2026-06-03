@@ -31,7 +31,7 @@ Full alignment means:
    `m_`/`g_`/`t_`/`u_`/`s_`/`k`/`c_` prefixes, camelCase locals and
    parameters, HLSL `namespace` plus inline helpers, and traditional include
    guards. Examples: our bespoke `RTXPTPathTracerSettings`, our flat
-   `RTXPTPathTracerPayload`, and our hybrid `RTXPTSurface`.
+   `RTXPTMaterialHitPayload`, and our hybrid `RTXPTSurface`.
 3. Never rename a symbol to an RTXPT-fork name whose semantics differ. Example:
    our `RTXPTVisibilitySmithGGX` returns `G/(4*NoV*NoL)` as combined
    visibility, while RTXPT-fork's `evalMaskingSmithGGXCorrelated` returns the
@@ -237,7 +237,7 @@ Raygen locals become camelCase:
 | `RTXPTSubInstanceData` | `SubInstanceData` = RTXPT-fork | `Shaders/SubInstanceData.h` |
 | `RTXPTPathTracerSettings` | `PathTracerConstants` = RTXPT-fork (name) | `PathTracerShared.h` (fields differ - divergent) |
 | `RTXPTFrameConstants` | `SampleConstants` (style) | RTXPT-fork `SampleConstantBuffer.h` |
-| `RTXPTPathTracerPayload` | `RTXPTMaterialHitPayload` | Diligent material-hit ray payload, separate from realtime packed `PathPayload.hlsli` |
+| `RTXPTMaterialHitPayload` | `RTXPTMaterialHitPayload` | Diligent material-hit ray payload, separate from realtime packed `PathPayload.hlsli` |
 | (Realtime G4/G5 new) | `PathPayload` / `PathState` = RTXPT-fork | Packed realtime path-state payload for stable-plane variants |
 | `RTXPTPrimaryPayload` | `PrimaryPayload` (style) | compatibility-only |
 | `RTXPTMaterialData` | `MaterialPTData` = RTXPT-fork (name) | `Materials/MaterialPT.h` (fields differ - divergent) |

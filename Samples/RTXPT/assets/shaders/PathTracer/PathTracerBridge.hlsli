@@ -31,6 +31,7 @@ StructuredBuffer<GeometryVertexData>   t_SkinnedVertexBuffer;
 Buffer<uint>                           t_IndexBuffer;
 
 #if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
+// Task 5 binding contract: source-name realtime UAVs are not bound by the current reference RT pass.
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_OutputColor;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>        u_Depth;
 VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>       u_MotionVectors;

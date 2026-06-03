@@ -170,9 +170,17 @@ RaytracingAccelerationStructure                t_SceneBVH;
 #include "Utils/StatelessSampleGenerators.hlsli"
 #include "PathTracer.hlsli"
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
 VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
+#else
+// transitional Task 3 bridge: non-reference BUILD/FILL modes use source-name UAVs
+// from PathTracerBridge.hlsli until Task 4 replaces this legacy raygen loop.
+#    define u_Output u_OutputColor
+#    define u_ScreenMotionVectors u_MotionVectors
+#endif
+
 static const float kSpecularRoughnessThreshold = 0.25;
 
 [shader("raygeneration")]

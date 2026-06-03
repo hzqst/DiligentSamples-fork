@@ -38,6 +38,9 @@ struct BSDFSample
 
 namespace PathTracer
 {
+    // transitional Task 3 Diligent compatibility shim. This is only the minimal
+    // material-state shape needed by stable-plane shader state; Task 4/5 must
+    // replace the stubbed PSD queries when BUILD/FILL runtime plumbing is wired.
     struct StablePlaneMaterialState
     {
         uint flags;
@@ -75,6 +78,9 @@ namespace PathTracer
 
     struct ActiveBSDF
     {
+        // transitional Task 3 shim: Diligent reference materials do not yet expose
+        // source ActiveBSDF delta-lobe and denoiser-estimate APIs. These quiet
+        // fallbacks keep shader state portable until BUILD/FILL uses real material plumbing.
         StablePlaneBSDFData data;
 
         void evalDeltaLobes(StablePlaneShadingData shadingData,

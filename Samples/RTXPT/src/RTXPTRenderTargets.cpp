@@ -211,14 +211,19 @@ bool RTXPTRenderTargets::FailResize(const char* Reason)
     return false;
 }
 
-bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
-                                const RTXPTRenderTargetDimensions& Dimensions,
-                                const RTXPTRenderTargetFormats&    Formats,
-                                bool                               CreateComputeOutput,
-                                bool                               CreateAccumulatedRadiance)
+bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetCreateInfo& CreateInfo)
 {
-    if (pDevice == nullptr || !Dimensions.IsValid())
-        return false;
+    const RTXPTRenderTargetDimensions& Dimensions                = CreateInfo.Dimensions;
+    const RTXPTRenderTargetFormats&    Formats                   = CreateInfo.Formats;
+    const bool                         CreateComputeOutput       = CreateInfo.CreateComputeOutput;
+    const bool                         CreateAccumulatedRadiance = CreateInfo.CreateAccumulatedRadiance;
+    const bool                         CreateRealtimeResources   = CreateInfo.CreateRealtimeResources;
+    const bool                         CreateDenoiserValidation  = CreateInfo.CreateDenoiserValidation;
+
+    if (pDevice == nullptr)
+        return FailResize("RTXPT render targets require a render device");
+    if (!Dimensions.IsValid())
+        return FailResize("RTXPT render target dimensions are invalid");
 
     const bool RequiresSuperResolutionTargets = Dimensions.SuperResolutionActive;
     const bool HasCorePostProcessTargets =
@@ -234,11 +239,16 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
          (m_TemporalFeedback1 != nullptr &&
           m_TemporalFeedback2 != nullptr &&
           m_CombinedHistoryClampRelax != nullptr));
+    const bool HasRealtimeTargets =
+        !CreateRealtimeResources || HasRealtimeRenderTargets();
     const bool HasRequestedTargets =
         HasP6PostProcessTargets &&
         (!CreateComputeOutput || m_ComputeColor != nullptr) &&
         (CreateComputeOutput || m_ComputeColor == nullptr) &&
         m_AccumulatedRadianceRequested == CreateAccumulatedRadiance &&
+        m_RealtimeResourcesRequested == CreateRealtimeResources &&
+        m_DenoiserValidationRequested == CreateDenoiserValidation &&
+        HasRealtimeTargets &&
         (!CreateAccumulatedRadiance || m_AccumulatedRadiance != nullptr || m_AccumulatedRadianceUnavailable) &&
         (CreateAccumulatedRadiance || m_AccumulatedRadiance == nullptr);
 
@@ -250,63 +260,67 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
     const BIND_FLAGS LdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
 
     if (!SupportsBindFlags(pDevice, Formats.OutputColor, UavFlags))
-    {
-        LOG_ERROR_MESSAGE("RGBA16F UAV OutputColor is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
-    }
+        return FailResize("RGBA16F UAV OutputColor is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (CreateAccumulatedRadiance && !SupportsBindFlags(pDevice, Formats.AccumulatedRadiance, UavFlags))
-    {
-        LOG_ERROR_MESSAGE("RGBA32F UAV AccumulatedRadiance is not supported; reference accumulation is unavailable");
-        return false;
-    }
+        return FailResize("RGBA32F UAV AccumulatedRadiance is not supported; reference accumulation is unavailable");
 
     if (RequiresSuperResolutionTargets && !SupportsBindFlags(pDevice, Formats.SuperResolutionInputColor, UavFlags))
-    {
-        LOG_ERROR_MESSAGE("RGBA16F UAV SuperResolutionInputColor is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
-    }
+        return FailResize("RGBA16F UAV SuperResolutionInputColor is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (!SupportsBindFlags(pDevice, Formats.Depth, UavFlags))
-    {
-        LOG_ERROR_MESSAGE("R32F UAV Depth is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
-    }
+        return FailResize("R32F UAV Depth is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (!SupportsBindFlags(pDevice, Formats.ScreenMotionVectors, UavFlags))
-    {
-        LOG_ERROR_MESSAGE("RG16F UAV ScreenMotionVectors is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
-    }
+        return FailResize("RG16F UAV ScreenMotionVectors is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (!SupportsBindFlags(pDevice, Formats.ProcessedOutputColor, HdrRtFlags))
-    {
-        LOG_ERROR_MESSAGE("HDR UAV/RTV ProcessedOutputColor is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
-    }
+        return FailResize("HDR UAV/RTV ProcessedOutputColor is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (!SupportsBindFlags(pDevice, Formats.LdrColor, LdrRtFlags))
-    {
-        LOG_ERROR_MESSAGE("LDR UAV/RTV targets are not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
-    }
+        return FailResize("LDR UAV/RTV targets are not supported; RTXPT post-processing resource graph is unavailable");
 
     if (RequiresSuperResolutionTargets && !SupportsBindFlags(pDevice, Formats.TemporalFeedback, UavFlags))
-    {
-        LOG_ERROR_MESSAGE("RGBA16_SNORM UAV TemporalFeedback is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
-    }
+        return FailResize("RGBA16_SNORM UAV TemporalFeedback is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (RequiresSuperResolutionTargets && !SupportsBindFlags(pDevice, Formats.CombinedHistoryClampRelax, UavFlags))
-    {
-        LOG_ERROR_MESSAGE("R8 UAV CombinedHistoryClampRelax is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
-    }
+        return FailResize("R8 UAV CombinedHistoryClampRelax is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (CreateComputeOutput && !SupportsBindFlags(pDevice, Formats.ComputeColor, UavFlags))
+        return FailResize("RGBA8 UAV ComputeColor is not supported; RTXPT post-processing resource graph is unavailable");
+
+    if (CreateRealtimeResources)
     {
-        LOG_ERROR_MESSAGE("RGBA8 UAV ComputeColor is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        if (!SupportsBindFlags(pDevice, Formats.StableRadiance, UavFlags))
+            return FailResize("RGBA16F UAV StableRadiance is not supported; RTXPT realtime resources are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.StablePlanesHeader, UavFlags))
+            return FailResize("R32_UINT UAV StablePlanesHeader is not supported; RTXPT realtime resources are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.Throughput, UavFlags))
+            return FailResize("R32_UINT UAV Throughput is not supported; RTXPT realtime resources are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.SpecularHitT, UavFlags))
+            return FailResize("R32F UAV SpecularHitT is not supported; RTXPT realtime resources are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.ScratchFloat1, UavFlags))
+            return FailResize("R32F UAV ScratchFloat1 is not supported; RTXPT realtime resources are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserViewspaceZ, UavFlags))
+            return FailResize("R32F UAV DenoiserViewspaceZ is not supported; RTXPT realtime denoiser inputs are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserMotionVectors, UavFlags))
+            return FailResize("RGBA16F UAV DenoiserMotionVectors is not supported; RTXPT realtime denoiser inputs are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserNormalRoughness, UavFlags))
+            return FailResize("RGB10A2 UAV DenoiserNormalRoughness is not supported; RTXPT realtime denoiser inputs are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserDiffRadianceHitDist, UavFlags))
+            return FailResize("RGBA16F UAV DenoiserDiffRadianceHitDist is not supported; RTXPT realtime denoiser inputs are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserSpecRadianceHitDist, UavFlags))
+            return FailResize("RGBA16F UAV DenoiserSpecRadianceHitDist is not supported; RTXPT realtime denoiser inputs are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserDisocclusionThresholdMix, UavFlags))
+            return FailResize("R8 UAV DenoiserDisocclusionThresholdMix is not supported; RTXPT realtime denoiser inputs are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserOutDiffRadianceHitDist, UavFlags))
+            return FailResize("RGBA16F UAV DenoiserOutDiffRadianceHitDist is not supported; RTXPT realtime denoiser outputs are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserOutSpecRadianceHitDist, UavFlags))
+            return FailResize("RGBA16F UAV DenoiserOutSpecRadianceHitDist is not supported; RTXPT realtime denoiser outputs are unavailable");
+        if (!SupportsBindFlags(pDevice, Formats.DenoiserAvgLayerRadianceHalfRes, UavFlags))
+            return FailResize("RGBA16F UAV DenoiserAvgLayerRadianceHalfRes is not supported; RTXPT realtime guide resources are unavailable");
+        if (CreateDenoiserValidation && !SupportsBindFlags(pDevice, Formats.DenoiserOutValidation, UavFlags))
+            return FailResize("RGBA8 UAV DenoiserOutValidation is not supported; RTXPT realtime NRD validation output is unavailable");
     }
 
     const Uint32 RenderWidth   = Dimensions.RenderWidth;
@@ -325,45 +339,112 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
     RefCntAutoPtr<ITexture> TemporalFeedback1;
     RefCntAutoPtr<ITexture> TemporalFeedback2;
     RefCntAutoPtr<ITexture> CombinedHistoryClampRelax;
+    RefCntAutoPtr<ITexture> StableRadiance;
+    RefCntAutoPtr<ITexture> StablePlanesHeader;
+    RefCntAutoPtr<IBuffer>  StablePlanesBuffer;
+    RefCntAutoPtr<ITexture> Throughput;
+    RefCntAutoPtr<ITexture> SpecularHitT;
+    RefCntAutoPtr<ITexture> ScratchFloat1;
+    RefCntAutoPtr<ITexture> DenoiserViewspaceZ;
+    RefCntAutoPtr<ITexture> DenoiserMotionVectors;
+    RefCntAutoPtr<ITexture> DenoiserNormalRoughness;
+    RefCntAutoPtr<ITexture> DenoiserDiffRadianceHitDist;
+    RefCntAutoPtr<ITexture> DenoiserSpecRadianceHitDist;
+    RefCntAutoPtr<ITexture> DenoiserDisocclusionThresholdMix;
+    std::array<RefCntAutoPtr<ITexture>, kRTXPTStablePlaneCount> DenoiserOutDiffRadianceHitDist;
+    std::array<RefCntAutoPtr<ITexture>, kRTXPTStablePlaneCount> DenoiserOutSpecRadianceHitDist;
+    RefCntAutoPtr<ITexture> DenoiserOutValidation;
+    RefCntAutoPtr<ITexture> DenoiserAvgLayerRadianceHalfRes;
 
     if (!CreateTarget(pDevice, "RTXPT OutputColor", RenderWidth, RenderHeight, Formats.OutputColor, UavFlags, OutputColor))
-        return false;
+        return FailResize("Failed to create RTXPT OutputColor");
 
     if (CreateAccumulatedRadiance &&
         !CreateTarget(pDevice, "RTXPT AccumulatedRadiance", RenderWidth, RenderHeight, Formats.AccumulatedRadiance, UavFlags, AccumulatedRadiance))
-        return false;
+        return FailResize("Failed to create RTXPT AccumulatedRadiance");
 
     if (RequiresSuperResolutionTargets &&
         !CreateTarget(pDevice, "RTXPT SuperResolutionInputColor", RenderWidth, RenderHeight, Formats.SuperResolutionInputColor, UavFlags, SuperResolutionInputColor))
-        return false;
+        return FailResize("Failed to create RTXPT SuperResolutionInputColor");
 
     if (!CreateTarget(pDevice, "RTXPT Depth", RenderWidth, RenderHeight, Formats.Depth, UavFlags, Depth))
-        return false;
+        return FailResize("Failed to create RTXPT Depth");
 
     if (!CreateTarget(pDevice, "RTXPT ScreenMotionVectors", RenderWidth, RenderHeight, Formats.ScreenMotionVectors, UavFlags, ScreenMotionVectors))
-        return false;
+        return FailResize("Failed to create RTXPT ScreenMotionVectors");
 
     if (!CreateTarget(pDevice, "RTXPT ProcessedOutputColor", DisplayWidth, DisplayHeight, Formats.ProcessedOutputColor, HdrRtFlags, ProcessedOutputColor))
-        return false;
+        return FailResize("Failed to create RTXPT ProcessedOutputColor");
 
     if (!CreateTarget(pDevice, "RTXPT LdrColor", DisplayWidth, DisplayHeight, Formats.LdrColor, LdrRtFlags, LdrColor))
-        return false;
+        return FailResize("Failed to create RTXPT LdrColor");
 
     if (RequiresSuperResolutionTargets &&
         !CreateTarget(pDevice, "RTXPT TemporalFeedback1", DisplayWidth, DisplayHeight, Formats.TemporalFeedback, UavFlags, TemporalFeedback1))
-        return false;
+        return FailResize("Failed to create RTXPT TemporalFeedback1");
 
     if (RequiresSuperResolutionTargets &&
         !CreateTarget(pDevice, "RTXPT TemporalFeedback2", DisplayWidth, DisplayHeight, Formats.TemporalFeedback, UavFlags, TemporalFeedback2))
-        return false;
+        return FailResize("Failed to create RTXPT TemporalFeedback2");
 
     if (RequiresSuperResolutionTargets &&
         !CreateTarget(pDevice, "RTXPT CombinedHistoryClampRelax", DisplayWidth, DisplayHeight, Formats.CombinedHistoryClampRelax, UavFlags, CombinedHistoryClampRelax))
-        return false;
+        return FailResize("Failed to create RTXPT CombinedHistoryClampRelax");
 
     if (CreateComputeOutput &&
         !CreateTarget(pDevice, "RTXPT ComputeColor", DisplayWidth, DisplayHeight, Formats.ComputeColor, UavFlags, ComputeColor))
-        return false;
+        return FailResize("Failed to create RTXPT ComputeColor");
+
+    const Uint32 HalfRenderWidth  = (RenderWidth + 1u) / 2u;
+    const Uint32 HalfRenderHeight = (RenderHeight + 1u) / 2u;
+    Uint64       StablePlanesElementCount = 0;
+
+    if (CreateRealtimeResources)
+    {
+        StablePlanesElementCount = ComputeStablePlanesElementCount(RenderWidth, RenderHeight);
+
+        if (!CreateTarget(pDevice, "RTXPT StableRadiance", RenderWidth, RenderHeight, Formats.StableRadiance, UavFlags, StableRadiance))
+            return FailResize("Failed to create RTXPT StableRadiance");
+        if (!CreateTarget(pDevice, "RTXPT StablePlanesHeader", RenderWidth, RenderHeight, Formats.StablePlanesHeader, UavFlags, StablePlanesHeader, RESOURCE_DIM_TEX_2D_ARRAY, 4))
+            return FailResize("Failed to create RTXPT StablePlanesHeader");
+        if (!CreateStablePlanesBuffer(pDevice, StablePlanesElementCount, StablePlanesBuffer))
+            return FailResize("Failed to create RTXPT StablePlanesBuffer");
+        if (!CreateTarget(pDevice, "RTXPT Throughput", RenderWidth, RenderHeight, Formats.Throughput, UavFlags, Throughput))
+            return FailResize("Failed to create RTXPT Throughput");
+        if (!CreateTarget(pDevice, "RTXPT SpecularHitT", RenderWidth, RenderHeight, Formats.SpecularHitT, UavFlags, SpecularHitT))
+            return FailResize("Failed to create RTXPT SpecularHitT");
+        if (!CreateTarget(pDevice, "RTXPT ScratchFloat1", RenderWidth, RenderHeight, Formats.ScratchFloat1, UavFlags, ScratchFloat1))
+            return FailResize("Failed to create RTXPT ScratchFloat1");
+        if (!CreateTarget(pDevice, "RTXPT DenoiserViewspaceZ", RenderWidth, RenderHeight, Formats.DenoiserViewspaceZ, UavFlags, DenoiserViewspaceZ))
+            return FailResize("Failed to create RTXPT DenoiserViewspaceZ");
+        if (!CreateTarget(pDevice, "RTXPT DenoiserMotionVectors", RenderWidth, RenderHeight, Formats.DenoiserMotionVectors, UavFlags, DenoiserMotionVectors))
+            return FailResize("Failed to create RTXPT DenoiserMotionVectors");
+        if (!CreateTarget(pDevice, "RTXPT DenoiserNormalRoughness", RenderWidth, RenderHeight, Formats.DenoiserNormalRoughness, UavFlags, DenoiserNormalRoughness))
+            return FailResize("Failed to create RTXPT DenoiserNormalRoughness");
+        if (!CreateTarget(pDevice, "RTXPT DenoiserDiffRadianceHitDist", RenderWidth, RenderHeight, Formats.DenoiserDiffRadianceHitDist, UavFlags, DenoiserDiffRadianceHitDist))
+            return FailResize("Failed to create RTXPT DenoiserDiffRadianceHitDist");
+        if (!CreateTarget(pDevice, "RTXPT DenoiserSpecRadianceHitDist", RenderWidth, RenderHeight, Formats.DenoiserSpecRadianceHitDist, UavFlags, DenoiserSpecRadianceHitDist))
+            return FailResize("Failed to create RTXPT DenoiserSpecRadianceHitDist");
+        if (!CreateTarget(pDevice, "RTXPT DenoiserDisocclusionThresholdMix", RenderWidth, RenderHeight, Formats.DenoiserDisocclusionThresholdMix, UavFlags, DenoiserDisocclusionThresholdMix))
+            return FailResize("Failed to create RTXPT DenoiserDisocclusionThresholdMix");
+
+        for (Uint32 PlaneIndex = 0; PlaneIndex < kRTXPTStablePlaneCount; ++PlaneIndex)
+        {
+            const std::string DiffName = "RTXPT DenoiserOutDiffRadianceHitDist[" + std::to_string(PlaneIndex) + "]";
+            const std::string SpecName = "RTXPT DenoiserOutSpecRadianceHitDist[" + std::to_string(PlaneIndex) + "]";
+            if (!CreateTarget(pDevice, DiffName.c_str(), RenderWidth, RenderHeight, Formats.DenoiserOutDiffRadianceHitDist, UavFlags, DenoiserOutDiffRadianceHitDist[PlaneIndex]))
+                return FailResize("Failed to create RTXPT DenoiserOutDiffRadianceHitDist");
+            if (!CreateTarget(pDevice, SpecName.c_str(), RenderWidth, RenderHeight, Formats.DenoiserOutSpecRadianceHitDist, UavFlags, DenoiserOutSpecRadianceHitDist[PlaneIndex]))
+                return FailResize("Failed to create RTXPT DenoiserOutSpecRadianceHitDist");
+        }
+
+        if (CreateDenoiserValidation &&
+            !CreateTarget(pDevice, "RTXPT DenoiserOutValidation", RenderWidth, RenderHeight, Formats.DenoiserOutValidation, UavFlags, DenoiserOutValidation))
+            return FailResize("Failed to create RTXPT DenoiserOutValidation");
+
+        if (!CreateTarget(pDevice, "RTXPT DenoiserAvgLayerRadianceHalfRes", HalfRenderWidth, HalfRenderHeight, Formats.DenoiserAvgLayerRadianceHalfRes, UavFlags, DenoiserAvgLayerRadianceHalfRes))
+            return FailResize("Failed to create RTXPT DenoiserAvgLayerRadianceHalfRes");
+    }
 
     Reset();
     m_OutputColor                    = OutputColor;
@@ -377,12 +458,46 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
     m_TemporalFeedback1              = TemporalFeedback1;
     m_TemporalFeedback2              = TemporalFeedback2;
     m_CombinedHistoryClampRelax      = CombinedHistoryClampRelax;
+    m_StableRadiance                   = StableRadiance;
+    m_StablePlanesHeader               = StablePlanesHeader;
+    m_StablePlanesBuffer               = StablePlanesBuffer;
+    m_Throughput                       = Throughput;
+    m_SpecularHitT                     = SpecularHitT;
+    m_ScratchFloat1                    = ScratchFloat1;
+    m_DenoiserViewspaceZ               = DenoiserViewspaceZ;
+    m_DenoiserMotionVectors            = DenoiserMotionVectors;
+    m_DenoiserNormalRoughness          = DenoiserNormalRoughness;
+    m_DenoiserDiffRadianceHitDist      = DenoiserDiffRadianceHitDist;
+    m_DenoiserSpecRadianceHitDist      = DenoiserSpecRadianceHitDist;
+    m_DenoiserDisocclusionThresholdMix = DenoiserDisocclusionThresholdMix;
+    m_DenoiserOutDiffRadianceHitDist   = DenoiserOutDiffRadianceHitDist;
+    m_DenoiserOutSpecRadianceHitDist   = DenoiserOutSpecRadianceHitDist;
+    m_DenoiserOutValidation            = DenoiserOutValidation;
+    m_DenoiserAvgLayerRadianceHalfRes  = DenoiserAvgLayerRadianceHalfRes;
     m_AccumulatedRadianceUnavailable = false;
     m_AccumulatedRadianceRequested   = CreateAccumulatedRadiance;
+    m_RealtimeResourcesRequested     = CreateRealtimeResources;
+    m_DenoiserValidationRequested    = CreateDenoiserValidation;
+    m_StablePlanesElementCount       = StablePlanesElementCount;
+    m_LastFailureReason.clear();
     m_Dimensions                     = Dimensions;
     m_Formats                        = Formats;
 
     return true;
+}
+
+bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
+                                const RTXPTRenderTargetDimensions& Dimensions,
+                                const RTXPTRenderTargetFormats&    Formats,
+                                bool                               CreateComputeOutput,
+                                bool                               CreateAccumulatedRadiance)
+{
+    RTXPTRenderTargetCreateInfo CreateInfo;
+    CreateInfo.Dimensions                 = Dimensions;
+    CreateInfo.Formats                    = Formats;
+    CreateInfo.CreateComputeOutput        = CreateComputeOutput;
+    CreateInfo.CreateAccumulatedRadiance  = CreateAccumulatedRadiance;
+    return Resize(pDevice, CreateInfo);
 }
 
 bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
@@ -392,14 +507,16 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
                                 bool                            CreateComputeOutput,
                                 bool                            CreateAccumulatedRadiance)
 {
-    RTXPTRenderTargetDimensions Dimensions;
-    Dimensions.RenderWidth           = Width;
-    Dimensions.RenderHeight          = Height;
-    Dimensions.DisplayWidth          = Width;
-    Dimensions.DisplayHeight         = Height;
-    Dimensions.SuperResolutionActive = false;
-
-    return Resize(pDevice, Dimensions, Formats, CreateComputeOutput, CreateAccumulatedRadiance);
+    RTXPTRenderTargetCreateInfo CreateInfo;
+    CreateInfo.Dimensions.RenderWidth           = Width;
+    CreateInfo.Dimensions.RenderHeight          = Height;
+    CreateInfo.Dimensions.DisplayWidth          = Width;
+    CreateInfo.Dimensions.DisplayHeight         = Height;
+    CreateInfo.Dimensions.SuperResolutionActive = false;
+    CreateInfo.Formats                          = Formats;
+    CreateInfo.CreateComputeOutput              = CreateComputeOutput;
+    CreateInfo.CreateAccumulatedRadiance        = CreateAccumulatedRadiance;
+    return Resize(pDevice, CreateInfo);
 }
 
 bool RTXPTRenderTargets::HasPostProcessTargets() const

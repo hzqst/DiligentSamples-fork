@@ -20,6 +20,7 @@ set(SOURCE
     src/RTXPTRayTracingPass.cpp
     src/RTXPTEmissiveTrianglePass.cpp
     src/RTXPTComputePass.cpp
+    src/RTXPTVBufferExportPass.cpp
     src/RTXPTAccumulationPass.cpp
     src/RTXPTBloomPass.cpp
     src/RTXPTSuperResolutionPass.cpp
@@ -48,6 +49,7 @@ set(INCLUDE
     src/RTXPTRayTracingPass.hpp
     src/RTXPTEmissiveTrianglePass.hpp
     src/RTXPTComputePass.hpp
+    src/RTXPTVBufferExportPass.hpp
     src/RTXPTAccumulationPass.hpp
     src/RTXPTBloomPass.hpp
     src/RTXPTSuperResolutionPass.hpp
@@ -63,6 +65,7 @@ set(SHADERS
     assets/shaders/PathTracer/PathTracerHelpers.hlsli
     assets/shaders/PathTracer/PathTracerShared.h
     assets/shaders/PathTracer/PathTracerBridge.hlsli
+    assets/shaders/PathTracer/ExportVisibilityBuffer.csh
     assets/shaders/PathTracer/PathPayload.hlsli
     assets/shaders/PathTracer/PathState.hlsli
     assets/shaders/PathTracer/PathTracerTypes.hlsli

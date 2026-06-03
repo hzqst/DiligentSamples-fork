@@ -63,6 +63,7 @@ void RTXPTRenderTargets::Reset()
     m_TemporalFeedback2.Release();
     m_CombinedHistoryClampRelax.Release();
     m_AccumulatedRadianceUnavailable = false;
+    m_AccumulatedRadianceRequested   = false;
     m_Dimensions                     = {};
     m_Formats                        = {};
 }
@@ -134,6 +135,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
         HasP6PostProcessTargets &&
         (!CreateComputeOutput || m_ComputeColor != nullptr) &&
         (CreateComputeOutput || m_ComputeColor == nullptr) &&
+        m_AccumulatedRadianceRequested == CreateAccumulatedRadiance &&
         (!CreateAccumulatedRadiance || m_AccumulatedRadiance != nullptr || m_AccumulatedRadianceUnavailable) &&
         (CreateAccumulatedRadiance || m_AccumulatedRadiance == nullptr);
 
@@ -141,8 +143,9 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
         return true;
 
     Reset();
-    m_Dimensions = Dimensions;
-    m_Formats    = Formats;
+    m_Dimensions                   = Dimensions;
+    m_Formats                      = Formats;
+    m_AccumulatedRadianceRequested = CreateAccumulatedRadiance;
 
     const BIND_FLAGS UavFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
     const BIND_FLAGS HdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
@@ -254,10 +257,27 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
     return true;
 }
 
+bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
+                                Uint32                          Width,
+                                Uint32                          Height,
+                                const RTXPTRenderTargetFormats& Formats,
+                                bool                            CreateComputeOutput,
+                                bool                            CreateAccumulatedRadiance)
+{
+    RTXPTRenderTargetDimensions Dimensions;
+    Dimensions.RenderWidth           = Width;
+    Dimensions.RenderHeight          = Height;
+    Dimensions.DisplayWidth          = Width;
+    Dimensions.DisplayHeight         = Height;
+    Dimensions.SuperResolutionActive = false;
+
+    return Resize(pDevice, Dimensions, Formats, CreateComputeOutput, CreateAccumulatedRadiance);
+}
+
 bool RTXPTRenderTargets::HasPostProcessTargets() const
 {
     return m_OutputColor != nullptr &&
-        m_AccumulatedRadiance != nullptr &&
+        (!m_AccumulatedRadianceRequested || m_AccumulatedRadiance != nullptr) &&
         m_ProcessedOutputColor != nullptr &&
         m_LdrColor != nullptr &&
         m_Depth != nullptr &&

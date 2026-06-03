@@ -80,6 +80,12 @@ public:
                 const RTXPTRenderTargetFormats&    Formats,
                 bool                               CreateComputeOutput,
                 bool                               CreateAccumulatedRadiance);
+    bool Resize(IRenderDevice*                  pDevice,
+                Uint32                          Width,
+                Uint32                          Height,
+                const RTXPTRenderTargetFormats& Formats,
+                bool                            CreateComputeOutput,
+                bool                            CreateAccumulatedRadiance);
 
     bool IsValid() const { return HasPostProcessTargets(); }
     bool HasPostProcessTargets() const;
@@ -154,6 +160,7 @@ private:
     RefCntAutoPtr<ITexture>     m_TemporalFeedback2;
     RefCntAutoPtr<ITexture>     m_CombinedHistoryClampRelax;
     bool                        m_AccumulatedRadianceUnavailable = false;
+    bool                        m_AccumulatedRadianceRequested   = false;
     RTXPTRenderTargetDimensions m_Dimensions                     = {};
     RTXPTRenderTargetFormats    m_Formats                        = {};
 };

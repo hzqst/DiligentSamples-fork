@@ -462,6 +462,23 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `Shaders/SampleConstantBuffer.h::view/previousView` | `src/RTXPTFrameConstants.hpp::PathTracerViewData`, `assets/shaders/PathTracer/PathTracerShared.h::PathTracerViewData` | Realtime G2 | Current and previous view constants are available for future motion-vector, denoiser guide, and NRD common-settings ports. |
 | `Shaders/PathTracer/PathTracer.hlsli::CommitPixel` | `assets/shaders/PathTracer/PathTracerSample.rgen` | P2 | Diligent raygen writes raw `pathRadiance` to `u_Output` in reference mode. Accumulation and tone mapping are not raygen responsibilities. |
 
+## Realtime G3 Render Target Map
+
+| RTXPT-fork source | Diligent owner | Notes |
+|---|---|---|
+| `SampleCommon/RenderTargets.h` `RenderTargets::StableRadiance` | `src/RTXPTRenderTargets.hpp` `m_StableRadiance` | Render-size `RGBA16_FLOAT`, SRV/UAV. |
+| `SampleCommon/RenderTargets.h` `RenderTargets::StablePlanesHeader` | `src/RTXPTRenderTargets.hpp` `m_StablePlanesHeader` | Render-size 4-layer `R32_UINT` texture array, SRV/UAV. |
+| `SampleCommon/RenderTargets.h` `RenderTargets::StablePlanesBuffer` | `src/RTXPTRenderTargets.hpp` `m_StablePlanesBuffer` | Structured buffer of `RTXPTStablePlaneData`, element count = generic TS plane stride * `kRTXPTStablePlaneCount`. |
+| `SampleCommon/RenderTargets.h` `RenderTargets::Throughput` | `src/RTXPTRenderTargets.hpp` `m_Throughput` | Render-size `R32_UINT`, SRV/UAV. |
+| `SampleCommon/RenderTargets.h` `RenderTargets::SpecularHitT` | `src/RTXPTRenderTargets.hpp` `m_SpecularHitT` | Render-size `R32_FLOAT`, SRV/UAV. |
+| `SampleCommon/RenderTargets.h` `RenderTargets::ScratchFloat1` | `src/RTXPTRenderTargets.hpp` `m_ScratchFloat1` | Render-size `R32_FLOAT`, SRV/UAV. |
+| `SampleCommon/RenderTargets.h` denoiser input textures | `src/RTXPTRenderTargets.hpp` `m_Denoiser*` input members | Render-size NRD input resources with names preserved for G7-G9 bindings. |
+| `SampleCommon/RenderTargets.h` `DenoiserOutDiffRadianceHitDist[cStablePlaneCount]` | `src/RTXPTRenderTargets.hpp` `m_DenoiserOutDiffRadianceHitDist` | Three per-plane output textures. |
+| `SampleCommon/RenderTargets.h` `DenoiserOutSpecRadianceHitDist[cStablePlaneCount]` | `src/RTXPTRenderTargets.hpp` `m_DenoiserOutSpecRadianceHitDist` | Three per-plane output textures. |
+| `SampleCommon/RenderTargets.h` `DenoiserOutValidation` | `src/RTXPTRenderTargets.hpp` `m_DenoiserOutValidation` | Optional validation texture, disabled by default. |
+| `SampleCommon/RenderTargets.h` `DenoiserAvgLayerRadianceHalfRes` | `src/RTXPTRenderTargets.hpp` `m_DenoiserAvgLayerRadianceHalfRes` | Half render-size `RGBA16_FLOAT`, SRV/UAV. |
+| `Shaders/PathTracer/StablePlanes.hlsli` `struct StablePlane` | `src/RTXPTRenderTargets.hpp` `RTXPTStablePlaneData` | CPU mirror guarded at 80 bytes with important offsets checked. |
+
 ### Phase 6 Resource Contract
 
 | Resource | Diligent owner | Format target | Size | Producer | Consumer | Notes |

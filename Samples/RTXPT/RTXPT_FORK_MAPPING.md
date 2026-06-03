@@ -453,6 +453,9 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `Sample.cpp::PostProcessPostToneMapping` | `src/RTXPTPostProcessPipeline.cpp`, `src/RTXPTPostProcessPass.cpp` | P4 | LDR post-process scheduling after tone mapping, including `LdrColor` to `LdrColorScratch` copy. |
 | `Sample.cpp` final `m_CommonPasses->BlitTexture` | `src/RTXPTBlitPass.{hpp,cpp}` plus `RTXPTRenderTargets::GetPresentationSRV()` | P5 | Final swapchain copy. `GetPresentationSRV()` returns `LdrColor`, and no debug/compute output may replace the normal swapchain source. |
 | `SampleUI.h` / `SampleUI.cpp` tone-mapping and post-process controls | `src/RTXPTSample.{hpp,cpp}` | P3-P5 | Existing disabled controls become live as each pass lands. UI changes must request only the histories they invalidate. |
+| `SampleUI.h::SampleUIData` realtime fields | `src/RTXPTRealtimeSettings.hpp`, `src/RTXPTSample.hpp` | Realtime G1 | Diligent-local realtime state mirrors `RealtimeMode`, `RealtimeSamplesPerPixel`, `RealtimeAA`, `StandaloneDenoiser`, stable-plane controls, firefly controls, NRD UI settings, and reset-request flags without taking a compile dependency on NRD. |
+| `SampleUI.h::ActualUseStandaloneDenoiser` | `src/RTXPTRealtimeSettings.hpp::RTXPTRealtimeSettings::ActualUseStandaloneDenoiser` | Realtime G1 | Preserves RTXPT-fork semantics: true only when `RealtimeMode && RealtimeAA < 3 && StandaloneDenoiser`. |
+| `SampleUI.cpp` realtime UI controls | `src/RTXPTSample.cpp::UpdateUI` | Realtime G1 | Mode, realtime setup, AA/SR/denoiser selection, stable-plane controls, and NRD controls are visible. Realtime execution remains visibly disabled until G2-G10. |
 | `Shaders/PathTracer/PathTracer.hlsli::CommitPixel` | `assets/shaders/PathTracer/PathTracerSample.rgen` | P2 | Diligent raygen writes raw `pathRadiance` to `u_Output` in reference mode. Accumulation and tone mapping are not raygen responsibilities. |
 
 ### Phase 6 Resource Contract

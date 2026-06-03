@@ -38,6 +38,7 @@ set(INCLUDE
     src/RTXPTLightsBaker.hpp
     src/RTXPTLightsBakerPass.hpp
     src/RTXPTFrameConstants.hpp
+    src/RTXPTRealtimeSettings.hpp
     src/RTXPTEnvMapBaker.hpp
     src/RTXPTEnvMapBakerPass.hpp
     src/RTXPTAccelerationStructures.hpp

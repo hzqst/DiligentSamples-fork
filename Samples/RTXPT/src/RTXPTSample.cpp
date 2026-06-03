@@ -60,6 +60,41 @@ constexpr int         kExposureModeMax                = static_cast<int>(RTXPTEx
 static_assert(kToneMapOperatorMin == 0 && kToneMapOperatorMax == 5, "Tone-map UI assumes contiguous operator values");
 static_assert(kExposureModeMin == 0 && kExposureModeMax == 1, "Tone-map UI assumes contiguous exposure mode values");
 
+constexpr bool        kRTXPTStandaloneNrdAvailable = false;
+constexpr bool        kRTXPTRealtimeTaaAvailable   = false;
+constexpr bool        kRTXPTRealtimeSrAvailable    = false;
+constexpr bool        kRTXPTDlssRrAvailable        = false;
+constexpr const char* kRTXPTRealtimeDisabledReason = "Realtime PathTrace/Denoise execution starts in G2-G10.";
+constexpr const char* kRTXPTNrdDisabledReason      = "Standalone denoiser disabled: NRD integration starts in G8.";
+
+const char* GetRealtimeAAModeName(RTXPTRealtimeAAMode Mode)
+{
+    switch (Mode)
+    {
+        case RTXPTRealtimeAAMode::Disabled: return "Disabled";
+        case RTXPTRealtimeAAMode::TAA: return "TAA";
+        case RTXPTRealtimeAAMode::SuperResolution: return "Super Resolution";
+        case RTXPTRealtimeAAMode::DLSSRR: return "DLSS-RR";
+        default: return "Unknown";
+    }
+}
+
+const char* GetNrdMethodName(RTXPTNrdMethod Method)
+{
+    switch (Method)
+    {
+        case RTXPTNrdMethod::REBLUR: return "REBLUR";
+        case RTXPTNrdMethod::RELAX: return "RELAX";
+        default: return "Unknown";
+    }
+}
+
+void DrawDisabledTooltip(const char* Text)
+{
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", Text);
+}
+
 Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 EmissiveTriangleCount)
 {
     const Uint32 ClampedCount = std::min(EmissiveTriangleCount, kMaxPackedEmissiveTriangleCount);
@@ -627,6 +662,9 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     const float  Width         = static_cast<float>(RenderWidth);
     const float  Height        = static_cast<float>(RenderHeight);
 
+    SanitizeRealtimeSettings(m_RealtimeUI);
+    BeginRealtimeFrameResetScope();
+
     const float3   CameraPosition = m_Camera.GetPos();
     const float4x4 CameraView     = m_Camera.GetViewMatrix();
     const float4x4 CameraProj     = m_Camera.GetProjMatrix();
@@ -892,6 +930,12 @@ void RTXPTSample::Render()
         return;
     }
 
+    if (m_RealtimeUI.RealtimeMode)
+    {
+        ClearFallback(float4{0.08f, 0.08f, 0.10f, 1.0f});
+        return;
+    }
+
     if (!m_LightsBaker.UpdateEnd(m_pImmediateContext))
     {
         ClearFallback(float4{1.0f, 0.35f, 0.0f, 1.0f});
@@ -1101,6 +1145,25 @@ void RTXPTSample::UpdateUI()
         }
         return false;
     };
+    auto ResetRealtimeOnChange = [this](bool Changed, const char* Reason) -> bool {
+        if (Changed)
+            RequestRealtimeCachesReset(Reason);
+        return Changed;
+    };
+    auto ResetTaaSrOnChange = [this](bool Changed, const char* Reason) -> bool {
+        if (Changed)
+            RequestRealtimeReset(RTXPT_REALTIME_RESET_TAA_SR_HISTORY, Reason);
+        return Changed;
+    };
+    auto ResetRenderTargetsOnChange = [this](bool Changed, const char* Reason) -> bool {
+        if (Changed)
+            RequestRealtimeReset(RTXPT_REALTIME_RESET_RENDER_TARGET_RECREATE |
+                                     RTXPT_REALTIME_RESET_REALTIME_CACHES |
+                                     RTXPT_REALTIME_RESET_NRD_HISTORY |
+                                     RTXPT_REALTIME_RESET_TAA_SR_HISTORY,
+                                 Reason);
+        return Changed;
+    };
     // Tooltip for a present-but-disabled placeholder control. AllowWhenDisabled lets the
     // tooltip appear even though the preceding item was inside BeginDisabled()/EndDisabled().
     auto PlaceholderTooltip = [](const char* Text) {
@@ -1118,22 +1181,51 @@ void RTXPTSample::UpdateUI()
     {
         ImGui::Indent(Indent);
 
-        // Mode (Reference only; Realtime track is out of scope).
         {
-            int ModeIndex = 0;
-            ImGui::BeginDisabled(true);
-            ImGui::Combo("Mode", &ModeIndex, "Reference\0Realtime\0\0");
-            ImGui::EndDisabled();
-            PlaceholderTooltip("Realtime mode is out of scope for the reference path tracer (umbrella Phase 5.5+).");
+            int ModeIndex = m_RealtimeUI.RealtimeMode ? 1 : 0;
+            if (ImGui::Combo("Mode", &ModeIndex, "Reference\0Realtime\0\0"))
+            {
+                const bool NewRealtimeMode = ModeIndex != 0;
+                if (m_RealtimeUI.RealtimeMode != NewRealtimeMode)
+                {
+                    m_RealtimeUI.RealtimeMode = NewRealtimeMode;
+                    RequestRealtimeReset(RTXPT_REALTIME_RESET_ACCUMULATION |
+                                             RTXPT_REALTIME_RESET_REALTIME_CACHES |
+                                             RTXPT_REALTIME_RESET_NRD_HISTORY |
+                                             RTXPT_REALTIME_RESET_TAA_SR_HISTORY,
+                                         "Path-tracer mode changed");
+                }
+            }
+            if (m_RealtimeUI.RealtimeMode && ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", kRTXPTRealtimeDisabledReason);
         }
 
         ImGui::TextColored(CategoryColor, "Setup:");
         ImGui::Indent(Indent);
         {
-            if (ImGui::Button("Reset##REFMACC"))
-                RequestAccumulationReset("User reset");
-            ImGui::SameLine();
-            ImGui::Text("Accumulated samples: %u", m_AccumulationFrame);
+            if (m_RealtimeUI.RealtimeMode)
+            {
+                if (ImGui::Button("Reset##RTMACC"))
+                    RequestRealtimeCachesReset("User reset realtime caches");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Reset realtime temporal caches, NRD history, TAA/SR history, and lighting feedback.");
+                ImGui::SameLine();
+
+                int RealtimeSPP = m_RealtimeUI.RealtimeSamplesPerPixel;
+                if (ResetRealtimeOnChange(ImGui::InputInt("Samples per pixel", &RealtimeSPP), "Realtime samples-per-pixel changed"))
+                    m_RealtimeUI.RealtimeSamplesPerPixel = RealtimeSPP;
+                m_RealtimeUI.RealtimeSamplesPerPixel =
+                    std::clamp(m_RealtimeUI.RealtimeSamplesPerPixel, Int32{1}, static_cast<Int32>(kRTXPTRealtimeSamplesPerPixelMax));
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Full paths per pixel per realtime frame; camera ray anti-aliasing is handled by the selected AA/SR mode.");
+            }
+            else
+            {
+                if (ImGui::Button("Reset##REFMACC"))
+                    RequestAccumulationReset("User reset");
+                ImGui::SameLine();
+                ImGui::Text("Accumulated samples: %u", m_AccumulationFrame);
+            }
 
             int MaxBouncesUI = static_cast<int>(m_MaxBounces);
             if (ResetOnChange(ImGui::SliderInt("Max bounces", &MaxBouncesUI, 1, kMaxBounceSliderValue), "Max bounces changed"))
@@ -1153,16 +1245,39 @@ void RTXPTSample::UpdateUI()
             ImGui::EndDisabled();
             PlaceholderTooltip("Russian roulette is always enabled; its start bounce is 'Min bounces (RR start)'.");
 
-            // Adaptive firefly filter (G1, live). Disabling it uploads a zero threshold so the soft
-            // cap is a no-op and the converged image is identical to the filter-on image.
-            ResetOnChange(ImGui::Checkbox("FireflyFilter (reference *)", &m_ReferenceUI.ReferenceFireflyFilterEnabled),
-                          "Firefly filter toggled");
-            if (m_ReferenceUI.ReferenceFireflyFilterEnabled)
+            if (m_RealtimeUI.RealtimeMode)
             {
-                ImGui::Indent(Indent);
-                ResetOnChange(ImGui::InputFloat("FF Threshold", &m_ReferenceUI.ReferenceFireflyFilterThreshold, 0.1f, 0.2f, "%.5f"),
-                              "Firefly threshold changed");
-                ImGui::Unindent(Indent);
+                ResetRealtimeOnChange(ImGui::Checkbox("FireflyFilter (realtime)", &m_RealtimeUI.RealtimeFireflyFilterEnabled),
+                                      "Realtime firefly filter toggled");
+                if (m_RealtimeUI.RealtimeFireflyFilterEnabled)
+                {
+                    ImGui::Indent(Indent);
+                    ResetRealtimeOnChange(ImGui::InputFloat("FF Threshold", &m_RealtimeUI.RealtimeFireflyFilterThreshold, 0.01f, 0.1f, "%.5f"),
+                                          "Realtime firefly threshold changed");
+                    m_RealtimeUI.RealtimeFireflyFilterThreshold =
+                        std::clamp(m_RealtimeUI.RealtimeFireflyFilterThreshold, 0.00001f, 1000.0f);
+                    ImGui::Unindent(Indent);
+                }
+            }
+            else
+            {
+                // Adaptive firefly filter (G1, live). Disabling it uploads a zero threshold so the soft
+                // cap is a no-op and the converged image is identical to the filter-on image.
+                ResetOnChange(ImGui::Checkbox("FireflyFilter (reference *)", &m_ReferenceUI.ReferenceFireflyFilterEnabled),
+                              "Firefly filter toggled");
+                if (m_ReferenceUI.ReferenceFireflyFilterEnabled)
+                {
+                    ImGui::Indent(Indent);
+                    ResetOnChange(ImGui::InputFloat("FF Threshold", &m_ReferenceUI.ReferenceFireflyFilterThreshold, 0.1f, 0.2f, "%.5f"),
+                                  "Firefly threshold changed");
+                    ImGui::Unindent(Indent);
+                }
+            }
+
+            if (m_RealtimeUI.RealtimeMode)
+            {
+                ResetRealtimeOnChange(ImGui::InputFloat("Texture MIP bias", &m_RealtimeUI.TexLODBias),
+                                      "Realtime texture MIP bias changed");
             }
         }
         ImGui::Unindent(Indent); // end Setup
@@ -1170,6 +1285,53 @@ void RTXPTSample::UpdateUI()
         ImGui::TextColored(CategoryColor, "Post processing:");
         ImGui::Indent(Indent);
         {
+            if (m_RealtimeUI.RealtimeMode)
+            {
+                const char* AAItems[] = {"Disabled", "TAA", "Super Resolution", "DLSS-RR"};
+                int         AAMode    = static_cast<int>(m_RealtimeUI.RealtimeAA);
+                if (ImGui::BeginCombo("AA/SR/Denoising", AAItems[std::clamp(AAMode, 0, 3)]))
+                {
+                    for (int Item = 0; Item < 4; ++Item)
+                    {
+                        const bool Enabled =
+                            Item == static_cast<int>(RTXPTRealtimeAAMode::Disabled) ||
+                            (Item == static_cast<int>(RTXPTRealtimeAAMode::TAA) && kRTXPTRealtimeTaaAvailable) ||
+                            (Item == static_cast<int>(RTXPTRealtimeAAMode::SuperResolution) && kRTXPTRealtimeSrAvailable) ||
+                            (Item == static_cast<int>(RTXPTRealtimeAAMode::DLSSRR) && kRTXPTDlssRrAvailable);
+
+                        ImGui::BeginDisabled(!Enabled);
+                        const bool Selected = AAMode == Item;
+                        if (ImGui::Selectable(AAItems[Item], Selected))
+                        {
+                            AAMode                  = Item;
+                            m_RealtimeUI.RealtimeAA = static_cast<RTXPTRealtimeAAMode>(AAMode);
+                            ResetTaaSrOnChange(true, "Realtime AA/SR mode changed");
+                        }
+                        if (Selected)
+                            ImGui::SetItemDefaultFocus();
+                        ImGui::EndDisabled();
+                    }
+                    ImGui::EndCombo();
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("TAA and Super Resolution execute in G10. DLSS-RR is reserved by TODO(RTXPT-Realtime-DLSS-RR).");
+
+                const bool DenoiserDisabled =
+                    m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR ||
+                    !kRTXPTStandaloneNrdAvailable;
+                ImGui::BeginDisabled(DenoiserDisabled);
+                if (ResetRealtimeOnChange(ImGui::Checkbox("Use standalone denoiser (NRD)", &m_RealtimeUI.StandaloneDenoiser),
+                                          "Standalone denoiser toggled"))
+                {
+                    RequestRealtimeReset(RTXPT_REALTIME_RESET_NRD_HISTORY, "Standalone denoiser toggled");
+                }
+                ImGui::EndDisabled();
+                if (DenoiserDisabled)
+                    DrawDisabledTooltip(m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR ?
+                                            "Standalone NRD is disabled for DLSS-RR; TODO(RTXPT-Realtime-DLSS-RR)." :
+                                            kRTXPTNrdDisabledReason);
+            }
+
             if (ImGui::CollapsingHeader("Bloom"))
             {
                 ImGui::Checkbox("Enable Bloom", &m_ReferenceUI.EnableBloom);
@@ -1302,6 +1464,171 @@ void RTXPTSample::UpdateUI()
         if (ResetOnChange(ImGui::Checkbox("Enable LD sampler for BSDF", &m_ReferenceUI.EnableLDSamplerForBSDF),
                           "BSDF LD sampler toggled"))
             m_RayTracingPassSettingsDirty = true;
+
+        ImGui::Unindent(Indent);
+    }
+
+    // ------------------------------------------------ Stable Planes (denoising layers)
+    if (ImGui::CollapsingHeader("Stable Planes (denoising layers)"))
+    {
+        ImGui::Indent(Indent);
+
+        if (m_RealtimeUI.RealtimeMode)
+        {
+            int ActiveStablePlanes = m_RealtimeUI.StablePlanesActiveCount;
+            if (ResetRealtimeOnChange(ImGui::InputInt("Active stable planes", &ActiveStablePlanes),
+                                      "Active stable-plane count changed"))
+                m_RealtimeUI.StablePlanesActiveCount = ActiveStablePlanes;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("How many stable planes to allow; one plane is standard denoising.");
+
+            int MaxStablePlaneVertexDepth = m_RealtimeUI.StablePlanesMaxVertexDepth;
+            if (ResetRealtimeOnChange(ImGui::InputInt("Max stable plane vertex depth", &MaxStablePlaneVertexDepth),
+                                      "Stable-plane max vertex depth changed"))
+                m_RealtimeUI.StablePlanesMaxVertexDepth = MaxStablePlaneVertexDepth;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("How deep the stable part of path tracing can go.");
+
+            ResetRealtimeOnChange(ImGui::SliderFloat("Path split stop threshold", &m_RealtimeUI.StablePlanesSplitStopThreshold, 0.0f, 2.0f),
+                                  "Stable-plane split threshold changed");
+            ResetRealtimeOnChange(ImGui::Checkbox("Primary Surface Replacement", &m_RealtimeUI.AllowPrimarySurfaceReplacement),
+                                  "Primary surface replacement toggled");
+            ResetRealtimeOnChange(ImGui::Checkbox("Suppress primary plane noisy specular", &m_RealtimeUI.StablePlanesSuppressPrimaryIndirectSpecular),
+                                  "Primary-plane noisy specular suppression toggled");
+            ResetRealtimeOnChange(ImGui::SliderFloat("Suppress primary plane noisy specular amount",
+                                                     &m_RealtimeUI.StablePlanesSuppressPrimaryIndirectSpecularK, 0.0f, 1.0f),
+                                  "Primary-plane noisy specular suppression amount changed");
+            ResetRealtimeOnChange(ImGui::SliderFloat("Non-primary plane anti-aliasing fallthrough",
+                                                     &m_RealtimeUI.StablePlanesAntiAliasingFallthrough, 0.0f, 1.0f),
+                                  "Stable-plane anti-aliasing fallthrough changed");
+        }
+        else
+        {
+            ImGui::Text("Not available in reference mode");
+        }
+
+        ImGui::Unindent(Indent);
+    }
+
+    // ------------------------------------------------------- Standalone Denoiser (NRD)
+    if (ImGui::CollapsingHeader("Standalone Denoiser (NRD)"))
+    {
+        ImGui::Indent(Indent);
+
+        if (!m_RealtimeUI.RealtimeMode)
+            ImGui::TextWrapped("Not available in reference mode.");
+        if (m_RealtimeUI.RealtimeMode && !kRTXPTStandaloneNrdAvailable)
+            ImGui::TextWrapped("%s", kRTXPTNrdDisabledReason);
+
+        const bool DisableNrdControls =
+            !m_RealtimeUI.RealtimeMode ||
+            !m_RealtimeUI.ActualUseStandaloneDenoiser() ||
+            !kRTXPTStandaloneNrdAvailable;
+
+        ImGui::BeginDisabled(DisableNrdControls);
+
+        auto SliderUint = [&](const char* Label, Uint32& Value, int MinValue, int MaxValue, const char* Reason) {
+            int ValueUI = static_cast<int>(Value);
+            if (ResetRealtimeOnChange(ImGui::SliderInt(Label, &ValueUI, MinValue, MaxValue), Reason))
+            {
+                Value = static_cast<Uint32>(std::clamp(ValueUI, MinValue, MaxValue));
+                return true;
+            }
+            return false;
+        };
+
+        ResetRealtimeOnChange(ImGui::InputFloat("Disocclusion Threshold", &m_RealtimeUI.NRDDisocclusionThreshold),
+                              "NRD disocclusion threshold changed");
+        ResetRealtimeOnChange(ImGui::Checkbox("Use Alternate Disocclusion Threshold Mix",
+                                              &m_RealtimeUI.NRDUseAlternateDisocclusionThresholdMix),
+                              "NRD alternate disocclusion mix toggled");
+        ResetRealtimeOnChange(ImGui::InputFloat("Disocclusion Threshold Alt", &m_RealtimeUI.NRDDisocclusionThresholdAlternate),
+                              "NRD alternate disocclusion threshold changed");
+        ResetRealtimeOnChange(ImGui::InputFloat("Radiance clamping", &m_RealtimeUI.DenoiserRadianceClampK),
+                              "NRD radiance clamp changed");
+
+        ImGui::Separator();
+
+        int NrdMethod = static_cast<int>(m_RealtimeUI.NRDMethod);
+        if (ImGui::Combo("Denoiser Mode", &NrdMethod, "REBLUR\0RELAX\0\0"))
+        {
+            m_RealtimeUI.NRDMethod = static_cast<RTXPTNrdMethod>(std::clamp(NrdMethod, 0, 1));
+            RequestRealtimeReset(RTXPT_REALTIME_RESET_NRD_HISTORY, "NRD mode changed");
+        }
+
+        if (ImGui::CollapsingHeader("Advanced Settings"))
+        {
+            if (m_RealtimeUI.NRDMethod == RTXPTNrdMethod::REBLUR)
+            {
+                RTXPTNrdReblurUiSettings& Reblur = m_RealtimeUI.ReblurSettings;
+                SliderUint("Max Accumulated Frames", Reblur.MaxAccumulatedFrameNum, 0, 500,
+                           "REBLUR max accumulated frames changed");
+                SliderUint("Fast Max Accumulated Frames", Reblur.MaxFastAccumulatedFrameNum, 0, 500,
+                           "REBLUR fast max accumulated frames changed");
+                SliderUint("History Fix Frames", Reblur.HistoryFixFrameNum, 0, 500,
+                           "REBLUR history fix frames changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Diffuse Prepass Blur Radius (pixels)", &Reblur.DiffusePrepassBlurRadius, 0.0f, 100.0f),
+                                      "REBLUR diffuse prepass blur radius changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Specular Prepass Blur Radius (pixels)", &Reblur.SpecularPrepassBlurRadius, 0.0f, 100.0f),
+                                      "REBLUR specular prepass blur radius changed");
+                int HitDistanceMode = static_cast<int>(Reblur.HitDistanceReconstructionMode);
+                if (ImGui::Combo("Hit Distance Reconstruction Mode", &HitDistanceMode, "Off\0AREA_3X3\0AREA_5X5\0\0"))
+                {
+                    Reblur.HitDistanceReconstructionMode =
+                        static_cast<RTXPTNrdHitDistanceReconstructionMode>(std::clamp(HitDistanceMode, 0, 2));
+                    RequestRealtimeReset(RTXPT_REALTIME_RESET_NRD_HISTORY, "REBLUR hit-distance mode changed");
+                }
+                ResetRealtimeOnChange(ImGui::Checkbox("Enable Firefly Filter", &Reblur.EnableAntiFirefly),
+                                      "REBLUR anti-firefly toggled");
+            }
+            else
+            {
+                RTXPTNrdRelaxUiSettings& Relax = m_RealtimeUI.RelaxSettings;
+                ResetRealtimeOnChange(ImGui::SliderFloat("Diffuse Prepass Blur Radius", &Relax.DiffusePrepassBlurRadius, 0.0f, 100.0f),
+                                      "RELAX diffuse prepass blur radius changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Specular Prepass Blur Radius", &Relax.SpecularPrepassBlurRadius, 0.0f, 100.0f),
+                                      "RELAX specular prepass blur radius changed");
+                SliderUint("Diffuse Max Accumulated Frames", Relax.DiffuseMaxAccumulatedFrameNum, 0, 500,
+                           "RELAX diffuse max accumulated frames changed");
+                SliderUint("Specular Max Accumulated Frames", Relax.SpecularMaxAccumulatedFrameNum, 0, 500,
+                           "RELAX specular max accumulated frames changed");
+                SliderUint("Diffuse Fast Max Accumulated Frames", Relax.DiffuseMaxFastAccumulatedFrameNum, 0, 10,
+                           "RELAX diffuse fast max accumulated frames changed");
+                SliderUint("Specular Fast Max Accumulated Frames", Relax.SpecularMaxFastAccumulatedFrameNum, 0, 10,
+                           "RELAX specular fast max accumulated frames changed");
+                SliderUint("History Fix Frame Num", Relax.HistoryFixFrameNum, 0, 500,
+                           "RELAX history fix frames changed");
+                SliderUint("Number of Atrous iterations", Relax.AtrousIterationNum, 2, 8,
+                           "RELAX atrous iterations changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Lobe Angle Fraction", &Relax.LobeAngleFraction, 0.0f, 1.0f),
+                                      "RELAX lobe angle fraction changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Specular Lobe Angle Slack", &Relax.SpecularLobeAngleSlack, 0.0f, 1.0f),
+                                      "RELAX specular lobe angle slack changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Edge Stopping Threshold", &Relax.DepthThreshold, 0.0f, 0.1f),
+                                      "RELAX depth threshold changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Antilag Acceleration Amount", &Relax.AntilagAccelerationAmount, 0.0f, 1.0f),
+                                      "RELAX antilag acceleration changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Antilag Spatial Sigma Scale", &Relax.AntilagSpatialSigmaScale, 0.0f, 5.0f),
+                                      "RELAX antilag spatial sigma changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Antilag Temporal Sigma Scale", &Relax.AntilagTemporalSigmaScale, 0.0f, 5.0f),
+                                      "RELAX antilag temporal sigma changed");
+                ResetRealtimeOnChange(ImGui::SliderFloat("Antilag Reset Amount", &Relax.AntilagResetAmount, 0.0f, 1.0f),
+                                      "RELAX antilag reset amount changed");
+                int HitDistanceMode = static_cast<int>(Relax.HitDistanceReconstructionMode);
+                if (ImGui::Combo("Hit Distance Reconstruction Mode", &HitDistanceMode, "Off\0AREA_3X3\0AREA_5X5\0\0"))
+                {
+                    Relax.HitDistanceReconstructionMode =
+                        static_cast<RTXPTNrdHitDistanceReconstructionMode>(std::clamp(HitDistanceMode, 0, 2));
+                    RequestRealtimeReset(RTXPT_REALTIME_RESET_NRD_HISTORY, "RELAX hit-distance mode changed");
+                }
+                ResetRealtimeOnChange(ImGui::Checkbox("Enable Firefly Filter", &Relax.EnableAntiFirefly),
+                                      "RELAX anti-firefly toggled");
+            }
+        }
+
+        ImGui::EndDisabled();
+        if (DisableNrdControls && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", kRTXPTNrdDisabledReason);
 
         ImGui::Unindent(Indent);
     }
@@ -1508,6 +1835,17 @@ void RTXPTSample::UpdateUI()
         ImGui::Separator();
         ImGui::Text("Frame constants: %s", m_FrameConstantsCB ? "created" : "missing");
         ImGui::Text("Frame index: %u", m_FrameIndex);
+        ImGui::Text("Path tracer mode: %s", m_RealtimeUI.RealtimeMode ? "Realtime" : "Reference");
+        if (m_RealtimeUI.RealtimeMode)
+            ImGui::TextWrapped("Realtime execution: disabled (%s)", kRTXPTRealtimeDisabledReason);
+        ImGui::Text("Realtime samples per pixel: %u", m_RealtimeUI.ActualSamplesPerPixel());
+        ImGui::Text("Realtime AA/SR: %s", GetRealtimeAAModeName(m_RealtimeUI.RealtimeAA));
+        ImGui::Text("Standalone NRD requested: %s", m_RealtimeUI.ActualUseStandaloneDenoiser() ? "yes" : "no");
+        ImGui::Text("NRD availability: %s", kRTXPTStandaloneNrdAvailable ? "available" : kRTXPTNrdDisabledReason);
+        ImGui::Text("NRD method: %s", GetNrdMethodName(m_RealtimeUI.NRDMethod));
+        ImGui::Text("Stable planes active: %d / %u", m_RealtimeUI.StablePlanesActiveCount, kRTXPTStablePlaneCount);
+        ImGui::Text("Current realtime reset flags: 0x%08x", static_cast<Uint32>(m_CurrentFrameRealtimeReset));
+        ImGui::Text("Pending realtime reset flags: 0x%08x", static_cast<Uint32>(m_RealtimeResetPending));
         ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.viewportSizeAndFrameIndex.x, m_LastFrameConstants.viewportSizeAndFrameIndex.y);
         ImGui::Separator();
         ImGui::Text("OutputColor: %s", m_RenderTargets.GetOutputColorSRV() != nullptr ? "created" : "missing");
@@ -1542,7 +1880,10 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");
         const auto& PostStats = m_PostProcessPipeline.GetStats();
         ImGui::Text("Bloom stage: %s", PostStats.BloomStageReady ? "ready" : "not ready");
-        ImGui::Text("Super resolution: disabled in reference mode");
+        ImGui::Text("Super resolution: %s",
+                    m_RealtimeUI.RealtimeMode && m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution ?
+                        "selected, execution starts in G10" :
+                        "disabled");
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
@@ -1561,6 +1902,38 @@ void RTXPTSample::RequestAccumulationReset(const char* /*Reason*/)
     m_AccumulationFrame        = 0;
     m_ResetAccumulationPending = true;
     m_LightsBaker.RequestFeedbackReset();
+
+    if (!m_RealtimeUI.RealtimeMode)
+    {
+        m_RealtimeResetPending |= RTXPT_REALTIME_RESET_REALTIME_CACHES |
+            RTXPT_REALTIME_RESET_NRD_HISTORY |
+            RTXPT_REALTIME_RESET_TAA_SR_HISTORY;
+    }
+}
+
+void RTXPTSample::RequestRealtimeReset(RTXPTRealtimeResetFlags Flags, const char* Reason)
+{
+    if (HasRealtimeResetFlag(Flags, RTXPT_REALTIME_RESET_ACCUMULATION))
+        RequestAccumulationReset(Reason);
+
+    m_RealtimeResetPending |= Flags;
+
+    if (HasRealtimeResetFlag(Flags, RTXPT_REALTIME_RESET_REALTIME_CACHES))
+        m_LightsBaker.RequestFeedbackReset();
+}
+
+void RTXPTSample::RequestRealtimeCachesReset(const char* Reason)
+{
+    RequestRealtimeReset(RTXPT_REALTIME_RESET_REALTIME_CACHES |
+                             RTXPT_REALTIME_RESET_NRD_HISTORY |
+                             RTXPT_REALTIME_RESET_TAA_SR_HISTORY,
+                         Reason);
+}
+
+void RTXPTSample::BeginRealtimeFrameResetScope()
+{
+    m_CurrentFrameRealtimeReset = m_RealtimeResetPending;
+    m_RealtimeResetPending      = RTXPT_REALTIME_RESET_NONE;
 }
 
 } // namespace Diligent

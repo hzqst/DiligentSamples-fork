@@ -38,6 +38,7 @@
 #include "RTXPTEmissiveTrianglePass.hpp"
 #include "RTXPTEnvMapBaker.hpp"
 #include "RTXPTFrameConstants.hpp"
+#include "RTXPTRealtimeSettings.hpp"
 #include "RTXPTLights.hpp"
 #include "RTXPTLightsBaker.hpp"
 #include "RTXPTMaterials.hpp"
@@ -123,6 +124,9 @@ private:
     bool EnsureRenderTargets();
     void ClearFallback(const float4& ClearColor);
     void RequestAccumulationReset(const char* Reason);
+    void RequestRealtimeReset(RTXPTRealtimeResetFlags Flags, const char* Reason);
+    void RequestRealtimeCachesReset(const char* Reason);
+    void BeginRealtimeFrameResetScope();
 
     RTXPTFeatureCaps               m_FeatureCaps;
     std::string                    m_AssetsRoot;
@@ -146,36 +150,41 @@ private:
     RefCntAutoPtr<IBuffer>         m_FrameConstantsCB;
     SampleConstants                m_LastFrameConstants;
     RTXPTReferenceUIState          m_ReferenceUI;
-    RTXPTRenderTargetDimensions    m_CurrentTargetDimensions     = {};
-    RTXPTSuperResolutionFrameDesc  m_CurrentSuperResolutionFrame = {};
-    float                          m_LastElapsedTimeSeconds      = 0.0f;
-    float4x4                       m_LastCameraView              = float4x4::Identity();
-    float4x4                       m_LastCameraProj              = float4x4::Identity();
-    float                          m_CameraVerticalFov           = PI_F / 4.0f;
-    float                          m_CameraNearPlane             = 1.0f;
-    float                          m_CameraFarPlane              = 10000.0f;
-    Uint32                         m_FrameIndex                  = 0;
-    Uint32                         m_AccumulationFrame           = 0;
-    Uint32                         m_MaxBounces                  = 4;
-    Uint32                         m_MinBounces                  = 3;
-    Uint32                         m_MaxNEEBounces               = 16;
-    bool                           m_EnableNEE                   = true;
-    bool                           m_EnableEnvNEE                = true;
-    bool                           m_EnableEmissiveNEE           = true;
-    bool                           m_HasDynamicGeometry          = false;
-    bool                           m_EmissiveTrianglesDirty      = true;
-    float                          m_EnvIntensity                = 1.0f;
-    float                          m_LightIntensityScale         = 1.0f;
-    int                            m_SelectedSceneCamera         = -1;
-    int                            m_SelectedEnvMapSource        = 0;
-    bool                           m_EnableSceneAnimations       = false;
-    bool                           m_ResetAccumulationPending    = true;
-    bool                           m_AccumulationActive          = false;
-    bool                           m_HasLastCameraMatrices       = false;
-    bool                           m_LightsBakerSettingsDirty    = false;
-    bool                           m_RayTracingPassSettingsDirty = false;
-    bool                           m_EnvMapBakerDirty            = true;
-    bool                           m_EnvMapBakerSettingsDirty    = true;
+    RTXPTRealtimeSettings          m_RealtimeUI;
+    RTXPTRealtimeResetFlags        m_RealtimeResetPending = RTXPT_REALTIME_RESET_REALTIME_CACHES |
+        RTXPT_REALTIME_RESET_NRD_HISTORY |
+        RTXPT_REALTIME_RESET_TAA_SR_HISTORY;
+    RTXPTRealtimeResetFlags       m_CurrentFrameRealtimeReset   = RTXPT_REALTIME_RESET_NONE;
+    RTXPTRenderTargetDimensions   m_CurrentTargetDimensions     = {};
+    RTXPTSuperResolutionFrameDesc m_CurrentSuperResolutionFrame = {};
+    float                         m_LastElapsedTimeSeconds      = 0.0f;
+    float4x4                      m_LastCameraView              = float4x4::Identity();
+    float4x4                      m_LastCameraProj              = float4x4::Identity();
+    float                         m_CameraVerticalFov           = PI_F / 4.0f;
+    float                         m_CameraNearPlane             = 1.0f;
+    float                         m_CameraFarPlane              = 10000.0f;
+    Uint32                        m_FrameIndex                  = 0;
+    Uint32                        m_AccumulationFrame           = 0;
+    Uint32                        m_MaxBounces                  = 4;
+    Uint32                        m_MinBounces                  = 3;
+    Uint32                        m_MaxNEEBounces               = 16;
+    bool                          m_EnableNEE                   = true;
+    bool                          m_EnableEnvNEE                = true;
+    bool                          m_EnableEmissiveNEE           = true;
+    bool                          m_HasDynamicGeometry          = false;
+    bool                          m_EmissiveTrianglesDirty      = true;
+    float                         m_EnvIntensity                = 1.0f;
+    float                         m_LightIntensityScale         = 1.0f;
+    int                           m_SelectedSceneCamera         = -1;
+    int                           m_SelectedEnvMapSource        = 0;
+    bool                          m_EnableSceneAnimations       = false;
+    bool                          m_ResetAccumulationPending    = true;
+    bool                          m_AccumulationActive          = false;
+    bool                          m_HasLastCameraMatrices       = false;
+    bool                          m_LightsBakerSettingsDirty    = false;
+    bool                          m_RayTracingPassSettingsDirty = false;
+    bool                          m_EnvMapBakerDirty            = true;
+    bool                          m_EnvMapBakerSettingsDirty    = true;
 };
 
 } // namespace Diligent

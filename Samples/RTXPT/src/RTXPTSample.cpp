@@ -891,7 +891,6 @@ void RTXPTSample::Render()
 
     const float BloomRadius    = std::clamp(m_ReferenceUI.BloomRadius, 0.0f, 64.0f);
     const float BloomIntensity = std::clamp(m_ReferenceUI.BloomIntensity, 0.0f, 0.1f);
-    const float EdgeThreshold  = std::clamp(m_ReferenceUI.PostProcessEdgeDetectionThreshold, 0.0f, 1.0f);
 
     const bool AccumulationExecuted =
         m_PostProcessPipeline.RunAccumulation(m_pImmediateContext,
@@ -909,16 +908,10 @@ void RTXPTSample::Render()
     BloomParams.Radius    = BloomRadius;
     BloomParams.Intensity = BloomIntensity;
 
-    RTXPTPostProcessParameters PostProcessParams;
-    PostProcessParams.EnableHdrTest       = m_ReferenceUI.PostProcessTestPassHDR;
-    PostProcessParams.EnableEdgeDetection = m_ReferenceUI.PostProcessEdgeDetection;
-    PostProcessParams.EdgeThreshold       = EdgeThreshold;
-
     const bool PreTonePostProcessExecuted =
         m_PostProcessPipeline.RunPreToneMapping(m_pImmediateContext,
                                                 m_RenderTargets,
-                                                BloomParams,
-                                                PostProcessParams);
+                                                BloomParams);
     if (!PreTonePostProcessExecuted)
     {
         ClearFallback(float4{0.9f, 0.2f, 0.6f, 1.0f});
@@ -933,16 +926,6 @@ void RTXPTSample::Render()
     if (!ToneMappingExecuted)
     {
         ClearFallback(float4{0.0f, 0.8f, 0.3f, 1.0f});
-        return;
-    }
-
-    const bool PostTonePostProcessExecuted =
-        m_PostProcessPipeline.RunPostToneMapping(m_pImmediateContext,
-                                                 m_RenderTargets,
-                                                 PostProcessParams);
-    if (!PostTonePostProcessExecuted)
-    {
-        ClearFallback(float4{0.6f, 0.2f, 0.9f, 1.0f});
         return;
     }
 
@@ -1153,8 +1136,6 @@ void RTXPTSample::UpdateUI()
         ImGui::TextColored(CategoryColor, "Post processing:");
         ImGui::Indent(Indent);
         {
-            ImGui::Checkbox("PostProcessTestPass", &m_ReferenceUI.PostProcessTestPassHDR);
-
             if (ImGui::CollapsingHeader("Bloom"))
             {
                 ImGui::Checkbox("Enable Bloom", &m_ReferenceUI.EnableBloom);
@@ -1208,12 +1189,6 @@ void RTXPTSample::UpdateUI()
 
             ImGui::Checkbox("Enable Clamp", &ToneMapping.Clamped);
             SanitizeToneMappingParameters(ToneMapping);
-
-            if (ImGui::CollapsingHeader("Late (LDR) post-process"))
-            {
-                ImGui::Checkbox("EdgeDetection", &m_ReferenceUI.PostProcessEdgeDetection);
-                ImGui::SliderFloat("EdgeDetectionThreshold", &m_ReferenceUI.PostProcessEdgeDetectionThreshold, 0.0f, 1.0f);
-            }
         }
         ImGui::Unindent(Indent); // end Post processing
 
@@ -1533,7 +1508,6 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");
         const auto& PostStats = m_PostProcessPipeline.GetStats();
         ImGui::Text("Bloom stage: %s", PostStats.BloomStageReady ? "ready" : "not ready");
-        ImGui::Text("P4 post-process stage: %s", PostStats.PostProcessStageReady ? "ready" : "not ready");
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);

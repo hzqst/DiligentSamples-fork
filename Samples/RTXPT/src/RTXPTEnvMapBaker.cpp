@@ -144,7 +144,7 @@ bool UploadImportanceConstants(IDeviceContext* pContext, IBuffer* pBuffer, const
     return true;
 }
 
-void TransitionTextureRange(IDeviceContext*         pContext,
+void TransitionTextureRange(IDeviceContext*        pContext,
                             ITexture*              pTexture,
                             RESOURCE_STATE         OldState,
                             RESOURCE_STATE         NewState,
@@ -167,7 +167,7 @@ void TransitionTextureRange(IDeviceContext*         pContext,
     pContext->TransitionResourceState(Barrier);
 }
 
-void TransitionImportanceMaps(IDeviceContext*         pContext,
+void TransitionImportanceMaps(IDeviceContext*        pContext,
                               ITexture*              pImportanceMap,
                               ITexture*              pRadianceMap,
                               RESOURCE_STATE         OldState,

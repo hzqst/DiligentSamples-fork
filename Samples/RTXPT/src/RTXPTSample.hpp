@@ -67,16 +67,13 @@ struct RTXPTFeatureCaps
 // (D:/RTXPT-fork/Rtxpt/SampleUI.h).
 struct RTXPTReferenceUIState
 {
-    bool                       AccumulationAA                  = true;     // Jitter AA: always on in our port (no toggle yet).
-    bool                       EnableRussianRoulette           = true;     // RR: always on; start bounce == Min bounces (RR start).
-    bool                       ReferenceFireflyFilterEnabled   = true;     // Phase R1 (G1): adaptive firefly filter.
-    float                      ReferenceFireflyFilterThreshold = 5.0f;     // Phase R1 (G1).
-    int                        DiffuseBounceCount              = 2;        // Phase R5 (G9): separate diffuse-bounce limit.
-    bool                       EnableToneMapping               = true;     // Phase 6: configurable tone-map pass.
-    RTXPTToneMappingParameters ToneMapping;                                // Phase 6/P3: post-process tone-mapping controls.
-    bool                       PostProcessTestPassHDR             = false; // Phase 6/P4: RTXPT-fork HDR test hook.
-    bool                       PostProcessEdgeDetection           = false; // Phase 6/P4: RTXPT-fork LDR edge detection.
-    float                      PostProcessEdgeDetectionThreshold  = 0.1f;
+    bool                       AccumulationAA                  = true; // Jitter AA: always on in our port (no toggle yet).
+    bool                       EnableRussianRoulette           = true; // RR: always on; start bounce == Min bounces (RR start).
+    bool                       ReferenceFireflyFilterEnabled   = true; // Phase R1 (G1): adaptive firefly filter.
+    float                      ReferenceFireflyFilterThreshold = 5.0f; // Phase R1 (G1).
+    int                        DiffuseBounceCount              = 2;    // Phase R5 (G9): separate diffuse-bounce limit.
+    bool                       EnableToneMapping               = true; // Phase 6: configurable tone-map pass.
+    RTXPTToneMappingParameters ToneMapping;                            // Phase 6/P3: post-process tone-mapping controls.
     bool                       EnableBloom                        = true;
     float                      BloomRadius                        = 8.0f;
     float                      BloomIntensity                     = 0.004f;

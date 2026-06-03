@@ -38,7 +38,6 @@ void RTXPTPostProcessPipeline::Reset()
     m_AccumulationPass.Reset();
     m_BloomPass.Reset();
     m_ToneMappingPass.Reset();
-    m_PostProcessPass.Reset();
     m_Device.Release();
     m_Stats = {};
 }
@@ -86,13 +85,6 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
         return false;
     }
 
-    m_Stats.PostProcessStageReady = m_PostProcessPass.Initialize(pDevice, pEngineFactory, ComputeSupported);
-    if (!m_Stats.PostProcessStageReady)
-    {
-        DEV_ERROR("RTXPT P4 post-process pass failed to initialize");
-        return false;
-    }
-
     m_Stats.Ready = true;
     return true;
 }
@@ -109,9 +101,7 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
         RenderTargets.GetProcessedOutputColorRTV() != nullptr &&
         RenderTargets.GetLdrColorSRV() != nullptr &&
         RenderTargets.GetLdrColorUAV() != nullptr &&
-        RenderTargets.GetLdrColorRTV() != nullptr &&
-        RenderTargets.GetLdrColorScratchSRV() != nullptr &&
-        RenderTargets.GetLdrColorScratchUAV() != nullptr;
+        RenderTargets.GetLdrColorRTV() != nullptr;
 
     if (!m_Stats.ResourcesValid)
         DEV_ERROR("RTXPT post-process render targets are incomplete");
@@ -146,10 +136,9 @@ bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*           pContex
     return Executed;
 }
 
-bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*                   pContext,
-                                                 const RTXPTRenderTargets&         RenderTargets,
-                                                 const RTXPTBloomParameters&       BloomParams,
-                                                 const RTXPTPostProcessParameters& PostProcessParams)
+bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*             pContext,
+                                                 const RTXPTRenderTargets&   RenderTargets,
+                                                 const RTXPTBloomParameters& BloomParams)
 {
     const bool BloomEnabled =
         BloomParams.Enabled &&
@@ -175,20 +164,6 @@ bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*                
     if (!BloomExecuted)
     {
         DEV_ERROR("RTXPT bloom pass failed to render");
-        return false;
-    }
-
-    RTXPTPostProcessRenderAttribs PostAttribs;
-    PostAttribs.pProcessedOutputUAV = RenderTargets.GetProcessedOutputColorUAV();
-    PostAttribs.Width               = RenderTargets.GetWidth();
-    PostAttribs.Height              = RenderTargets.GetHeight();
-    PostAttribs.Params              = PostProcessParams;
-
-    const bool HdrTestExecuted    = m_PostProcessPass.RunHdrTest(pContext, PostAttribs);
-    m_Stats.PostProcessStageReady = m_PostProcessPass.IsReady();
-    if (!HdrTestExecuted)
-    {
-        DEV_ERROR("RTXPT HDR post-process test failed");
         return false;
     }
 
@@ -220,30 +195,6 @@ bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   
     if (!Executed)
         DEV_ERROR("RTXPT tone mapping pass failed to render");
     return Executed;
-}
-
-bool RTXPTPostProcessPipeline::RunPostToneMapping(IDeviceContext*                   pContext,
-                                                  const RTXPTRenderTargets&         RenderTargets,
-                                                  const RTXPTPostProcessParameters& PostProcessParams)
-{
-    RTXPTPostProcessRenderAttribs Attribs;
-    Attribs.pLdrColorTexture        = RenderTargets.GetLdrColorTexture();
-    Attribs.pLdrColorScratchTexture = RenderTargets.GetLdrColorScratchTexture();
-    Attribs.pLdrColorScratchSRV     = RenderTargets.GetLdrColorScratchSRV();
-    Attribs.pLdrColorUAV            = RenderTargets.GetLdrColorUAV();
-    Attribs.Width                   = RenderTargets.GetWidth();
-    Attribs.Height                  = RenderTargets.GetHeight();
-    Attribs.Params                  = PostProcessParams;
-
-    const bool EdgeDetectionExecuted = m_PostProcessPass.RunEdgeDetection(pContext, Attribs);
-    m_Stats.PostProcessStageReady    = m_PostProcessPass.IsReady();
-    if (!EdgeDetectionExecuted)
-    {
-        DEV_ERROR("RTXPT LDR edge detection failed");
-        return false;
-    }
-
-    return true;
 }
 
 } // namespace Diligent

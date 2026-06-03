@@ -50,7 +50,6 @@ void RTXPTRenderTargets::Reset()
     m_AccumulatedRadiance.Release();
     m_ProcessedOutputColor.Release();
     m_LdrColor.Release();
-    m_LdrColorScratch.Release();
     m_ComputeColor.Release();
     m_AccumulatedRadianceUnavailable = false;
     m_Width                          = 0;
@@ -111,8 +110,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
     const bool HasCorePostProcessTargets =
         m_OutputColor != nullptr &&
         m_ProcessedOutputColor != nullptr &&
-        m_LdrColor != nullptr &&
-        m_LdrColorScratch != nullptr;
+        m_LdrColor != nullptr;
     const bool HasRequestedTargets =
         HasCorePostProcessTargets &&
         (!CreateComputeOutput || m_ComputeColor != nullptr) &&
@@ -171,9 +169,6 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
     if (!CreateTarget(pDevice, "RTXPT LdrColor", m_Formats.LdrColor, LdrRtFlags, m_LdrColor))
         return false;
 
-    if (!CreateTarget(pDevice, "RTXPT LdrColorScratch", m_Formats.LdrColor, LdrRtFlags, m_LdrColorScratch))
-        return false;
-
     if (CreateComputeOutput &&
         !CreateTarget(pDevice, "RTXPT ComputeColor", m_Formats.ComputeColor, HdrUavFlags, m_ComputeColor))
         return false;
@@ -186,8 +181,7 @@ bool RTXPTRenderTargets::HasPostProcessTargets() const
     return m_OutputColor != nullptr &&
         m_AccumulatedRadiance != nullptr &&
         m_ProcessedOutputColor != nullptr &&
-        m_LdrColor != nullptr &&
-        m_LdrColorScratch != nullptr;
+        m_LdrColor != nullptr;
 }
 
 ITextureView* RTXPTRenderTargets::GetOutputColorUAV() const
@@ -243,21 +237,6 @@ ITextureView* RTXPTRenderTargets::GetLdrColorRTV() const
 ITexture* RTXPTRenderTargets::GetLdrColorTexture() const
 {
     return m_LdrColor;
-}
-
-ITextureView* RTXPTRenderTargets::GetLdrColorScratchUAV() const
-{
-    return m_LdrColorScratch ? m_LdrColorScratch->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
-}
-
-ITextureView* RTXPTRenderTargets::GetLdrColorScratchSRV() const
-{
-    return m_LdrColorScratch ? m_LdrColorScratch->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
-}
-
-ITexture* RTXPTRenderTargets::GetLdrColorScratchTexture() const
-{
-    return m_LdrColorScratch;
 }
 
 ITextureView* RTXPTRenderTargets::GetComputeColorUAV() const

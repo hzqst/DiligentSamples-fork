@@ -32,7 +32,6 @@
 #include "RenderDevice.h"
 #include "RTXPTAccumulationPass.hpp"
 #include "RTXPTBloomPass.hpp"
-#include "RTXPTPostProcessPass.hpp"
 #include "RTXPTRenderTargets.hpp"
 #include "RTXPTToneMappingPass.hpp"
 #include "SwapChain.h"
@@ -49,7 +48,6 @@ struct RTXPTPostProcessPipelineStats
     bool BloomStageReady        = false;
     bool ToneMappingStageReady  = false;
     bool LdrStageReady          = false;
-    bool PostProcessStageReady  = false;
 };
 
 class RTXPTPostProcessPipeline
@@ -69,19 +67,14 @@ public:
                          Uint32                    SampleIndex,
                          bool                      ResetAccumulation);
 
-    bool RunPreToneMapping(IDeviceContext*                   pContext,
-                           const RTXPTRenderTargets&         RenderTargets,
-                           const RTXPTBloomParameters&       BloomParams,
-                           const RTXPTPostProcessParameters& PostProcessParams);
+    bool RunPreToneMapping(IDeviceContext*             pContext,
+                           const RTXPTRenderTargets&   RenderTargets,
+                           const RTXPTBloomParameters& BloomParams);
 
     bool RunToneMapping(IDeviceContext*                   pContext,
                         const RTXPTRenderTargets&         RenderTargets,
                         const RTXPTToneMappingParameters& Params,
                         bool                              Enabled);
-
-    bool RunPostToneMapping(IDeviceContext*                   pContext,
-                            const RTXPTRenderTargets&         RenderTargets,
-                            const RTXPTPostProcessParameters& PostProcessParams);
 
     bool                                 IsReady() const { return m_Stats.Ready; }
     const RTXPTPostProcessPipelineStats& GetStats() const { return m_Stats; }
@@ -92,7 +85,6 @@ private:
     RTXPTAccumulationPass         m_AccumulationPass;
     RTXPTBloomPass                m_BloomPass;
     RTXPTToneMappingPass          m_ToneMappingPass;
-    RTXPTPostProcessPass          m_PostProcessPass;
 };
 
 } // namespace Diligent

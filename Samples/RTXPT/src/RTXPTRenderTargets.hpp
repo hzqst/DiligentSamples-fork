@@ -69,9 +69,6 @@ public:
     ITextureView* GetLdrColorSRV() const;
     ITextureView* GetLdrColorRTV() const;
     ITexture*     GetLdrColorTexture() const;
-    ITextureView* GetLdrColorScratchUAV() const;
-    ITextureView* GetLdrColorScratchSRV() const;
-    ITexture*     GetLdrColorScratchTexture() const;
     ITextureView* GetComputeColorUAV() const;
     ITextureView* GetComputeColorSRV() const;
     ITextureView* GetPresentationSRV() const;
@@ -95,7 +92,6 @@ private:
     RefCntAutoPtr<ITexture>  m_AccumulatedRadiance;
     RefCntAutoPtr<ITexture>  m_ProcessedOutputColor;
     RefCntAutoPtr<ITexture>  m_LdrColor;
-    RefCntAutoPtr<ITexture>  m_LdrColorScratch;
     RefCntAutoPtr<ITexture>  m_ComputeColor;
     bool                     m_AccumulatedRadianceUnavailable = false;
     Uint32                   m_Width                          = 0;

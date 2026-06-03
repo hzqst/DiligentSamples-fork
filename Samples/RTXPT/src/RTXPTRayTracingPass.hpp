@@ -144,6 +144,7 @@ public:
                Uint32          Height);
 
     static void InsertUAVBarrier(IDeviceContext* pContext, ITextureView* pTextureUAV);
+    static void InsertUAVBarrier(IDeviceContext* pContext, IBuffer* pBuffer);
     static void InsertUAVBarrier(IDeviceContext* pContext, IBufferView* pBufferUAV);
 
     bool IsReady(RTXPTPathTraceVariant Variant) const;

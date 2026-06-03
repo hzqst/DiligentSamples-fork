@@ -623,7 +623,7 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
          DispatchInfo.pStablePlanesBufferUAV == nullptr))
         return false;
 
-    auto SetDynamicForStages = [&](const char* Name, IDeviceObject* pObject, bool Required) {
+    auto SetDynamicForStages = [&](const char* Name, IDeviceObject* pObject, bool Required, bool* pFoundAny = nullptr) {
         bool FoundAny = false;
         bool Ok       = true;
         for (SHADER_TYPE Stage : {SHADER_TYPE_RAY_GEN, SHADER_TYPE_RAY_MISS, SHADER_TYPE_RAY_CLOSEST_HIT, SHADER_TYPE_RAY_ANY_HIT})
@@ -646,6 +646,9 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
             pVar->Set(pObject);
         }
 
+        if (pFoundAny != nullptr)
+            *pFoundAny = FoundAny;
+
         if (!FoundAny && Required)
         {
             UNEXPECTED("RTXPT dynamic shader variable is missing: ", Name, " for variant: ", GetVariantName(Variant));
@@ -655,12 +658,28 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
         return Ok;
     };
 
+    // Compatibility bridge: Reference currently reflects legacy output names, while realtime variants use source-compatible names.
+    auto SetDynamicForNamePair = [&](const char* SourceName, const char* LegacyName, IDeviceObject* pObject) {
+        bool SourceFound = false;
+        bool LegacyFound = false;
+        const bool SourceOk = SetDynamicForStages(SourceName, pObject, false, &SourceFound);
+        const bool LegacyOk = SetDynamicForStages(LegacyName, pObject, false, &LegacyFound);
+        if (!SourceOk || !LegacyOk)
+            return false;
+        if (!SourceFound && !LegacyFound)
+        {
+            UNEXPECTED("RTXPT dynamic shader variable is missing: ",
+                       SourceName, " or ", LegacyName,
+                       " for variant: ", GetVariantName(Variant));
+            return false;
+        }
+        return true;
+    };
+
     const bool RealtimeVariant = Variant != RTXPTPathTraceVariant::Reference;
-    if (!SetDynamicForStages("u_OutputColor", DispatchInfo.pOutputColorUAV, RealtimeVariant) ||
-        !SetDynamicForStages("u_Output", DispatchInfo.pOutputColorUAV, !RealtimeVariant) ||
+    if (!SetDynamicForNamePair("u_OutputColor", "u_Output", DispatchInfo.pOutputColorUAV) ||
         !SetDynamicForStages("u_Depth", DispatchInfo.pDepthUAV, true) ||
-        !SetDynamicForStages("u_MotionVectors", DispatchInfo.pMotionVectorsUAV, RealtimeVariant) ||
-        !SetDynamicForStages("u_ScreenMotionVectors", DispatchInfo.pMotionVectorsUAV, !RealtimeVariant) ||
+        !SetDynamicForNamePair("u_MotionVectors", "u_ScreenMotionVectors", DispatchInfo.pMotionVectorsUAV) ||
         !SetDynamicForStages("u_Throughput", DispatchInfo.pThroughputUAV, RealtimeVariant) ||
         !SetDynamicForStages("u_SpecularHitT", DispatchInfo.pSpecularHitTUAV, RealtimeVariant) ||
         !SetDynamicForStages("u_StableRadiance", DispatchInfo.pStableRadianceUAV, RealtimeVariant) ||
@@ -720,19 +739,26 @@ void RTXPTRayTracingPass::InsertUAVBarrier(IDeviceContext* pContext, ITextureVie
 
     StateTransitionDesc Barrier{pTextureUAV->GetTexture(),
                                 RESOURCE_STATE_UNORDERED_ACCESS,
-                                RESOURCE_STATE_UNORDERED_ACCESS};
+                                RESOURCE_STATE_UNORDERED_ACCESS,
+                                STATE_TRANSITION_FLAG_UPDATE_STATE};
+    pContext->TransitionResourceState(Barrier);
+}
+
+void RTXPTRayTracingPass::InsertUAVBarrier(IDeviceContext* pContext, IBuffer* pBuffer)
+{
+    if (pContext == nullptr || pBuffer == nullptr)
+        return;
+
+    StateTransitionDesc Barrier{pBuffer,
+                                RESOURCE_STATE_UNORDERED_ACCESS,
+                                RESOURCE_STATE_UNORDERED_ACCESS,
+                                STATE_TRANSITION_FLAG_UPDATE_STATE};
     pContext->TransitionResourceState(Barrier);
 }
 
 void RTXPTRayTracingPass::InsertUAVBarrier(IDeviceContext* pContext, IBufferView* pBufferUAV)
 {
-    if (pContext == nullptr || pBufferUAV == nullptr || pBufferUAV->GetBuffer() == nullptr)
-        return;
-
-    StateTransitionDesc Barrier{pBufferUAV->GetBuffer(),
-                                RESOURCE_STATE_UNORDERED_ACCESS,
-                                RESOURCE_STATE_UNORDERED_ACCESS};
-    pContext->TransitionResourceState(Barrier);
+    InsertUAVBarrier(pContext, pBufferUAV != nullptr ? pBufferUAV->GetBuffer() : nullptr);
 }
 
 bool RTXPTRayTracingPass::IsReady(RTXPTPathTraceVariant Variant) const

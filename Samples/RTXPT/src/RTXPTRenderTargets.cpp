@@ -37,9 +37,14 @@ bool FormatsMatch(const RTXPTRenderTargetFormats& Lhs, const RTXPTRenderTargetFo
 {
     return Lhs.OutputColor == Rhs.OutputColor &&
         Lhs.AccumulatedRadiance == Rhs.AccumulatedRadiance &&
+        Lhs.SuperResolutionInputColor == Rhs.SuperResolutionInputColor &&
         Lhs.ProcessedOutputColor == Rhs.ProcessedOutputColor &&
         Lhs.LdrColor == Rhs.LdrColor &&
-        Lhs.ComputeColor == Rhs.ComputeColor;
+        Lhs.ComputeColor == Rhs.ComputeColor &&
+        Lhs.Depth == Rhs.Depth &&
+        Lhs.ScreenMotionVectors == Rhs.ScreenMotionVectors &&
+        Lhs.TemporalFeedback == Rhs.TemporalFeedback &&
+        Lhs.CombinedHistoryClampRelax == Rhs.CombinedHistoryClampRelax;
 }
 
 } // namespace
@@ -48,17 +53,24 @@ void RTXPTRenderTargets::Reset()
 {
     m_OutputColor.Release();
     m_AccumulatedRadiance.Release();
+    m_SuperResolutionInputColor.Release();
     m_ProcessedOutputColor.Release();
     m_LdrColor.Release();
     m_ComputeColor.Release();
+    m_Depth.Release();
+    m_ScreenMotionVectors.Release();
+    m_TemporalFeedback1.Release();
+    m_TemporalFeedback2.Release();
+    m_CombinedHistoryClampRelax.Release();
     m_AccumulatedRadianceUnavailable = false;
-    m_Width                          = 0;
-    m_Height                         = 0;
+    m_Dimensions                     = {};
     m_Formats                        = {};
 }
 
 bool RTXPTRenderTargets::CreateTarget(IRenderDevice*           pDevice,
                                       const char*              Name,
+                                      Uint32                   Width,
+                                      Uint32                   Height,
                                       TEXTURE_FORMAT           TargetFormat,
                                       BIND_FLAGS               BindFlags,
                                       RefCntAutoPtr<ITexture>& Target)
@@ -66,8 +78,8 @@ bool RTXPTRenderTargets::CreateTarget(IRenderDevice*           pDevice,
     TextureDesc Desc;
     Desc.Name      = Name;
     Desc.Type      = RESOURCE_DIM_TEX_2D;
-    Desc.Width     = m_Width;
-    Desc.Height    = m_Height;
+    Desc.Width     = Width;
+    Desc.Height    = Height;
     Desc.Format    = TargetFormat;
     Desc.BindFlags = BindFlags;
 
@@ -97,49 +109,73 @@ bool RTXPTRenderTargets::SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMA
     return (FmtInfo.BindFlags & BindFlags) == BindFlags;
 }
 
-bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
-                                Uint32                          Width,
-                                Uint32                          Height,
-                                const RTXPTRenderTargetFormats& Formats,
-                                bool                            CreateComputeOutput,
-                                bool                            CreateAccumulatedRadiance)
+bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
+                                const RTXPTRenderTargetDimensions& Dimensions,
+                                const RTXPTRenderTargetFormats&    Formats,
+                                bool                               CreateComputeOutput,
+                                bool                               CreateAccumulatedRadiance)
 {
-    if (pDevice == nullptr || Width == 0 || Height == 0)
+    if (pDevice == nullptr || !Dimensions.IsValid())
         return false;
 
     const bool HasCorePostProcessTargets =
         m_OutputColor != nullptr &&
         m_ProcessedOutputColor != nullptr &&
-        m_LdrColor != nullptr;
-    const bool HasRequestedTargets =
+        m_LdrColor != nullptr &&
+        m_Depth != nullptr &&
+        m_ScreenMotionVectors != nullptr &&
+        (!Dimensions.SuperResolutionActive || m_SuperResolutionInputColor != nullptr);
+    const bool HasP6PostProcessTargets =
         HasCorePostProcessTargets &&
+        m_TemporalFeedback1 != nullptr &&
+        m_TemporalFeedback2 != nullptr &&
+        m_CombinedHistoryClampRelax != nullptr;
+    const bool HasRequestedTargets =
+        HasP6PostProcessTargets &&
         (!CreateComputeOutput || m_ComputeColor != nullptr) &&
         (CreateComputeOutput || m_ComputeColor == nullptr) &&
         (!CreateAccumulatedRadiance || m_AccumulatedRadiance != nullptr || m_AccumulatedRadianceUnavailable) &&
         (CreateAccumulatedRadiance || m_AccumulatedRadiance == nullptr);
 
-    if (HasRequestedTargets && m_Width == Width && m_Height == Height && FormatsMatch(m_Formats, Formats))
+    if (HasRequestedTargets && m_Dimensions == Dimensions && FormatsMatch(m_Formats, Formats))
         return true;
 
     Reset();
-    m_Width   = Width;
-    m_Height  = Height;
-    m_Formats = Formats;
+    m_Dimensions = Dimensions;
+    m_Formats    = Formats;
 
-    const BIND_FLAGS HdrUavFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
-    const BIND_FLAGS HdrRtFlags  = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
-    const BIND_FLAGS LdrRtFlags  = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
+    const BIND_FLAGS UavFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+    const BIND_FLAGS HdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
+    const BIND_FLAGS LdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
 
-    if (!SupportsBindFlags(pDevice, m_Formats.OutputColor, HdrUavFlags))
+    if (!SupportsBindFlags(pDevice, m_Formats.OutputColor, UavFlags))
     {
         LOG_ERROR_MESSAGE("RGBA16F UAV OutputColor is not supported; RTXPT post-processing resource graph is unavailable");
         return false;
     }
 
-    if (CreateAccumulatedRadiance && !SupportsBindFlags(pDevice, m_Formats.AccumulatedRadiance, HdrUavFlags))
+    if (CreateAccumulatedRadiance && !SupportsBindFlags(pDevice, m_Formats.AccumulatedRadiance, UavFlags))
     {
         LOG_ERROR_MESSAGE("RGBA32F UAV AccumulatedRadiance is not supported; reference accumulation is unavailable");
         m_AccumulatedRadianceUnavailable = true;
+        return false;
+    }
+
+    if (m_Dimensions.SuperResolutionActive && !SupportsBindFlags(pDevice, m_Formats.SuperResolutionInputColor, UavFlags))
+    {
+        LOG_ERROR_MESSAGE("RGBA16F UAV SuperResolutionInputColor is not supported; RTXPT post-processing resource graph is unavailable");
+        return false;
+    }
+
+    if (!SupportsBindFlags(pDevice, m_Formats.Depth, UavFlags))
+    {
+        LOG_ERROR_MESSAGE("R32F UAV Depth is not supported; RTXPT post-processing resource graph is unavailable");
+        return false;
+    }
+
+    if (!SupportsBindFlags(pDevice, m_Formats.ScreenMotionVectors, UavFlags))
+    {
+        LOG_ERROR_MESSAGE("RG16F UAV ScreenMotionVectors is not supported; RTXPT post-processing resource graph is unavailable");
         return false;
     }
 
@@ -155,22 +191,64 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                  pDevice,
         return false;
     }
 
-    if (!CreateTarget(pDevice, "RTXPT OutputColor", m_Formats.OutputColor, HdrUavFlags, m_OutputColor))
+    if (!SupportsBindFlags(pDevice, m_Formats.TemporalFeedback, UavFlags))
+    {
+        LOG_ERROR_MESSAGE("RGBA16_SNORM UAV TemporalFeedback is not supported; RTXPT post-processing resource graph is unavailable");
+        return false;
+    }
+
+    if (!SupportsBindFlags(pDevice, m_Formats.CombinedHistoryClampRelax, UavFlags))
+    {
+        LOG_ERROR_MESSAGE("R8 UAV CombinedHistoryClampRelax is not supported; RTXPT post-processing resource graph is unavailable");
+        return false;
+    }
+
+    if (CreateComputeOutput && !SupportsBindFlags(pDevice, m_Formats.ComputeColor, UavFlags))
+    {
+        LOG_ERROR_MESSAGE("RGBA8 UAV ComputeColor is not supported; RTXPT post-processing resource graph is unavailable");
+        return false;
+    }
+
+    const Uint32 RenderWidth   = m_Dimensions.RenderWidth;
+    const Uint32 RenderHeight  = m_Dimensions.RenderHeight;
+    const Uint32 DisplayWidth  = m_Dimensions.DisplayWidth;
+    const Uint32 DisplayHeight = m_Dimensions.DisplayHeight;
+
+    if (!CreateTarget(pDevice, "RTXPT OutputColor", RenderWidth, RenderHeight, m_Formats.OutputColor, UavFlags, m_OutputColor))
         return false;
 
     if (CreateAccumulatedRadiance &&
         !m_AccumulatedRadianceUnavailable &&
-        !CreateTarget(pDevice, "RTXPT AccumulatedRadiance", m_Formats.AccumulatedRadiance, HdrUavFlags, m_AccumulatedRadiance))
+        !CreateTarget(pDevice, "RTXPT AccumulatedRadiance", RenderWidth, RenderHeight, m_Formats.AccumulatedRadiance, UavFlags, m_AccumulatedRadiance))
         return false;
 
-    if (!CreateTarget(pDevice, "RTXPT ProcessedOutputColor", m_Formats.ProcessedOutputColor, HdrRtFlags, m_ProcessedOutputColor))
+    if (m_Dimensions.SuperResolutionActive &&
+        !CreateTarget(pDevice, "RTXPT SuperResolutionInputColor", RenderWidth, RenderHeight, m_Formats.SuperResolutionInputColor, UavFlags, m_SuperResolutionInputColor))
         return false;
 
-    if (!CreateTarget(pDevice, "RTXPT LdrColor", m_Formats.LdrColor, LdrRtFlags, m_LdrColor))
+    if (!CreateTarget(pDevice, "RTXPT Depth", RenderWidth, RenderHeight, m_Formats.Depth, UavFlags, m_Depth))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT ScreenMotionVectors", RenderWidth, RenderHeight, m_Formats.ScreenMotionVectors, UavFlags, m_ScreenMotionVectors))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT ProcessedOutputColor", DisplayWidth, DisplayHeight, m_Formats.ProcessedOutputColor, HdrRtFlags, m_ProcessedOutputColor))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT LdrColor", DisplayWidth, DisplayHeight, m_Formats.LdrColor, LdrRtFlags, m_LdrColor))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT TemporalFeedback1", DisplayWidth, DisplayHeight, m_Formats.TemporalFeedback, UavFlags, m_TemporalFeedback1))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT TemporalFeedback2", DisplayWidth, DisplayHeight, m_Formats.TemporalFeedback, UavFlags, m_TemporalFeedback2))
+        return false;
+
+    if (!CreateTarget(pDevice, "RTXPT CombinedHistoryClampRelax", DisplayWidth, DisplayHeight, m_Formats.CombinedHistoryClampRelax, UavFlags, m_CombinedHistoryClampRelax))
         return false;
 
     if (CreateComputeOutput &&
-        !CreateTarget(pDevice, "RTXPT ComputeColor", m_Formats.ComputeColor, HdrUavFlags, m_ComputeColor))
+        !CreateTarget(pDevice, "RTXPT ComputeColor", DisplayWidth, DisplayHeight, m_Formats.ComputeColor, UavFlags, m_ComputeColor))
         return false;
 
     return true;
@@ -181,7 +259,13 @@ bool RTXPTRenderTargets::HasPostProcessTargets() const
     return m_OutputColor != nullptr &&
         m_AccumulatedRadiance != nullptr &&
         m_ProcessedOutputColor != nullptr &&
-        m_LdrColor != nullptr;
+        m_LdrColor != nullptr &&
+        m_Depth != nullptr &&
+        m_ScreenMotionVectors != nullptr &&
+        m_TemporalFeedback1 != nullptr &&
+        m_TemporalFeedback2 != nullptr &&
+        m_CombinedHistoryClampRelax != nullptr &&
+        (!m_Dimensions.SuperResolutionActive || m_SuperResolutionInputColor != nullptr);
 }
 
 ITextureView* RTXPTRenderTargets::GetOutputColorUAV() const
@@ -252,6 +336,81 @@ ITextureView* RTXPTRenderTargets::GetComputeColorSRV() const
 ITextureView* RTXPTRenderTargets::GetPresentationSRV() const
 {
     return GetLdrColorSRV();
+}
+
+ITextureView* RTXPTRenderTargets::GetSuperResolutionInputColorUAV() const
+{
+    return m_SuperResolutionInputColor ? m_SuperResolutionInputColor->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetSuperResolutionInputColorSRV() const
+{
+    return m_SuperResolutionInputColor ? m_SuperResolutionInputColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetDepthUAV() const
+{
+    return m_Depth ? m_Depth->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetDepthSRV() const
+{
+    return m_Depth ? m_Depth->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetScreenMotionVectorsUAV() const
+{
+    return m_ScreenMotionVectors ? m_ScreenMotionVectors->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetScreenMotionVectorsSRV() const
+{
+    return m_ScreenMotionVectors ? m_ScreenMotionVectors->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetTemporalFeedback1UAV() const
+{
+    return m_TemporalFeedback1 ? m_TemporalFeedback1->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetTemporalFeedback1SRV() const
+{
+    return m_TemporalFeedback1 ? m_TemporalFeedback1->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetTemporalFeedback2UAV() const
+{
+    return m_TemporalFeedback2 ? m_TemporalFeedback2->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetTemporalFeedback2SRV() const
+{
+    return m_TemporalFeedback2 ? m_TemporalFeedback2->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetCombinedHistoryClampRelaxUAV() const
+{
+    return m_CombinedHistoryClampRelax ? m_CombinedHistoryClampRelax->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetCombinedHistoryClampRelaxSRV() const
+{
+    return m_CombinedHistoryClampRelax ? m_CombinedHistoryClampRelax->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetAccumulationOutputUAV() const
+{
+    return IsSuperResolutionActive() ? GetSuperResolutionInputColorUAV() : GetProcessedOutputColorUAV();
+}
+
+ITextureView* RTXPTRenderTargets::GetSuperResolutionColorSRV() const
+{
+    return IsSuperResolutionActive() ? GetSuperResolutionInputColorSRV() : GetProcessedOutputColorSRV();
+}
+
+ITextureView* RTXPTRenderTargets::GetSuperResolutionOutputUAV() const
+{
+    return GetProcessedOutputColorUAV();
 }
 
 } // namespace Diligent

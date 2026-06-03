@@ -36,6 +36,7 @@ namespace Diligent
 namespace
 {
 constexpr const char* kSRProviderUnavailableReason = "super resolution provider unavailable";
+constexpr const char* kSRVariantsUnavailableReason = "super resolution variants unavailable";
 
 bool UpscalerDescMatches(const SuperResolutionDesc& Lhs, const SuperResolutionDesc& Rhs)
 {
@@ -53,14 +54,15 @@ bool UpscalerDescMatches(const SuperResolutionDesc& Lhs, const SuperResolutionDe
 
 RTXPTSuperResolutionFrameDesc MakeDirectFrameDesc(Uint32                              DisplayWidth,
                                                   Uint32                              DisplayHeight,
-                                                  const RTXPTRenderTargetFormats&     Formats,
+                                                  TEXTURE_FORMAT                      OutputFormat,
                                                   const RTXPTSuperResolutionSettings& Settings,
                                                   bool                                ResetHistory,
                                                   float                               TimeDeltaSeconds)
 {
-    RTXPTSuperResolutionFrameDesc FrameDesc;
-    const Uint32                  Width  = std::max(DisplayWidth, 1u);
-    const Uint32                  Height = std::max(DisplayHeight, 1u);
+    RTXPTSuperResolutionFrameDesc  FrameDesc;
+    const Uint32                   Width  = std::max(DisplayWidth, 1u);
+    const Uint32                   Height = std::max(DisplayHeight, 1u);
+    const RTXPTRenderTargetFormats Formats;
 
     FrameDesc.Dimensions.RenderWidth           = Width;
     FrameDesc.Dimensions.RenderHeight          = Height;
@@ -70,7 +72,7 @@ RTXPTSuperResolutionFrameDesc MakeDirectFrameDesc(Uint32                        
     FrameDesc.ColorFormat                      = Formats.SuperResolutionInputColor;
     FrameDesc.DepthFormat                      = Formats.Depth;
     FrameDesc.MotionFormat                     = Formats.ScreenMotionVectors;
-    FrameDesc.OutputFormat                     = Formats.ProcessedOutputColor;
+    FrameDesc.OutputFormat                     = OutputFormat;
     FrameDesc.ResetHistory                     = ResetHistory;
     FrameDesc.Sharpness                        = Settings.Sharpness;
     FrameDesc.TimeDeltaSeconds                 = TimeDeltaSeconds;
@@ -87,6 +89,16 @@ void UpdateFrameStats(RTXPTSuperResolutionStats& Stats, const RTXPTSuperResoluti
     Stats.LastFrameTemporal = FrameDesc.Temporal;
 }
 } // namespace
+
+void RTXPTSuperResolutionPass::Reset()
+{
+    m_Upscaler.Release();
+    m_Factory.Release();
+    m_Device.Release();
+    m_Variants.clear();
+    m_Stats        = {};
+    m_UpscalerDesc = {};
+}
 
 bool RTXPTSuperResolutionPass::Initialize(IRenderDevice* pDevice)
 {
@@ -118,21 +130,55 @@ bool RTXPTSuperResolutionPass::Initialize(IRenderDevice* pDevice)
     }
 
     m_Stats.VariantCount   = static_cast<Uint32>(m_Variants.size());
-    m_Stats.DisabledReason = m_Variants.empty() ? "super resolution variants unavailable" : "";
+    m_Stats.DisabledReason = m_Variants.empty() ? kSRVariantsUnavailableReason : "";
     return true;
+}
+
+const SuperResolutionInfo* RTXPTSuperResolutionPass::GetActiveVariant(const RTXPTSuperResolutionSettings& Settings) const
+{
+    if (m_Variants.empty())
+        return nullptr;
+
+    const Int32 LastVariantIdx   = static_cast<Int32>(m_Variants.size() - 1);
+    const Int32 ActiveVariantIdx = std::min(std::max(Settings.ActiveVariantIdx, 0), LastVariantIdx);
+    return &m_Variants[static_cast<size_t>(ActiveVariantIdx)];
+}
+
+bool RTXPTSuperResolutionPass::HasTemporalVariant() const
+{
+    return std::any_of(m_Variants.begin(), m_Variants.end(), [](const SuperResolutionInfo& Info) {
+        return Info.Type == SUPER_RESOLUTION_TYPE_TEMPORAL;
+    });
+}
+
+bool RTXPTSuperResolutionPass::SupportsSharpness(const SuperResolutionInfo& Info) const
+{
+    return (Info.Type == SUPER_RESOLUTION_TYPE_SPATIAL && (Info.SpatialCapFlags & SUPER_RESOLUTION_SPATIAL_CAP_FLAG_SHARPNESS) != 0) ||
+        (Info.Type == SUPER_RESOLUTION_TYPE_TEMPORAL && (Info.TemporalCapFlags & SUPER_RESOLUTION_TEMPORAL_CAP_FLAG_SHARPNESS) != 0);
+}
+
+SUPER_RESOLUTION_FLAGS RTXPTSuperResolutionPass::GetFlags(const SuperResolutionInfo& Variant, float Sharpness) const
+{
+    SUPER_RESOLUTION_FLAGS Flags =
+        Variant.Type == SUPER_RESOLUTION_TYPE_TEMPORAL ? SUPER_RESOLUTION_FLAG_AUTO_EXPOSURE : SUPER_RESOLUTION_FLAG_NONE;
+
+    if (SupportsSharpness(Variant) && Sharpness > 0.0f)
+        Flags = Flags | SUPER_RESOLUTION_FLAG_ENABLE_SHARPENING;
+
+    return Flags;
 }
 
 RTXPTSuperResolutionFrameDesc RTXPTSuperResolutionPass::ResolveFrameDesc(const RTXPTSuperResolutionSettings& Settings,
                                                                          Uint32                              DisplayWidth,
                                                                          Uint32                              DisplayHeight,
-                                                                         const RTXPTRenderTargetFormats&     Formats,
+                                                                         TEXTURE_FORMAT                      OutputFormat,
                                                                          bool                                ResetHistory,
                                                                          float                               TimeDeltaSeconds)
 {
     m_Stats.LastExecute   = false;
     m_Stats.UpscalerReady = false;
 
-    auto DirectFrameDesc = MakeDirectFrameDesc(DisplayWidth, DisplayHeight, Formats, Settings, ResetHistory, TimeDeltaSeconds);
+    auto DirectFrameDesc = MakeDirectFrameDesc(DisplayWidth, DisplayHeight, OutputFormat, Settings, ResetHistory, TimeDeltaSeconds);
     m_Stats.DisabledReason.clear();
     UpdateFrameStats(m_Stats, DirectFrameDesc);
 
@@ -141,9 +187,14 @@ RTXPTSuperResolutionFrameDesc RTXPTSuperResolutionPass::ResolveFrameDesc(const R
         m_Stats.DisabledReason = "super resolution disabled by settings";
         return DirectFrameDesc;
     }
-    if (!m_Factory || m_Variants.empty())
+    if (!m_Factory)
     {
         m_Stats.DisabledReason = kSRProviderUnavailableReason;
+        return DirectFrameDesc;
+    }
+    if (m_Variants.empty())
+    {
+        m_Stats.DisabledReason = kSRVariantsUnavailableReason;
         return DirectFrameDesc;
     }
 
@@ -210,10 +261,22 @@ bool RTXPTSuperResolutionPass::EnsureUpscaler(const RTXPTSuperResolutionFrameDes
     const auto VariantIt = std::find_if(m_Variants.begin(), m_Variants.end(), [&FrameDesc](const SuperResolutionInfo& Info) {
         return Info.VariantId == FrameDesc.VariantId;
     });
-    if (!m_Factory || !m_Device || VariantIt == m_Variants.end())
+    if (!m_Factory)
     {
         m_Stats.UpscalerReady  = false;
         m_Stats.DisabledReason = kSRProviderUnavailableReason;
+        return false;
+    }
+    if (!m_Device)
+    {
+        m_Stats.UpscalerReady  = false;
+        m_Stats.DisabledReason = "render device is unavailable";
+        return false;
+    }
+    if (VariantIt == m_Variants.end())
+    {
+        m_Stats.UpscalerReady  = false;
+        m_Stats.DisabledReason = "super resolution variant is unavailable";
         return false;
     }
 
@@ -261,7 +324,12 @@ bool RTXPTSuperResolutionPass::Execute(IDeviceContext*                      pCon
         return true;
 
     if (!EnsureUpscaler(FrameDesc))
+    {
+        if (m_Stats.DisabledReason.empty())
+            m_Stats.DisabledReason = "failed to prepare super resolution upscaler";
+        DEV_ERROR("RTXPT super resolution pass failed: ", m_Stats.DisabledReason.c_str());
         return false;
+    }
 
     ExecuteSuperResolutionAttribs Attribs;
     Attribs.pContext            = pContext;
@@ -282,17 +350,31 @@ bool RTXPTSuperResolutionPass::Execute(IDeviceContext*                      pCon
     Attribs.CameraFovAngleVert  = CameraFovAngleVert;
     Attribs.TimeDeltaInSeconds  = FrameDesc.TimeDeltaSeconds;
     Attribs.ResetHistory        = FrameDesc.ResetHistory;
-    if (!RenderTargets.IsSuperResolutionActive() ||
-        !(RenderTargets.GetDimensions() == FrameDesc.Dimensions) ||
-        Attribs.pContext == nullptr || Attribs.pColorTextureSRV == nullptr ||
-        Attribs.pDepthTextureSRV == nullptr || Attribs.pMotionVectorsSRV == nullptr ||
-        Attribs.pOutputTextureView == nullptr || m_Upscaler == nullptr)
-    {
-        DEV_ERROR("RTXPT super resolution pass resources are incomplete");
+
+    const auto FailExecute = [this](const char* Reason) {
+        m_Stats.DisabledReason = Reason;
+        DEV_ERROR("RTXPT super resolution pass failed: ", Reason);
         return false;
-    }
+    };
+    if (Attribs.pContext == nullptr)
+        return FailExecute("device context is null");
+    if (!RenderTargets.IsSuperResolutionActive())
+        return FailExecute("super resolution render targets are inactive");
+    if (!(RenderTargets.GetDimensions() == FrameDesc.Dimensions))
+        return FailExecute("super resolution render target dimensions do not match frame desc");
+    if (Attribs.pColorTextureSRV == nullptr)
+        return FailExecute("super resolution color SRV is null");
+    if (Attribs.pDepthTextureSRV == nullptr)
+        return FailExecute("super resolution depth SRV is null");
+    if (Attribs.pMotionVectorsSRV == nullptr)
+        return FailExecute("super resolution motion vectors SRV is null");
+    if (Attribs.pOutputTextureView == nullptr)
+        return FailExecute("super resolution output UAV is null");
+    if (m_Upscaler == nullptr)
+        return FailExecute("super resolution upscaler is null");
 
     m_Upscaler->Execute(Attribs);
+    m_Stats.DisabledReason.clear();
     m_Stats.LastExecute = true;
     ++m_Stats.ExecuteCount;
     return true;

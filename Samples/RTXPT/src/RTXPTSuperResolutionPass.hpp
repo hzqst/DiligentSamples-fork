@@ -44,7 +44,7 @@ namespace Diligent
 struct RTXPTSuperResolutionSettings
 {
     bool                               Enabled          = false;
-    Uint32                             ActiveVariantIdx = 0;
+    Int32                              ActiveVariantIdx = 0;
     SUPER_RESOLUTION_OPTIMIZATION_TYPE OptimizationType = SUPER_RESOLUTION_OPTIMIZATION_TYPE_BALANCED;
     float                              Sharpness        = 0.0f;
 };
@@ -84,21 +84,13 @@ struct RTXPTSuperResolutionStats
 class RTXPTSuperResolutionPass
 {
 public:
-    void Reset()
-    {
-        m_Upscaler.Release();
-        m_Factory.Release();
-        m_Device.Release();
-        m_Variants.clear();
-        m_Stats        = {};
-        m_UpscalerDesc = {};
-    }
+    void Reset();
     bool Initialize(IRenderDevice* pDevice);
 
     RTXPTSuperResolutionFrameDesc ResolveFrameDesc(const RTXPTSuperResolutionSettings& Settings,
                                                    Uint32                              DisplayWidth,
                                                    Uint32                              DisplayHeight,
-                                                   const RTXPTRenderTargetFormats&     Formats,
+                                                   TEXTURE_FORMAT                      OutputFormat,
                                                    bool                                ResetHistory,
                                                    float                               TimeDeltaSeconds);
     bool                          Execute(IDeviceContext*                      pContext,
@@ -110,49 +102,13 @@ public:
 
     const std::vector<SuperResolutionInfo>& GetVariants() const { return m_Variants; }
     const RTXPTSuperResolutionStats&        GetStats() const { return m_Stats; }
-    bool                                    HasTemporalVariant() const
-    {
-        for (const auto& Variant : m_Variants)
-        {
-            if (Variant.Type == SUPER_RESOLUTION_TYPE_TEMPORAL)
-                return true;
-        }
-        return false;
-    }
-    bool SupportsSharpness(const RTXPTSuperResolutionSettings& Settings) const
-    {
-        const SuperResolutionInfo* pVariant = GetActiveVariant(Settings);
-        return pVariant != nullptr && VariantSupportsSharpness(*pVariant);
-    }
+    bool                                    HasTemporalVariant() const;
+    bool                                    SupportsSharpness(const SuperResolutionInfo& Info) const;
 
 private:
-    const SuperResolutionInfo* GetActiveVariant(const RTXPTSuperResolutionSettings& Settings) const
-    {
-        if (m_Variants.empty())
-            return nullptr;
-
-        const Uint32 ActiveVariantIdx =
-            Settings.ActiveVariantIdx < m_Variants.size() ? Settings.ActiveVariantIdx : static_cast<Uint32>(m_Variants.size() - 1);
-        return &m_Variants[ActiveVariantIdx];
-    }
-
-    bool                   EnsureUpscaler(const RTXPTSuperResolutionFrameDesc& FrameDesc);
-    SUPER_RESOLUTION_FLAGS GetFlags(const SuperResolutionInfo& Variant, float Sharpness) const
-    {
-        SUPER_RESOLUTION_FLAGS Flags =
-            Variant.Type == SUPER_RESOLUTION_TYPE_TEMPORAL ? SUPER_RESOLUTION_FLAG_AUTO_EXPOSURE : SUPER_RESOLUTION_FLAG_NONE;
-
-        if (VariantSupportsSharpness(Variant) && Sharpness > 0.0f)
-            Flags = Flags | SUPER_RESOLUTION_FLAG_ENABLE_SHARPENING;
-
-        return Flags;
-    }
-
-    static bool VariantSupportsSharpness(const SuperResolutionInfo& Info)
-    {
-        return (Info.Type == SUPER_RESOLUTION_TYPE_SPATIAL && (Info.SpatialCapFlags & SUPER_RESOLUTION_SPATIAL_CAP_FLAG_SHARPNESS) != 0) ||
-            (Info.Type == SUPER_RESOLUTION_TYPE_TEMPORAL && (Info.TemporalCapFlags & SUPER_RESOLUTION_TEMPORAL_CAP_FLAG_SHARPNESS) != 0);
-    }
+    const SuperResolutionInfo* GetActiveVariant(const RTXPTSuperResolutionSettings& Settings) const;
+    bool                       EnsureUpscaler(const RTXPTSuperResolutionFrameDesc& FrameDesc);
+    SUPER_RESOLUTION_FLAGS     GetFlags(const SuperResolutionInfo& Variant, float Sharpness) const;
 
 private:
     RefCntAutoPtr<IRenderDevice>           m_Device;

@@ -77,6 +77,7 @@ struct RTXPTReferenceUIState
     bool                       EnableBloom                        = true;
     float                      BloomRadius                        = 8.0f;
     float                      BloomIntensity                     = 0.004f;
+    RTXPTSuperResolutionSettings SuperResolution;
     int                        NEEType                            = 1; // Phase R3 (G5): 0=Uniform, 1=Power+, 2=NEE-AT.
     int                        NEECandidateSamples                = 5; // Phase R3 (G5): RIS candidate count.
     int                        NEEFullSamples                     = 1; // Phase R3 (G5): visibility-tested full samples.
@@ -116,6 +117,8 @@ private:
     bool ApplySceneCamera(Uint32 CameraIndex);
     void UpdateCameraProjection(Uint32 Width, Uint32 Height);
     void UpdateFrameConstants(double CurrTime);
+    void UpdateRenderTargetDimensions(float TimeDeltaSeconds);
+    float2 GetCurrentSuperResolutionJitter() const;
     bool UpdateLightsBaker(bool ResetFeedback);
     bool UpdateEnvMapBaker(bool ForceRebuild);
     void CreatePhase4Passes();
@@ -146,6 +149,10 @@ private:
     RefCntAutoPtr<IBuffer>         m_FrameConstantsCB;
     SampleConstants                m_LastFrameConstants;
     RTXPTReferenceUIState          m_ReferenceUI;
+    RTXPTRenderTargetDimensions    m_CurrentTargetDimensions     = {};
+    RTXPTSuperResolutionFrameDesc  m_CurrentSuperResolutionFrame = {};
+    float                          m_LastElapsedTimeSeconds      = 0.0f;
+    bool                           m_ResetSuperResolutionHistory = true;
     float4x4                       m_LastCameraView              = float4x4::Identity();
     float4x4                       m_LastCameraProj              = float4x4::Identity();
     float                          m_CameraVerticalFov           = PI_F / 4.0f;

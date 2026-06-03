@@ -99,11 +99,14 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
 
 bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& RenderTargets)
 {
+    const bool AccumulationResourcesValid =
+        !RenderTargets.IsAccumulationActive() ||
+        (RenderTargets.GetAccumulatedRadianceSRV() != nullptr && RenderTargets.GetAccumulatedRadianceUAV() != nullptr);
+
     m_Stats.ResourcesValid =
         RenderTargets.GetOutputColorSRV() != nullptr &&
         RenderTargets.GetOutputColorUAV() != nullptr &&
-        RenderTargets.GetAccumulatedRadianceSRV() != nullptr &&
-        RenderTargets.GetAccumulatedRadianceUAV() != nullptr &&
+        AccumulationResourcesValid &&
         RenderTargets.GetAccumulationOutputUAV() != nullptr &&
         RenderTargets.GetDepthUAV() != nullptr &&
         RenderTargets.GetDepthSRV() != nullptr &&
@@ -143,6 +146,11 @@ bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*           pContex
 {
     if (!m_AccumulationPass.IsReady())
         return false;
+    if (RenderTargets.GetAccumulatedRadianceSRV() == nullptr || RenderTargets.GetAccumulatedRadianceUAV() == nullptr)
+    {
+        DEV_ERROR("RTXPT accumulation pass requires accumulated radiance SRV and UAV");
+        return false;
+    }
 
     const Uint32 ClampedSampleIndex = std::max(SampleIndex, 1u);
     const float  BlendFactor        = ResetAccumulation ? 1.0f : 1.0f / static_cast<float>(ClampedSampleIndex);
@@ -170,10 +178,12 @@ bool RTXPTPostProcessPipeline::RunSuperResolution(IDeviceContext*               
                                                   float                                CameraFar,
                                                   float                                CameraFovAngleVert)
 {
-    const bool Executed               = m_SuperResolutionPass.Execute(pContext, RenderTargets, FrameDesc, CameraNear, CameraFar, CameraFovAngleVert);
-    m_Stats.SuperResolutionStageReady = true;
-    m_Stats.LastSuperResolutionActive = FrameDesc.Enabled;
-    if (!Executed)
+    const bool  Executed = m_SuperResolutionPass.Execute(pContext, RenderTargets, FrameDesc, CameraNear, CameraFar, CameraFovAngleVert);
+    const auto& SRStats  = m_SuperResolutionPass.GetStats();
+
+    m_Stats.SuperResolutionStageReady = !FrameDesc.Enabled || (Executed && SRStats.UpscalerReady);
+    m_Stats.LastSuperResolutionActive = Executed && SRStats.LastExecute && FrameDesc.Enabled;
+    if (!Executed && SRStats.DisabledReason.empty())
         DEV_ERROR("RTXPT temporal super-resolution pass failed");
     return Executed;
 }

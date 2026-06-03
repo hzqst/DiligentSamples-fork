@@ -217,6 +217,20 @@ RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
     return Caps;
 }
 
+RTXPTRenderTargetCreateInfo MakeRenderTargetCreateInfo(const RTXPTRenderTargetDimensions& Dimensions,
+                                                       const RTXPTRealtimeSettings&       RealtimeUI,
+                                                       bool                               RayTracingAvailable)
+{
+    RTXPTRenderTargetCreateInfo CreateInfo;
+    CreateInfo.Dimensions                 = Dimensions;
+    CreateInfo.Formats                    = {};
+    CreateInfo.CreateComputeOutput        = false;
+    CreateInfo.CreateAccumulatedRadiance  = RayTracingAvailable;
+    CreateInfo.CreateRealtimeResources    = RealtimeUI.RealtimeMode;
+    CreateInfo.CreateDenoiserValidation   = false;
+    return CreateInfo;
+}
+
 std::string JoinPath(const std::string& Root, const char* RelativePath)
 {
     if (Root.empty())
@@ -1025,14 +1039,11 @@ bool RTXPTSample::EnsureRenderTargets()
     const RTXPTRenderTargetDimensions OldDimensions         = m_RenderTargets.GetDimensions();
     const bool                        WasAccumulationActive = m_AccumulationActive;
 
-    const RTXPTRenderTargetFormats Formats;
-    constexpr bool                 CreateComputeOutput = false;
-    const bool                     Ok                  = m_RenderTargets.Resize(m_pDevice,
-                                           m_CurrentTargetDimensions,
-                                           Formats,
-                                           CreateComputeOutput,
-                                           m_FeatureCaps.RayTracing);
-    const bool                     ResourcesValid      = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
+    SanitizeRealtimeSettings(m_RealtimeUI);
+    const RTXPTRenderTargetCreateInfo CreateInfo =
+        MakeRenderTargetCreateInfo(m_CurrentTargetDimensions, m_RealtimeUI, m_FeatureCaps.RayTracing);
+    const bool Ok             = m_RenderTargets.Resize(m_pDevice, CreateInfo);
+    const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
 
     m_AccumulationActive =
         Ok && ResourcesValid &&
@@ -1044,6 +1055,11 @@ bool RTXPTSample::EnsureRenderTargets()
          WasAccumulationActive != m_AccumulationActive))
     {
         RequestAccumulationReset("Render targets (re)created");
+        RequestRealtimeReset(RTXPT_REALTIME_RESET_RENDER_TARGET_RECREATE |
+                                 RTXPT_REALTIME_RESET_REALTIME_CACHES |
+                                 RTXPT_REALTIME_RESET_NRD_HISTORY |
+                                 RTXPT_REALTIME_RESET_TAA_SR_HISTORY,
+                             "Render targets (re)created");
         InvalidatePreviousFrameConstants();
     }
     return Ok && ResourcesValid;
@@ -1220,14 +1236,11 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     m_HasLastCameraMatrices = false;
     InvalidatePreviousFrameConstants();
 
-    const RTXPTRenderTargetFormats Formats;
-    constexpr bool                 CreateComputeOutput = false;
-    const bool                     Ok                  = m_RenderTargets.Resize(m_pDevice,
-                                           m_CurrentTargetDimensions,
-                                           Formats,
-                                           CreateComputeOutput,
-                                           m_FeatureCaps.RayTracing);
-    const bool                     ResourcesValid      = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
+    SanitizeRealtimeSettings(m_RealtimeUI);
+    const RTXPTRenderTargetCreateInfo CreateInfo =
+        MakeRenderTargetCreateInfo(m_CurrentTargetDimensions, m_RealtimeUI, m_FeatureCaps.RayTracing);
+    const bool Ok             = m_RenderTargets.Resize(m_pDevice, CreateInfo);
+    const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
     m_AccumulationActive =
         Ok && ResourcesValid &&
         m_RenderTargets.IsAccumulationActive() &&
@@ -1235,6 +1248,11 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     if (Ok && ResourcesValid)
     {
         RequestAccumulationReset("Window resized");
+        RequestRealtimeReset(RTXPT_REALTIME_RESET_RENDER_TARGET_RECREATE |
+                                 RTXPT_REALTIME_RESET_REALTIME_CACHES |
+                                 RTXPT_REALTIME_RESET_NRD_HISTORY |
+                                 RTXPT_REALTIME_RESET_TAA_SR_HISTORY,
+                             "Window resized");
         if (m_Scene.HasValidContent())
         {
             const bool EnvUpdated = UpdateEnvMapBaker(false);
@@ -2026,6 +2044,26 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Alpha-test/blend any-hit: %s", RTPassStats.AnyHitEnabled ? "enabled" : "disabled");
         ImGui::Text("AccumulatedRadiance: %s", m_AccumulationActive ? "active (RGBA32F)" : "inactive (RGBA32F unavailable)");
         ImGui::Text("Post-process targets: %s", m_RenderTargets.HasPostProcessTargets() ? "allocated" : "missing");
+        ImGui::Text("Realtime render targets: %s",
+                    m_RenderTargets.AreRealtimeRenderTargetsRequested() ?
+                        (m_RenderTargets.HasRealtimeRenderTargets() ? "allocated" : "missing") :
+                        "not requested");
+        if (m_RenderTargets.AreRealtimeRenderTargetsRequested())
+        {
+            ImGui::Text("StablePlanesBuffer elements: %llu",
+                        static_cast<unsigned long long>(m_RenderTargets.GetStablePlanesElementCount()));
+            ImGui::Text("StableRadiance: %s", m_RenderTargets.GetStableRadianceSRV() != nullptr ? "created" : "missing");
+            ImGui::Text("StablePlanesHeader: %s", m_RenderTargets.GetStablePlanesHeaderSRV() != nullptr ? "created" : "missing");
+            ImGui::Text("StablePlanesBuffer: %s", m_RenderTargets.GetStablePlanesBufferSRV() != nullptr ? "created" : "missing");
+            ImGui::Text("NRD guide inputs: %s",
+                        m_RenderTargets.GetDenoiserViewspaceZSRV() != nullptr &&
+                                m_RenderTargets.GetDenoiserMotionVectorsSRV() != nullptr &&
+                                m_RenderTargets.GetDenoiserNormalRoughnessSRV() != nullptr ?
+                            "created" :
+                            "missing");
+        }
+        if (m_RenderTargets.GetLastFailureReason()[0] != '\0')
+            ImGui::TextWrapped("Render target error: %s", m_RenderTargets.GetLastFailureReason());
         ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");
         const auto& PostStats = m_PostProcessPipeline.GetStats();
         ImGui::Text("Bloom stage: %s", PostStats.BloomStageReady ? "ready" : "not ready");

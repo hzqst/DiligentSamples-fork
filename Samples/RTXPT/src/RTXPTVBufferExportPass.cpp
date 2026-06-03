@@ -49,6 +49,9 @@ bool SetStaticVariable(IPipelineState* pPSO, const char* Name, IDeviceObject* pO
 
     if (pObject == nullptr)
     {
+        if (!Required)
+            return true;
+
         DEV_ERROR("RTXPT VBufferExport static resource object is null: ", ObjectName);
         return false;
     }
@@ -63,6 +66,7 @@ void RTXPTVBufferExportPass::Reset()
 {
     m_PSO.Release();
     m_SRB.Release();
+    m_Stats = {};
 }
 
 bool RTXPTVBufferExportPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IBuffer* pFrameConstants, IBuffer* pMiniConstants)
@@ -74,9 +78,9 @@ bool RTXPTVBufferExportPass::Initialize(IRenderDevice* pDevice, IEngineFactory* 
         return false;
     }
 
-    if (pFrameConstants == nullptr || pMiniConstants == nullptr)
+    if (pFrameConstants == nullptr)
     {
-        DEV_ERROR(VBufferExportName, " requires frame constants and mini constants");
+        DEV_ERROR(VBufferExportName, " requires frame constants");
         return false;
     }
 
@@ -122,11 +126,17 @@ bool RTXPTVBufferExportPass::Initialize(IRenderDevice* pDevice, IEngineFactory* 
 
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
     VERIFY(m_SRB, "Failed to create RTXPT VBufferExport SRB");
-    return m_SRB != nullptr;
+    if (!m_SRB)
+        return false;
+
+    m_Stats.Ready = true;
+    return true;
 }
 
 bool RTXPTVBufferExportPass::Dispatch(IDeviceContext* pContext, Uint32 Width, Uint32 Height)
 {
+    m_Stats.LastDispatchExecuted = false;
+
     if (!IsReady() || pContext == nullptr || Width == 0 || Height == 0)
         return false;
 
@@ -138,6 +148,9 @@ bool RTXPTVBufferExportPass::Dispatch(IDeviceContext* pContext, Uint32 Width, Ui
     DispatchAttribs.ThreadGroupCountY = (Height + 7) / 8;
     DispatchAttribs.ThreadGroupCountZ = 1;
     pContext->DispatchCompute(DispatchAttribs);
+
+    m_Stats.LastDispatchExecuted = true;
+    ++m_Stats.DispatchCount;
     return true;
 }
 

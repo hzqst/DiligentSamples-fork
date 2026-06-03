@@ -37,17 +37,26 @@
 namespace Diligent
 {
 
+struct RTXPTVBufferExportPassStats
+{
+    bool   Ready                = false;
+    bool   LastDispatchExecuted = false;
+    Uint32 DispatchCount        = 0;
+};
+
 class RTXPTVBufferExportPass
 {
 public:
     void Reset();
     bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IBuffer* pFrameConstants, IBuffer* pMiniConstants);
     bool Dispatch(IDeviceContext* pContext, Uint32 Width, Uint32 Height);
-    bool IsReady() const { return m_PSO != nullptr && m_SRB != nullptr; }
+    bool                               IsReady() const { return m_Stats.Ready; }
+    const RTXPTVBufferExportPassStats& GetStats() const { return m_Stats; }
 
 private:
     RefCntAutoPtr<IPipelineState>         m_PSO;
     RefCntAutoPtr<IShaderResourceBinding> m_SRB;
+    RTXPTVBufferExportPassStats           m_Stats;
 };
 
 } // namespace Diligent

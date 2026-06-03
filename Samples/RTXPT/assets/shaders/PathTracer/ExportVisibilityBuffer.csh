@@ -12,6 +12,5 @@ void main(uint3 tid : SV_DispatchThreadID)
     if (pixel.x >= g_Const.ptConsts.imageWidth || pixel.y >= g_Const.ptConsts.imageHeight)
         return;
 
-    // RTXPT-fork's current live VBufferExport only preserves debug visualization.
-    // The actual depth/motion/throughput export is done in BUILD_STABLE_PLANES.
+    // No-op timing anchor: the real depth/motion/throughput export is done in BUILD_STABLE_PLANES.
 }

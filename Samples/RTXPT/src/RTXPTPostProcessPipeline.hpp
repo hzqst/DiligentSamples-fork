@@ -93,6 +93,8 @@ public:
                         const RTXPTToneMappingParameters& Params,
                         bool                              Enabled);
 
+    float ComputePreExposedGrayLuminance(const RTXPTToneMappingParameters& Params, bool Enabled) const;
+
     bool                                 IsReady() const { return m_Stats.Ready; }
     const RTXPTPostProcessPipelineStats& GetStats() const { return m_Stats; }
     const RTXPTSuperResolutionPass&      GetSuperResolutionPass() const { return m_SuperResolutionPass; }

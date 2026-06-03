@@ -252,4 +252,9 @@ bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   
     return Executed;
 }
 
+float RTXPTPostProcessPipeline::ComputePreExposedGrayLuminance(const RTXPTToneMappingParameters& Params, bool Enabled) const
+{
+    return m_ToneMappingPass.ComputePreExposedGrayLuminance(Params, Enabled);
+}
+
 } // namespace Diligent

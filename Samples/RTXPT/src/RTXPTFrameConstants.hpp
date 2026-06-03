@@ -55,37 +55,92 @@ struct PathTracerCameraData
 };
 static_assert(sizeof(PathTracerCameraData) == 112, "PathTracerCameraData layout must match PathTracer/PathTracerShared.h");
 
+struct PathTracerViewData
+{
+    float4x4 MatWorldToView         = float4x4::Identity();
+    float4x4 MatViewToClip          = float4x4::Identity();
+    float4x4 MatWorldToClip         = float4x4::Identity();
+    float4x4 MatWorldToClipNoOffset = float4x4::Identity();
+    float4x4 MatClipToWorldNoOffset = float4x4::Identity();
+    float2   ViewportOrigin         = float2{0, 0};
+    float2   ViewportSize           = float2{1, 1};
+    float2   ViewportSizeInv        = float2{1, 1};
+    float2   PixelOffset            = float2{0, 0};
+    float2   ClipToWindowScale      = float2{0.5f, -0.5f};
+    float2   ClipToWindowBias       = float2{0.5f, 0.5f};
+};
+static_assert(sizeof(PathTracerViewData) == 368, "PathTracerViewData layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerViewData, ViewportOrigin) == 320, "PathTracerViewData ViewportOrigin offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerViewData, ClipToWindowBias) == 360, "PathTracerViewData ClipToWindowBias offset must match PathTracer/PathTracerShared.h");
+
 struct PathTracerConstants
 {
-    Uint32 bounceCount       = 4;
-    Uint32 sampleIndex       = 0;
+    Uint32 imageWidth            = 1;
+    Uint32 imageHeight           = 1;
+    Uint32 sampleBaseIndex       = 0;
+    float  perPixelJitterAAScale = 1.0f;
+
+    Uint32 bounceCount                         = 4;
+    Uint32 diffuseBounceCount                  = 2;
+    float  EnvironmentMapDiffuseSampleMIPLevel = 0.0f;
+    float  texLODBias                          = 0.0f;
+
+    float  invSubSampleCount       = 1.0f;
+    float  fireflyFilterThreshold  = 0.0f;
+    float  preExposedGrayLuminance = 1.0f;
+    Uint32 denoisingEnabled        = 0;
+
+    Uint32 frameIndex        = 0;
+    Uint32 useReSTIRDI       = 0;
+    Uint32 useReSTIRGI       = 0;
     Uint32 resetAccumulation = 1;
-    Uint32 minBounceCount    = 0;
 
-    Uint32 NEEEnabled            = 1;    // Non-zero enables next-event estimation (direct light sampling).
-    Uint32 environmentNEEEnabled = 1;    // bit 0 enables environment NEE; bits 1..31 pack emissive triangle count (G4).
-    float  environmentIntensity  = 1.0f; // Scales the procedural-sky environment radiance.
-    float  lightIntensityScale   = 1.0f; // Scales analytic (punctual) light radiance.
+    float  stablePlanesSplitStopThreshold               = 0.95f;
+    float  _padding3                                    = 0.0f;
+    Uint32 _padding4                                    = 0;
+    float  stablePlanesSuppressPrimaryIndirectSpecularK = 0.0f;
 
-    Uint32 maxNEEBounceCount   = 16; // NEE budget clamp; default covers the full bounce budget.
-    Uint32 analyticLightCount  = 0;  // CPU-side valid analytic lights; the dummy binding light is not sampled.
-    Uint32 NEEType             = 1;  // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
-    Uint32 NEECandidateSamples = 5;  // G5: RIS candidate count per full sample.
+    float  denoiserRadianceClampK              = 0.0f;
+    float  DLSSRRBrightnessClampK              = 0.0f; // TODO(RTXPT-Realtime-DLSS-RR): reserved constant only.
+    float  stablePlanesAntiAliasingFallthrough = 0.0f;
+    Uint32 _activeStablePlaneCount             = 1;
 
-    Uint32 NEEFullSamples           = 1;    // G5: visibility-tested full samples.
-    Uint32 NEEMISType               = 0;    // G5 UI parity: 0=Full; approximate modes remain disabled.
-    float  fireflyFilterThreshold   = 0.0f; // G1 adaptive firefly filter; 0 disables the filter.
-    float  _paddingP3_0             = 0.0f;
-    Uint32 diffuseBounceCount       = 2; // R5/G9: max diffuse bounces and BSDF LD sampling window.
-    Uint32 nestedDielectricsQuality = 1; // Nested dielectrics quality: 0=Off, 1=Fast, 2=Quality.
-    Uint32 superResolutionActive    = 0; // P6: non-zero means camera.Jitter comes from ISuperResolution.
+    Uint32 maxStablePlaneVertexDepth      = 0;
+    Uint32 allowPrimarySurfaceReplacement = 0;
+    Uint32 genericTSLineStride            = 1;
+    Uint32 genericTSPlaneStride           = 1;
+
+    Uint32 NEEEnabled          = 1;
+    Uint32 NEEType             = 1;
+    Uint32 NEECandidateSamples = 5;
+    Uint32 NEEFullSamples      = 1;
+
+    Uint32 sampleIndex           = 0; // Diligent reference compatibility; realtime uses sampleBaseIndex.
+    Uint32 minBounceCount        = 0;
+    Uint32 environmentNEEEnabled = 1;
+    float  environmentIntensity  = 1.0f;
+
+    float  lightIntensityScale = 1.0f;
+    Uint32 maxNEEBounceCount   = 16;
+    Uint32 analyticLightCount  = 0;
+    Uint32 NEEMISType          = 0;
+
+    Uint32 nestedDielectricsQuality = 1;
+    Uint32 superResolutionActive    = 0;
     Uint32 _paddingR6_1             = 0;
+    Uint32 _paddingR6_2             = 0;
+
+    PathTracerCameraData camera     = {};
+    PathTracerCameraData prevCamera = {};
 };
-static_assert(sizeof(PathTracerConstants) == 80, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
-static_assert(offsetof(PathTracerConstants, _paddingP3_0) == 60, "PathTracerConstants _paddingP3_0 offset must match PathTracer/PathTracerShared.h");
-static_assert(offsetof(PathTracerConstants, diffuseBounceCount) == 64, "PathTracerConstants diffuseBounceCount offset must match PathTracer/PathTracerShared.h");
-static_assert(offsetof(PathTracerConstants, nestedDielectricsQuality) == 68, "PathTracerConstants nestedDielectricsQuality offset must match PathTracer/PathTracerShared.h");
-static_assert(offsetof(PathTracerConstants, superResolutionActive) == 72, "PathTracerConstants superResolutionActive offset must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(PathTracerConstants) == 400, "PathTracerConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, sampleBaseIndex) == 8, "PathTracerConstants sampleBaseIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, invSubSampleCount) == 32, "PathTracerConstants invSubSampleCount offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, frameIndex) == 48, "PathTracerConstants frameIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, genericTSLineStride) == 104, "PathTracerConstants genericTSLineStride offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, sampleIndex) == 128, "PathTracerConstants sampleIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, camera) == 176, "PathTracerConstants camera offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, prevCamera) == 288, "PathTracerConstants prevCamera offset must match PathTracer/PathTracerShared.h");
 
 struct RTXPTEnvMapConstants
 {
@@ -106,10 +161,17 @@ struct SampleConstants
     float4x4             viewProjInv               = float4x4::Identity();
     float4               cameraPositionAndTime     = float4{0, 0, 0, 0};
     float4               viewportSizeAndFrameIndex = float4{0, 0, 0, 0};
+    PathTracerViewData   view                      = {};
+    PathTracerViewData   previousView              = {};
     PathTracerCameraData camera                    = {};
     PathTracerConstants  ptConsts                  = {};
     RTXPTEnvMapConstants envMap                    = {};
 };
-static_assert(sizeof(SampleConstants) == 480, "SampleConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(sizeof(SampleConstants) == 1536, "SampleConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SampleConstants, view) == 160, "SampleConstants view offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SampleConstants, previousView) == 528, "SampleConstants previousView offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SampleConstants, camera) == 896, "SampleConstants camera offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SampleConstants, ptConsts) == 1008, "SampleConstants ptConsts offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SampleConstants, envMap) == 1408, "SampleConstants envMap offset must match PathTracer/PathTracerShared.h");
 
 } // namespace Diligent

@@ -29,32 +29,90 @@ struct PathTracerCameraData
     float  _padding2;
 };
 
-// Mirrors Diligent::PathTracerConstants (the sub-struct embedded in SampleConstants; total size 80 bytes).
+struct PathTracerViewData
+{
+    float4x4 MatWorldToView;
+    float4x4 MatViewToClip;
+    float4x4 MatWorldToClip;
+    float4x4 MatWorldToClipNoOffset;
+    float4x4 MatClipToWorldNoOffset;
+    float2   ViewportOrigin;
+    float2   ViewportSize;
+    float2   ViewportSizeInv;
+    float2   PixelOffset;
+    float2   ClipToWindowScale;
+    float2   ClipToWindowBias;
+};
+
+// Mirrors Diligent::PathTracerConstants in RTXPTFrameConstants.hpp.
 struct PathTracerConstants
 {
-    uint bounceCount;       // Maximum number of secondary bounces; 0 means primary-ray only.
-    uint sampleIndex;       // 0-based index of the sample being added this frame.
-    uint resetAccumulation; // Non-zero means raygen should overwrite the accumulation buffer instead of blending.
-    uint minBounceCount;    // Russian-roulette start bounce.
+    uint  imageWidth;
+    uint  imageHeight;
+    uint  sampleBaseIndex;
+    float perPixelJitterAAScale;
 
-    uint  NEEEnabled;            // Non-zero enables next-event estimation (direct light sampling) at each hit.
-    uint  environmentNEEEnabled; // bit 0: environment NEE enabled; bits 1..31: emissive triangle count (G4).
-    float environmentIntensity;  // Scales the procedural-sky environment radiance.
-    float lightIntensityScale;   // Scales analytic (punctual) light radiance.
+    uint  bounceCount;
+    uint  diffuseBounceCount;
+    float EnvironmentMapDiffuseSampleMIPLevel;
+    float texLODBias;
 
-    uint maxNEEBounceCount;   // Limits NEE work to the first N path bounces.
-    uint analyticLightCount;  // CPU-side count of valid analytic lights; the dummy light is not sampled.
-    uint NEEType;             // G5: 0=Uniform, 1=Power+, 2=NEE-AT.
-    uint NEECandidateSamples; // G5: RIS candidate count per full sample.
+    float invSubSampleCount;
+    float fireflyFilterThreshold;
+    float preExposedGrayLuminance;
+    uint  denoisingEnabled;
 
-    uint  NEEFullSamples;         // G5: visibility-tested full samples.
-    uint  NEEMISType;             // G5 UI parity: 0=Full; approximate modes remain disabled.
-    float fireflyFilterThreshold; // G1 adaptive firefly filter; 0 disables the filter.
-    float _paddingP3_0;
-    uint  diffuseBounceCount;       // R5/G9: max diffuse bounces and BSDF LD sampling window.
-    uint  nestedDielectricsQuality; // R6/G10: 0=Off, 1=Fast, 2=Quality.
-    uint  superResolutionActive;    // P6: non-zero means camera.Jitter comes from ISuperResolution.
-    uint  _paddingR6_1;
+    uint frameIndex;
+    uint useReSTIRDI;
+    uint useReSTIRGI;
+    uint resetAccumulation;
+
+    float stablePlanesSplitStopThreshold;
+    float _padding3;
+    uint  _padding4;
+    float stablePlanesSuppressPrimaryIndirectSpecularK;
+
+    float denoiserRadianceClampK;
+    float DLSSRRBrightnessClampK; // TODO(RTXPT-Realtime-DLSS-RR): reserved constant only.
+    float stablePlanesAntiAliasingFallthrough;
+    uint  _activeStablePlaneCount;
+
+    uint maxStablePlaneVertexDepth;
+    uint allowPrimarySurfaceReplacement;
+    uint genericTSLineStride;
+    uint genericTSPlaneStride;
+
+    uint NEEEnabled;
+    uint NEEType;
+    uint NEECandidateSamples;
+    uint NEEFullSamples;
+
+    uint  sampleIndex;
+    uint  minBounceCount;
+    uint  environmentNEEEnabled;
+    float environmentIntensity;
+
+    float lightIntensityScale;
+    uint  maxNEEBounceCount;
+    uint  analyticLightCount;
+    uint  NEEMISType;
+
+    uint nestedDielectricsQuality;
+    uint superResolutionActive;
+    uint _paddingR6_1;
+    uint _paddingR6_2;
+
+    PathTracerCameraData camera;
+    PathTracerCameraData prevCamera;
+
+    uint GetActiveStablePlaneCount()
+    {
+#if defined(RTXPT_ACTIVE_STABLE_PLANE_COUNT)
+        return RTXPT_ACTIVE_STABLE_PLANE_COUNT;
+#else
+        return _activeStablePlaneCount;
+#endif
+    }
 };
 
 struct RTXPTEnvMapConstants
@@ -69,17 +127,35 @@ struct RTXPTEnvMapConstants
     float4 ImportanceMetadata;
 };
 
-// Mirrors Diligent::SampleConstants in RTXPTFrameConstants.hpp (must keep order and layout in sync; total size 480 bytes).
+// Mirrors Diligent::SampleConstants in RTXPTFrameConstants.hpp.
 struct SampleConstants
 {
     float4x4             viewProj;
     float4x4             viewProjInv;
     float4               cameraPositionAndTime;
     float4               viewportSizeAndFrameIndex;
+    PathTracerViewData   view;
+    PathTracerViewData   previousView;
     PathTracerCameraData camera;
     PathTracerConstants  ptConsts;
     RTXPTEnvMapConstants envMap;
 };
+
+static const uint RTXPT_GENERIC_TS_TILE_SIZE = 8u;
+
+uint RTXPTGenericTSComputeLineStride(uint imageWidth)
+{
+    const uint safeWidth  = max(imageWidth, 1u);
+    const uint tileCountX = (safeWidth + RTXPT_GENERIC_TS_TILE_SIZE - 1u) / RTXPT_GENERIC_TS_TILE_SIZE;
+    return tileCountX * RTXPT_GENERIC_TS_TILE_SIZE;
+}
+
+uint RTXPTGenericTSComputePlaneStride(uint imageWidth, uint imageHeight)
+{
+    const uint safeHeight = max(imageHeight, 1u);
+    const uint tileCountY = (safeHeight + RTXPT_GENERIC_TS_TILE_SIZE - 1u) / RTXPT_GENERIC_TS_TILE_SIZE;
+    return RTXPTGenericTSComputeLineStride(imageWidth) * tileCountY * RTXPT_GENERIC_TS_TILE_SIZE;
+}
 
 // Primary ray payload (Phase 5.1 compatibility - kept for the bridge sanity helpers).
 struct PrimaryPayload

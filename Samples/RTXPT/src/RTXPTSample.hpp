@@ -127,6 +127,7 @@ private:
     void RequestRealtimeReset(RTXPTRealtimeResetFlags Flags, const char* Reason);
     void RequestRealtimeCachesReset(const char* Reason);
     void BeginRealtimeFrameResetScope();
+    void InvalidatePreviousFrameConstants();
 
     RTXPTFeatureCaps               m_FeatureCaps;
     std::string                    m_AssetsRoot;
@@ -160,6 +161,11 @@ private:
     float                         m_LastElapsedTimeSeconds      = 0.0f;
     float4x4                      m_LastCameraView              = float4x4::Identity();
     float4x4                      m_LastCameraProj              = float4x4::Identity();
+    PathTracerCameraData          m_PreviousFrameCamera         = {};
+    PathTracerViewData            m_PreviousFrameView           = {};
+    bool                          m_HasPreviousFrameConstants   = false;
+    Uint32                        m_RealtimeSampleIndex         = 0;
+    Uint32                        m_LastSampleBaseIndex         = 0;
     float                         m_CameraVerticalFov           = PI_F / 4.0f;
     float                         m_CameraNearPlane             = 1.0f;
     float                         m_CameraFarPlane              = 10000.0f;

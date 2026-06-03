@@ -73,7 +73,7 @@ void main()
     // Use the near plane for this diagnostic pass. With the Bistro camera's 1e-7 near/far ratio,
     // far-plane unprojection loses too much precision to distinguish a valid ray from a bad matrix.
     const float4 worldPos4 = mul(float4(ndc, 0.0, 1.0), g_Const.viewProjInv);
-    const float3 origin    = g_Const.cameraPositionAndTime.xyz;
+    const float3 origin    = g_Const.ptConsts.camera.PosW;
 
     float3 diagnosticColor = float3(0.0, 0.0, 0.0);
     bool   invalidRay      = true;
@@ -181,17 +181,17 @@ void main()
     const uint2 pixel      = DispatchRaysIndex().xy;
     const uint2 dimensions = DispatchRaysDimensions().xy;
 
-    // G3: stateless per-(pixel, vertex, sample) seeding keyed by the accumulation sample index.
+    // G3: stateless per-(pixel, vertex, sample) seeding keyed by the active path-trace sample index.
     // Each path vertex + effect gets its own decorrelated generator (full Sobol/Owen is Phase R5).
-    const uint sampleIndex = g_Const.ptConsts.sampleIndex;
+    const uint sampleIndex = g_Const.ptConsts.sampleBaseIndex;
 
-    // Jitter inside the pixel - free anti-aliasing across accumulated samples (vertex 0 / Base effect).
+    // RTXPT-fork-compatible jitter: reference uses a full per-pixel random offset, realtime uses
+    // zero jitter unless DLSS-RR reserves a small micro-jitter value.
     SampleGenerator sgCamera = SampleGenerator_makeStateless(pixel, 0u, sampleIndex, kSampleEffect_Base);
     const float2    randomJitter    = sampleNext2D(sgCamera) - 0.5.xx;
-    const float2    srJitter        = g_Const.camera.Jitter;
-    const float2    subPixelOffset  = g_Const.ptConsts.superResolutionActive != 0u ? srJitter : randomJitter;
+    const float2    subPixelOffset  = g_Const.ptConsts.camera.Jitter + randomJitter * g_Const.ptConsts.perPixelJitterAAScale;
     const float2    cameraDoFSample = sampleNext2D(sgCamera);
-    CameraRay       cameraRay       = ComputeRayThinlens(g_Const.camera, pixel, subPixelOffset, cameraDoFSample);
+    CameraRay       cameraRay       = ComputeRayThinlens(g_Const.ptConsts.camera, pixel, subPixelOffset, cameraDoFSample);
 
     float3 rayOrigin = cameraRay.origin;
     float3 rayDir    = cameraRay.dir;
@@ -216,7 +216,7 @@ void main()
     uint bounce                   = 0u;
     uint rejectedDielectricHits   = 0u;
     InteriorList interiorList     = InteriorList::make();
-    float        primaryDepth     = g_Const.camera.FarZ;
+    float        primaryDepth     = g_Const.ptConsts.camera.FarZ;
     bool         primaryDepthCaptured = false;
 
     [loop]
@@ -245,7 +245,7 @@ void main()
 
         if (bounce == 0u && !primaryDepthCaptured)
         {
-            primaryDepth = payload.hitFlag != 0u ? payload.hitDistance : g_Const.camera.FarZ;
+            primaryDepth = payload.hitFlag != 0u ? payload.hitDistance : g_Const.ptConsts.camera.FarZ;
             primaryDepthCaptured = true;
         }
 

@@ -164,6 +164,55 @@ float3x3 CalculateWhiteBalanceTransformRGBRec709(float WhitePoint)
     return LMSToRGB * Diagonal(Scale) * RGBToLMS;
 }
 
+float ComputeRec709Luminance(const float3& Color)
+{
+    return dot(Color, float3{0.2126f, 0.7152f, 0.0722f});
+}
+
+float3 MulRowVector(const float3& Value, const float3x3& Matrix)
+{
+    return float3{
+        Value.x * Matrix._11 + Value.y * Matrix._21 + Value.z * Matrix._31,
+        Value.x * Matrix._12 + Value.y * Matrix._22 + Value.z * Matrix._32,
+        Value.x * Matrix._13 + Value.y * Matrix._23 + Value.z * Matrix._33};
+}
+
+float GetValidAverageLuminance(float AvgLuminance)
+{
+    return (std::isfinite(AvgLuminance) && AvgLuminance > 0.0f) ? AvgLuminance : kDefaultAvgLuminance;
+}
+
+float ComputeManualExposureScale(const RTXPTToneMappingParameters& Params)
+{
+    const float Shutter = std::max(Params.Shutter, 0.001f);
+    const float FNumber = std::max(Params.FNumber, 0.1f);
+    return (Params.FilmSpeed / 100.0f) / (Shutter * FNumber * FNumber);
+}
+
+float3x3 ComputeWhiteBalanceTransform(const RTXPTToneMappingParameters& Params)
+{
+    return Params.WhiteBalance ?
+        CalculateWhiteBalanceTransformRGBRec709(Params.WhitePoint) :
+        float3x3::Identity();
+}
+
+float ComputeToneMappingExposureScale(const RTXPTToneMappingParameters& Params)
+{
+    const float ExposureScale = std::pow(2.0f, Params.ExposureCompensation);
+    return ExposureScale * (Params.AutoExposure ? 1.0f : ComputeManualExposureScale(Params));
+}
+
+float3x3 ComputeToneMappingColorTransform(const RTXPTToneMappingParameters& Params)
+{
+    return ComputeWhiteBalanceTransform(Params) * ComputeToneMappingExposureScale(Params);
+}
+
+float ComputePreExposedGrayScale(const RTXPTToneMappingParameters& Params)
+{
+    const float ExposureScale = std::pow(2.0f, Params.ExposureCompensation);
+    return ExposureScale * ComputeManualExposureScale(Params);
+}
+
 void UpdateExposureValue(RTXPTToneMappingParameters& Params)
 {
     const float EVMin    = std::log2(kShutterMin * kFNumberMin * kFNumberMin);
@@ -207,6 +256,14 @@ RTXPTToneMappingParameters SanitizeToneMappingParameters(const RTXPTToneMappingP
     Params.WhiteMaxLuminance = SanitizeFiniteRange(Params.WhiteMaxLuminance, 1.0f, kMinPositiveParameterValue, kWhiteMaxLuminanceMax);
     Params.WhiteScale        = SanitizeFiniteRange(Params.WhiteScale, 5.1f, kWhiteScaleMin, kWhiteScaleMax);
 
+    return Params;
+}
+
+RTXPTToneMappingParameters PrepareToneMappingParameters(const RTXPTToneMappingParameters& Input, bool ComputeSupported)
+{
+    RTXPTToneMappingParameters Params = SanitizeToneMappingParameters(Input);
+    Params.AutoExposure               = Params.AutoExposure && ComputeSupported;
+    UpdateExposureValue(Params);
     return Params;
 }
 
@@ -568,19 +625,7 @@ bool RTXPTToneMappingPass::UpdateToneMappingConstants(IDeviceContext* pContext, 
     if (pContext == nullptr || !m_ToneMappingCB)
         return false;
 
-    const float3x3 WhiteBalanceTransform = Params.WhiteBalance ?
-        CalculateWhiteBalanceTransformRGBRec709(Params.WhitePoint) :
-        float3x3::Identity();
-
-    const float ExposureScale       = std::pow(2.0f, Params.ExposureCompensation);
-    float       ManualExposureScale = 1.0f;
-    if (!Params.AutoExposure)
-    {
-        const float Shutter = std::max(Params.Shutter, 0.001f);
-        const float FNumber = std::max(Params.FNumber, 0.1f);
-        ManualExposureScale = (Params.FilmSpeed / 100.0f) / (Shutter * FNumber * FNumber);
-    }
-    const float3x3 ColorTransform = WhiteBalanceTransform * (ExposureScale * ManualExposureScale);
+    const float3x3 ColorTransform = ComputeToneMappingColorTransform(Params);
 
     RTXPTToneMappingConstants Constants;
     Constants.WhiteScale              = Params.WhiteScale;
@@ -588,7 +633,7 @@ bool RTXPTToneMappingPass::UpdateToneMappingConstants(IDeviceContext* pContext, 
     Constants.ToneMapOperator         = static_cast<Uint32>(Params.ToneMapOperator);
     Constants.Clamped                 = Params.Clamped ? 1u : 0u;
     Constants.AutoExposure            = Params.AutoExposure ? 1u : 0u;
-    Constants.AvgLuminance            = (std::isfinite(m_Stats.LastAvgLuminance) && m_Stats.LastAvgLuminance > 0.0f) ? m_Stats.LastAvgLuminance : kDefaultAvgLuminance;
+    Constants.AvgLuminance            = GetValidAverageLuminance(m_Stats.LastAvgLuminance);
     Constants.AutoExposureLumValueMin = std::pow(2.0f, Params.AutoExposure ? Params.ExposureValueMin : -16.0f);
     Constants.AutoExposureLumValueMax = std::pow(2.0f, Params.AutoExposure ? Params.ExposureValueMax : 16.0f);
     Constants.ColorTransform[0]       = float4{ColorTransform._11, ColorTransform._21, ColorTransform._31, 0.0f};
@@ -604,6 +649,25 @@ bool RTXPTToneMappingPass::UpdateToneMappingConstants(IDeviceContext* pContext, 
     return true;
 }
 
+float RTXPTToneMappingPass::ComputePreExposedGrayLuminance(const RTXPTToneMappingParameters& Params, bool Enabled) const
+{
+    if (!Enabled)
+        return 1.0f;
+
+    const RTXPTToneMappingParameters PreparedParams = PrepareToneMappingParameters(Params, m_ComputeSupported);
+    if (PreparedParams.AutoExposure)
+    {
+        // Display auto exposure is derived from the GPU luminance mip chain later in Render().
+        // G2 has no CPU readback/shared exposure state yet, so keep frame constants neutral.
+        return 1.0f;
+    }
+
+    const float  Exposure = ComputePreExposedGrayScale(PreparedParams);
+    const float3 Gray     = MulRowVector(float3{0.5f, 0.5f, 0.5f} * Exposure,
+                                     ComputeWhiteBalanceTransform(PreparedParams));
+    return std::max(ComputeRec709Luminance(Gray), 1.0e-6f);
+}
+
 bool RTXPTToneMappingPass::Render(IDeviceContext* pContext, const RTXPTToneMappingRenderAttribs& Attribs)
 {
     m_Stats.LastRenderExecuted = false;
@@ -616,10 +680,8 @@ bool RTXPTToneMappingPass::Render(IDeviceContext* pContext, const RTXPTToneMappi
         Attribs.pParams == nullptr)
         return false;
 
-    RTXPTToneMappingParameters Params          = SanitizeToneMappingParameters(*Attribs.pParams);
-    const bool                 UseAutoExposure = Params.AutoExposure && m_ComputeSupported;
-    Params.AutoExposure                        = UseAutoExposure;
-    UpdateExposureValue(Params);
+    RTXPTToneMappingParameters Params          = PrepareToneMappingParameters(*Attribs.pParams, m_ComputeSupported);
+    const bool                 UseAutoExposure = Params.AutoExposure;
 
     if (!UpdateToneMappingConstants(pContext, Params, Attribs.Enabled))
         return false;

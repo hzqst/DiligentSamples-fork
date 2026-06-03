@@ -107,6 +107,8 @@ public:
     bool ResizeResources(IRenderDevice* pDevice, Uint32 Width, Uint32 Height, TEXTURE_FORMAT SourceFormat);
     bool Render(IDeviceContext* pContext, const RTXPTToneMappingRenderAttribs& Attribs);
 
+    float ComputePreExposedGrayLuminance(const RTXPTToneMappingParameters& Params, bool Enabled) const;
+
     bool                             IsReady() const { return m_Stats.Ready; }
     const RTXPTToneMappingPassStats& GetStats() const { return m_Stats; }
 

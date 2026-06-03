@@ -66,6 +66,8 @@ constexpr bool        kRTXPTRealtimeSrAvailable    = false;
 constexpr bool        kRTXPTDlssRrAvailable        = false;
 constexpr const char* kRTXPTRealtimeDisabledReason = "Realtime PathTrace/Denoise execution starts in G2-G10.";
 constexpr const char* kRTXPTNrdDisabledReason      = "Standalone denoiser disabled: NRD integration starts in G8.";
+constexpr Uint32      kRTXPTRealtimeNoisePeriod    = 8192u;
+constexpr Uint32      kRTXPTGenericTSTileSize      = 8u;
 
 const char* GetRealtimeAAModeName(RTXPTRealtimeAAMode Mode)
 {
@@ -139,6 +141,55 @@ PathTracerCameraData MakePathTracerCameraData(const FirstPersonCamera& Camera,
     Data.ViewportHeight       = std::max(RenderHeight, Uint32{1});
     Data.ApertureRadius       = std::max(ApertureRadius, 0.0f);
     Data.Jitter               = Jitter;
+    return Data;
+}
+
+Uint32 ComputeGenericTSLineStride(Uint32 ImageWidth)
+{
+    const Uint32 SafeWidth  = std::max(ImageWidth, Uint32{1});
+    const Uint32 TileCountX = (SafeWidth + kRTXPTGenericTSTileSize - 1u) / kRTXPTGenericTSTileSize;
+    return TileCountX * kRTXPTGenericTSTileSize;
+}
+
+Uint32 ComputeGenericTSPlaneStride(Uint32 ImageWidth, Uint32 ImageHeight)
+{
+    const Uint32 SafeHeight = std::max(ImageHeight, Uint32{1});
+    const Uint32 TileCountY = (SafeHeight + kRTXPTGenericTSTileSize - 1u) / kRTXPTGenericTSTileSize;
+    return ComputeGenericTSLineStride(ImageWidth) * TileCountY * kRTXPTGenericTSTileSize;
+}
+
+float ComputeSuperResolutionTexLODBias(Uint32 RenderWidth, Uint32 RenderHeight, Uint32 DisplayWidth, Uint32 DisplayHeight)
+{
+    const float RenderPixels  = static_cast<float>(std::max(RenderWidth, Uint32{1}) * std::max(RenderHeight, Uint32{1}));
+    const float DisplayPixels = static_cast<float>(std::max(DisplayWidth, Uint32{1}) * std::max(DisplayHeight, Uint32{1}));
+    return -std::log2(std::sqrt(DisplayPixels / RenderPixels));
+}
+
+PathTracerViewData MakePathTracerViewData(const float4x4& View,
+                                          const float4x4& Proj,
+                                          Uint32          RenderWidth,
+                                          Uint32          RenderHeight,
+                                          const float2&   PixelOffset)
+{
+    const Uint32 SafeWidth  = std::max(RenderWidth, Uint32{1});
+    const Uint32 SafeHeight = std::max(RenderHeight, Uint32{1});
+    const float  Width      = static_cast<float>(SafeWidth);
+    const float  Height     = static_cast<float>(SafeHeight);
+
+    const float4x4 ViewProj = View * Proj;
+
+    PathTracerViewData Data;
+    Data.MatWorldToView         = View;
+    Data.MatViewToClip          = Proj;
+    Data.MatWorldToClip         = ViewProj;
+    Data.MatWorldToClipNoOffset = ViewProj;
+    Data.MatClipToWorldNoOffset = ViewProj.Inverse();
+    Data.ViewportOrigin         = float2{0.0f, 0.0f};
+    Data.ViewportSize           = float2{Width, Height};
+    Data.ViewportSizeInv        = float2{1.0f / Width, 1.0f / Height};
+    Data.PixelOffset            = PixelOffset;
+    Data.ClipToWindowScale      = float2{Width * 0.5f, -Height * 0.5f};
+    Data.ClipToWindowBias       = float2{Width * 0.5f, Height * 0.5f};
     return Data;
 }
 
@@ -384,9 +435,10 @@ void RTXPTSample::ResetSceneDependentResources()
     m_CameraNearPlane       = kDefaultCameraNearPlane;
     m_CameraFarPlane        = kDefaultCameraFarPlane;
     ResetToneMappingSettings(m_ReferenceUI);
-    m_AccumulationFrame        = 0;
-    m_AccumulationActive       = false;
-    m_HasLastCameraMatrices    = false;
+    m_AccumulationFrame     = 0;
+    m_AccumulationActive    = false;
+    m_HasLastCameraMatrices = false;
+    InvalidatePreviousFrameConstants();
     m_HasDynamicGeometry       = false;
     m_EmissiveTrianglesDirty   = true;
     m_LightsBakerSettingsDirty = false;
@@ -530,6 +582,7 @@ bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload
     }
 
     m_HasLastCameraMatrices = false;
+    InvalidatePreviousFrameConstants();
     RequestAccumulationReset("Scene changed");
     return SceneLoaded && ResourcesReady;
 }
@@ -601,6 +654,7 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
     m_Camera.Update(m_InputController, 0.0f);
 
     m_HasLastCameraMatrices = false;
+    InvalidatePreviousFrameConstants();
     RequestAccumulationReset("Scene camera changed");
     return true;
 }
@@ -665,23 +719,39 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     SanitizeRealtimeSettings(m_RealtimeUI);
     BeginRealtimeFrameResetScope();
 
+    const bool   RealtimeMode = m_RealtimeUI.RealtimeMode;
+    const Uint32 ActualSPP    = std::max(m_RealtimeUI.ActualSamplesPerPixel(), 1u);
+
+    const float2 CameraJitter = float2{0.0f, 0.0f};
+
     const float3   CameraPosition = m_Camera.GetPos();
     const float4x4 CameraView     = m_Camera.GetViewMatrix();
     const float4x4 CameraProj     = m_Camera.GetProjMatrix();
     const float4x4 ViewProj       = CameraView * CameraProj;
 
+    const PathTracerCameraData CurrentCamera  = MakePathTracerCameraData(m_Camera,
+                                                                        RenderWidth,
+                                                                        RenderHeight,
+                                                                        DisplayWidth,
+                                                                        DisplayHeight,
+                                                                        m_ReferenceUI.CameraFocalDistance,
+                                                                        m_ReferenceUI.CameraAperture,
+                                                                        CameraJitter);
+    const PathTracerViewData   CurrentView    = MakePathTracerViewData(CameraView,
+                                                                  CameraProj,
+                                                                  RenderWidth,
+                                                                  RenderHeight,
+                                                                  CameraJitter);
+    const PathTracerCameraData PreviousCamera = m_HasPreviousFrameConstants ? m_PreviousFrameCamera : CurrentCamera;
+    const PathTracerViewData   PreviousView   = m_HasPreviousFrameConstants ? m_PreviousFrameView : CurrentView;
+
     m_LastFrameConstants.viewProj                  = ViewProj;
     m_LastFrameConstants.viewProjInv               = ViewProj.Inverse();
     m_LastFrameConstants.cameraPositionAndTime     = float4{CameraPosition.x, CameraPosition.y, CameraPosition.z, static_cast<float>(CurrTime)};
     m_LastFrameConstants.viewportSizeAndFrameIndex = float4{Width, Height, Width > 0.0f ? 1.0f / Width : 0.0f, static_cast<float>(m_FrameIndex)};
-    m_LastFrameConstants.camera                    = MakePathTracerCameraData(m_Camera,
-                                                           RenderWidth,
-                                                           RenderHeight,
-                                                           DisplayWidth,
-                                                           DisplayHeight,
-                                                           m_ReferenceUI.CameraFocalDistance,
-                                                           m_ReferenceUI.CameraAperture,
-                                                           float2{0.0f, 0.0f});
+    m_LastFrameConstants.view                      = CurrentView;
+    m_LastFrameConstants.previousView              = PreviousView;
+    m_LastFrameConstants.camera                    = CurrentCamera;
 
     if (m_AccumulationActive)
     {
@@ -695,39 +765,114 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
         m_AccumulationFrame = 0;
     }
 
-    m_LastFrameConstants.ptConsts.bounceCount       = m_MaxBounces;
-    m_LastFrameConstants.ptConsts.sampleIndex       = m_AccumulationFrame;
-    m_LastFrameConstants.ptConsts.resetAccumulation = m_ResetAccumulationPending ? 1u : 0u;
-    m_LastFrameConstants.ptConsts.minBounceCount    = m_MinBounces;
-    m_LastFrameConstants.ptConsts.NEEEnabled        = m_EnableNEE ? 1u : 0u;
-    const Uint32 EmissiveTriangleCount              = (m_EnableNEE && m_EnableEmissiveNEE && m_EmissiveTrianglePass.IsReady() &&
-                                          !m_EmissiveTrianglesDirty) ?
+    const Uint32 ReferenceSampleIndex = m_AccumulationFrame;
+    const Uint32 PathTraceSampleIndex = RealtimeMode ? (m_FrameIndex % kRTXPTRealtimeNoisePeriod) : ReferenceSampleIndex;
+    const Uint32 SampleBaseIndex      = PathTraceSampleIndex * ActualSPP;
+    m_RealtimeSampleIndex             = RealtimeMode ? PathTraceSampleIndex : 0u;
+    m_LastSampleBaseIndex             = SampleBaseIndex;
+
+    PathTracerConstants& PtConsts = m_LastFrameConstants.ptConsts;
+    PtConsts.imageWidth           = RenderWidth;
+    PtConsts.imageHeight          = RenderHeight;
+    PtConsts.sampleBaseIndex      = SampleBaseIndex;
+    PtConsts.perPixelJitterAAScale =
+        RealtimeMode ?
+        (m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR ? m_RealtimeUI.DLSSRRMicroJitter : 0.0f) :
+        1.0f;
+
+    PtConsts.bounceCount                         = m_MaxBounces;
+    PtConsts.diffuseBounceCount                  = static_cast<Uint32>(std::clamp(m_ReferenceUI.DiffuseBounceCount, 0, 16));
+    PtConsts.EnvironmentMapDiffuseSampleMIPLevel = 0.0f;
+    PtConsts.texLODBias                          = RealtimeMode ?
+        (m_RealtimeUI.TexLODBias + ComputeSuperResolutionTexLODBias(RenderWidth, RenderHeight, DisplayWidth, DisplayHeight)) :
+        0.0f;
+
+    PtConsts.invSubSampleCount = 1.0f / static_cast<float>(ActualSPP);
+    PtConsts.preExposedGrayLuminance =
+        m_PostProcessPipeline.ComputePreExposedGrayLuminance(m_ReferenceUI.ToneMapping, m_ReferenceUI.EnableToneMapping);
+    const float DisabledFireflyThreshold = 0.0f;
+    if (RealtimeMode)
+    {
+        PtConsts.fireflyFilterThreshold = m_RealtimeUI.RealtimeFireflyFilterEnabled ?
+            m_RealtimeUI.RealtimeFireflyFilterThreshold * std::sqrt(PtConsts.preExposedGrayLuminance) * 1000.0f :
+            DisabledFireflyThreshold;
+    }
+    else
+    {
+        PtConsts.fireflyFilterThreshold = m_ReferenceUI.ReferenceFireflyFilterEnabled ?
+            m_ReferenceUI.ReferenceFireflyFilterThreshold :
+            DisabledFireflyThreshold;
+    }
+    PtConsts.denoisingEnabled = (m_RealtimeUI.ActualUseStandaloneDenoiser() ||
+                                 m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR) ?
+        1u :
+        0u;
+
+    PtConsts.frameIndex        = m_FrameIndex;
+    PtConsts.useReSTIRDI       = 0u;
+    PtConsts.useReSTIRGI       = 0u;
+    PtConsts.resetAccumulation = m_ResetAccumulationPending ? 1u : 0u;
+
+    PtConsts.stablePlanesSplitStopThreshold = m_RealtimeUI.StablePlanesSplitStopThreshold;
+    PtConsts._padding3                      = 0.0f;
+    PtConsts._padding4                      = 0u;
+    PtConsts.stablePlanesSuppressPrimaryIndirectSpecularK =
+        m_RealtimeUI.StablePlanesSuppressPrimaryIndirectSpecular ?
+        m_RealtimeUI.StablePlanesSuppressPrimaryIndirectSpecularK :
+        0.0f;
+
+    PtConsts.denoiserRadianceClampK = m_RealtimeUI.DenoiserRadianceClampK;
+    PtConsts.DLSSRRBrightnessClampK = m_RealtimeUI.DLSSRRBrightnessClampK > 0.0f ?
+        m_RealtimeUI.DLSSRRBrightnessClampK * PtConsts.preExposedGrayLuminance :
+        0.0f;
+    PtConsts.stablePlanesAntiAliasingFallthrough = m_RealtimeUI.StablePlanesAntiAliasingFallthrough;
+    PtConsts._activeStablePlaneCount =
+        static_cast<Uint32>(std::clamp(m_RealtimeUI.StablePlanesActiveCount, Int32{1}, static_cast<Int32>(kRTXPTStablePlaneCount)));
+
+    PtConsts.maxStablePlaneVertexDepth =
+        std::min(static_cast<Uint32>(std::clamp(m_RealtimeUI.StablePlanesMaxVertexDepth,
+                                                Int32{2},
+                                                static_cast<Int32>(kRTXPTStablePlaneMaxVertexIndex))),
+                 m_MaxBounces);
+    PtConsts.allowPrimarySurfaceReplacement = m_RealtimeUI.AllowPrimarySurfaceReplacement ? 1u : 0u;
+    PtConsts.genericTSLineStride            = ComputeGenericTSLineStride(RenderWidth);
+    PtConsts.genericTSPlaneStride           = ComputeGenericTSPlaneStride(RenderWidth, RenderHeight);
+
+    PtConsts.NEEEnabled          = m_EnableNEE ? 1u : 0u;
+    PtConsts.NEEType             = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 2));
+    PtConsts.NEECandidateSamples = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEECandidateSamples, 1, 32));
+    PtConsts.NEEFullSamples      = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEFullSamples, 0, 32));
+
+    PtConsts.sampleIndex    = PathTraceSampleIndex;
+    PtConsts.minBounceCount = m_MinBounces;
+    const Uint32 EmissiveTriangleCount =
+        (m_EnableNEE && m_EnableEmissiveNEE && m_EmissiveTrianglePass.IsReady() && !m_EmissiveTrianglesDirty) ?
         m_Lights.GetEmissiveTriangleCount() :
         0u;
-    m_LastFrameConstants.ptConsts.environmentNEEEnabled = PackEnvironmentNEEAndEmissiveTriangleCount(m_EnableEnvNEE, EmissiveTriangleCount);
-    m_LastFrameConstants.ptConsts.lightIntensityScale   = m_LightIntensityScale;
-    m_LastFrameConstants.ptConsts.maxNEEBounceCount     = m_MaxNEEBounces;
-    m_LastFrameConstants.ptConsts.analyticLightCount    = m_Lights.GetStats().LightCount;
-    m_LastFrameConstants.ptConsts.NEEType               = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEType, 0, 2));
-    m_LastFrameConstants.ptConsts.NEECandidateSamples   = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEECandidateSamples, 1, 32));
-    m_LastFrameConstants.ptConsts.NEEFullSamples        = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEFullSamples, 0, 32));
-    m_LastFrameConstants.ptConsts.NEEMISType            = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 2));
-    m_LastFrameConstants.ptConsts.diffuseBounceCount =
-        static_cast<Uint32>(std::clamp(m_ReferenceUI.DiffuseBounceCount, 0, 16));
-    m_LastFrameConstants.ptConsts.nestedDielectricsQuality =
-        static_cast<Uint32>(std::clamp(m_ReferenceUI.NestedDielectricsQuality, 0, 2));
-    m_LastFrameConstants.ptConsts.superResolutionActive = 0u;
-    // G1: a disabled firefly filter uploads a zero threshold, so the soft cap is a no-op and the
-    // converged image is identical to the filter-on image (only per-sample variance differs).
-    m_LastFrameConstants.ptConsts.fireflyFilterThreshold =
-        m_ReferenceUI.ReferenceFireflyFilterEnabled ? m_ReferenceUI.ReferenceFireflyFilterThreshold : 0.0f;
-    m_LastFrameConstants.envMap = m_EnvMapBaker.GetConstants();
+    PtConsts.environmentNEEEnabled = PackEnvironmentNEEAndEmissiveTriangleCount(m_EnableEnvNEE, EmissiveTriangleCount);
+    PtConsts.environmentIntensity  = m_EnvIntensity;
+
+    PtConsts.lightIntensityScale      = m_LightIntensityScale;
+    PtConsts.maxNEEBounceCount        = m_MaxNEEBounces;
+    PtConsts.analyticLightCount       = m_Lights.GetStats().LightCount;
+    PtConsts.NEEMISType               = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 2));
+    PtConsts.nestedDielectricsQuality = static_cast<Uint32>(std::clamp(m_ReferenceUI.NestedDielectricsQuality, 0, 2));
+    PtConsts.superResolutionActive    = 0u;
+    PtConsts._paddingR6_1             = 0u;
+    PtConsts._paddingR6_2             = 0u;
+    PtConsts.camera                   = CurrentCamera;
+    PtConsts.prevCamera               = PreviousCamera;
+    m_LastFrameConstants.envMap       = m_EnvMapBaker.GetConstants();
 
     if (m_FrameConstantsCB)
     {
         MapHelper<SampleConstants> Constants{m_pImmediateContext, m_FrameConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
         *Constants = m_LastFrameConstants;
     }
+
+    m_PreviousFrameCamera       = CurrentCamera;
+    m_PreviousFrameView         = CurrentView;
+    m_HasPreviousFrameConstants = true;
 
     m_ResetAccumulationPending = false;
 
@@ -900,15 +1045,7 @@ bool RTXPTSample::EnsureRenderTargets()
          WasAccumulationActive != m_AccumulationActive))
     {
         RequestAccumulationReset("Render targets (re)created");
-        m_AccumulationFrame                             = 1;
-        m_LastFrameConstants.ptConsts.sampleIndex       = 1;
-        m_LastFrameConstants.ptConsts.resetAccumulation = 1u;
-        if (m_FrameConstantsCB)
-        {
-            MapHelper<SampleConstants> Constants{m_pImmediateContext, m_FrameConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
-            *Constants                 = m_LastFrameConstants;
-            m_ResetAccumulationPending = false;
-        }
+        InvalidatePreviousFrameConstants();
     }
     return Ok && ResourcesValid;
 }
@@ -1082,6 +1219,7 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     UpdateCameraProjection(Width, Height);
     UpdateRenderTargetDimensions(m_LastElapsedTimeSeconds);
     m_HasLastCameraMatrices = false;
+    InvalidatePreviousFrameConstants();
 
     const RTXPTRenderTargetFormats Formats;
     constexpr bool                 CreateComputeOutput = false;
@@ -1763,12 +1901,14 @@ void RTXPTSample::UpdateUI()
                           "Camera aperture changed"))
         {
             m_ReferenceUI.CameraAperture = std::clamp(m_ReferenceUI.CameraAperture, 0.0f, 1.0f);
+            InvalidatePreviousFrameConstants();
         }
 
         if (ResetOnChange(ImGui::InputFloat("Focal Distance", &m_ReferenceUI.CameraFocalDistance, 0.1f),
                           "Camera focal distance changed"))
         {
             m_ReferenceUI.CameraFocalDistance = std::clamp(m_ReferenceUI.CameraFocalDistance, 0.001f, 1.0e16f);
+            InvalidatePreviousFrameConstants();
         }
 
         m_ReferenceUI.CameraAperture      = std::clamp(m_ReferenceUI.CameraAperture, 0.0f, 1.0f);
@@ -1783,6 +1923,7 @@ void RTXPTSample::UpdateUI()
             const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
             UpdateCameraProjection(SCDesc.Width, SCDesc.Height);
             RequestAccumulationReset("Camera clip planes changed");
+            InvalidatePreviousFrameConstants();
         }
 
         const RTXPTSceneAdapterStats& AdapterStats = m_Scene.GetAdapterStats();
@@ -1846,6 +1987,15 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Stable planes active: %d / %u", m_RealtimeUI.StablePlanesActiveCount, kRTXPTStablePlaneCount);
         ImGui::Text("Current realtime reset flags: 0x%08x", static_cast<Uint32>(m_CurrentFrameRealtimeReset));
         ImGui::Text("Pending realtime reset flags: 0x%08x", static_cast<Uint32>(m_RealtimeResetPending));
+        ImGui::Text("Path-trace frame index: %u", m_LastFrameConstants.ptConsts.frameIndex);
+        ImGui::Text("Reference sample index: %u", m_AccumulationFrame);
+        ImGui::Text("Realtime sample index: %u", m_RealtimeSampleIndex);
+        ImGui::Text("Sample base index: %u", m_LastSampleBaseIndex);
+        ImGui::Text("Sub-sample count inverse: %.4f", m_LastFrameConstants.ptConsts.invSubSampleCount);
+        ImGui::Text("Pre-exposed gray luminance: %.4f", m_LastFrameConstants.ptConsts.preExposedGrayLuminance);
+        ImGui::Text("Generic TS stride: line=%u plane=%u",
+                    m_LastFrameConstants.ptConsts.genericTSLineStride,
+                    m_LastFrameConstants.ptConsts.genericTSPlaneStride);
         ImGui::Text("Viewport: %.0f x %.0f", m_LastFrameConstants.viewportSizeAndFrameIndex.x, m_LastFrameConstants.viewportSizeAndFrameIndex.y);
         ImGui::Separator();
         ImGui::Text("OutputColor: %s", m_RenderTargets.GetOutputColorSRV() != nullptr ? "created" : "missing");
@@ -1918,6 +2068,12 @@ void RTXPTSample::RequestRealtimeReset(RTXPTRealtimeResetFlags Flags, const char
 
     m_RealtimeResetPending |= Flags;
 
+    if (HasRealtimeResetFlag(Flags, RTXPT_REALTIME_RESET_RENDER_TARGET_RECREATE) ||
+        HasRealtimeResetFlag(Flags, RTXPT_REALTIME_RESET_TAA_SR_HISTORY))
+    {
+        InvalidatePreviousFrameConstants();
+    }
+
     if (HasRealtimeResetFlag(Flags, RTXPT_REALTIME_RESET_REALTIME_CACHES))
         m_LightsBaker.RequestFeedbackReset();
 }
@@ -1934,6 +2090,11 @@ void RTXPTSample::BeginRealtimeFrameResetScope()
 {
     m_CurrentFrameRealtimeReset = m_RealtimeResetPending;
     m_RealtimeResetPending      = RTXPT_REALTIME_RESET_NONE;
+}
+
+void RTXPTSample::InvalidatePreviousFrameConstants()
+{
+    m_HasPreviousFrameConstants = false;
 }
 
 } // namespace Diligent

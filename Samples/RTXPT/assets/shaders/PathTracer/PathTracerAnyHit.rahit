@@ -5,10 +5,8 @@
 
 // Alpha-test / alpha-blend any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE.
 // Opaque geometry never reaches this shader.
-[shader("anyhit")]
-void main(inout PathPayload Payload,
-          in BuiltInTriangleIntersectionAttributes Attributes)
-{
+[shader("anyhit")] void main(inout PathPayload                        Payload,
+                             in BuiltInTriangleIntersectionAttributes Attributes) {
     if (!Bridge::hasSubInstanceTable() || !Bridge::hasMaterialTable())
         return; // No material data - accept the hit.
 
@@ -37,8 +35,8 @@ void main(inout PathPayload Payload,
         const float alpha            = Bridge::getBaseColor(material, texCoord).a;
         const uint  subInstanceIndex = Bridge::getSubInstanceIndex();
         const uint  seed             = Hash32Combine(Hash32Combine(Hash32Combine(Hash32(PrimitiveIndex() + 0x2c9277b5u), subInstanceIndex),
-                                                       DispatchRaysIndex().x),
-                                                     Hash32Combine(DispatchRaysIndex().y, g_Const.ptConsts.sampleIndex));
+                                                      DispatchRaysIndex().x),
+                                        Hash32Combine(DispatchRaysIndex().y, g_Const.ptConsts.sampleBaseIndex));
         if (Hash32ToFloat(seed) > saturate(alpha))
         {
             IgnoreHit();

@@ -785,13 +785,6 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_FeatureCaps.RayTracing,
                                     m_FeatureCaps.StandaloneRayTracingShaders);
     }
-
-    m_DebugComputePass.Initialize(m_pDevice,
-                                  m_pEngineFactory,
-                                  "RTXPT debug compute pass",
-                                  "RTXPTDebugCompute.csh",
-                                  m_FrameConstantsCB,
-                                  m_FeatureCaps.ComputeShaders);
 }
 
 bool RTXPTSample::BuildEmissiveTriangles()
@@ -1487,7 +1480,6 @@ void RTXPTSample::UpdateUI()
 
         const RTXPTAccelerationStructureStats& ASStats      = m_AccelerationStructures.GetStats();
         const RTXPTRayTracingPassStats&        RTPassStats  = m_RayTracingPass.GetStats();
-        const RTXPTComputePassStats&           ComputeStats = m_DebugComputePass.GetStats();
 
         ImGui::Text("Backend: %s", GetRenderDeviceTypeString(m_pDevice->GetDeviceInfo().Type));
         ImGui::Text("RayTracing: %s", m_FeatureCaps.RayTracing ? "yes" : "no");
@@ -1546,10 +1538,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);
         ImGui::Separator();
-        ImGui::Checkbox("Debug compute pass", &m_EnableDebugComputePass);
-        ImGui::Text("Compute dispatch: %s", m_DebugComputePass.IsReady() ? "ready" : "not ready");
-        ImGui::Text("Compute executed: %s", ComputeStats.LastDispatchExecuted ? "yes" : "no");
-        ImGui::Text("Compute dispatch count: %u", ComputeStats.DispatchCount);
+        ImGui::Text("Presentation source: LdrColor");
         ImGui::Text("Blit draw count: %u", m_BlitPass.GetDrawCount());
 
         ImGui::Unindent(Indent);

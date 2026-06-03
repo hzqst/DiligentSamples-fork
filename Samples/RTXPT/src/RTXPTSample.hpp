@@ -35,7 +35,6 @@
 #include "RefCntAutoPtr.hpp"
 #include "RTXPTAccelerationStructures.hpp"
 #include "RTXPTBlitPass.hpp"
-#include "RTXPTComputePass.hpp"
 #include "RTXPTEmissiveTrianglePass.hpp"
 #include "RTXPTEnvMapBaker.hpp"
 #include "RTXPTFrameConstants.hpp"
@@ -143,7 +142,6 @@ private:
     RTXPTSkinnedSceneGeometry      m_SkinnedGeometry;
     RTXPTRenderTargets             m_RenderTargets;
     RTXPTRayTracingPass            m_RayTracingPass;
-    RTXPTComputePass               m_DebugComputePass;
     RTXPTEmissiveTrianglePass      m_EmissiveTrianglePass;
     RTXPTBlitPass                  m_BlitPass;
     RTXPTPostProcessPipeline       m_PostProcessPipeline;
@@ -171,7 +169,6 @@ private:
     int                            m_SelectedSceneCamera         = -1;
     int                            m_SelectedEnvMapSource        = 0;
     bool                           m_EnableSceneAnimations       = false;
-    bool                           m_EnableDebugComputePass      = false;
     bool                           m_ResetAccumulationPending    = true;
     bool                           m_AccumulationActive          = false;
     bool                           m_HasLastCameraMatrices       = false;

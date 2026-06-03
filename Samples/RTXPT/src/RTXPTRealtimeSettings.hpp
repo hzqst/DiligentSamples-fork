@@ -35,6 +35,7 @@ namespace Diligent
 
 constexpr Uint32 kRTXPTStablePlaneCount           = 3;
 constexpr Uint32 kRTXPTStablePlaneMaxVertexIndex  = 15;
+constexpr Uint32 kRTXPTGenericTSTileSize          = 8;
 constexpr Uint32 kRTXPTRealtimeSamplesPerPixelMax = 64;
 
 enum class RTXPTRealtimeAAMode : Uint32

@@ -26,8 +26,15 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
+#include <string>
+
+#include "BasicMath.hpp"
+#include "Buffer.h"
 #include "RenderDevice.h"
 #include "RefCntAutoPtr.hpp"
+#include "RTXPTRealtimeSettings.hpp"
 #include "Texture.h"
 #include "TextureView.h"
 
@@ -46,6 +53,22 @@ struct RTXPTRenderTargetFormats
     TEXTURE_FORMAT ScreenMotionVectors       = TEX_FORMAT_RG16_FLOAT;
     TEXTURE_FORMAT TemporalFeedback          = TEX_FORMAT_RGBA16_SNORM;
     TEXTURE_FORMAT CombinedHistoryClampRelax = TEX_FORMAT_R8_UNORM;
+
+    TEXTURE_FORMAT StableRadiance                   = TEX_FORMAT_RGBA16_FLOAT;
+    TEXTURE_FORMAT StablePlanesHeader               = TEX_FORMAT_R32_UINT;
+    TEXTURE_FORMAT Throughput                       = TEX_FORMAT_R32_UINT;
+    TEXTURE_FORMAT SpecularHitT                     = TEX_FORMAT_R32_FLOAT;
+    TEXTURE_FORMAT ScratchFloat1                    = TEX_FORMAT_R32_FLOAT;
+    TEXTURE_FORMAT DenoiserViewspaceZ               = TEX_FORMAT_R32_FLOAT;
+    TEXTURE_FORMAT DenoiserMotionVectors            = TEX_FORMAT_RGBA16_FLOAT;
+    TEXTURE_FORMAT DenoiserNormalRoughness          = TEX_FORMAT_RGB10A2_UNORM;
+    TEXTURE_FORMAT DenoiserDiffRadianceHitDist      = TEX_FORMAT_RGBA16_FLOAT;
+    TEXTURE_FORMAT DenoiserSpecRadianceHitDist      = TEX_FORMAT_RGBA16_FLOAT;
+    TEXTURE_FORMAT DenoiserDisocclusionThresholdMix = TEX_FORMAT_R8_UNORM;
+    TEXTURE_FORMAT DenoiserOutDiffRadianceHitDist   = TEX_FORMAT_RGBA16_FLOAT;
+    TEXTURE_FORMAT DenoiserOutSpecRadianceHitDist   = TEX_FORMAT_RGBA16_FLOAT;
+    TEXTURE_FORMAT DenoiserOutValidation            = TEX_FORMAT_RGBA8_UNORM;
+    TEXTURE_FORMAT DenoiserAvgLayerRadianceHalfRes  = TEX_FORMAT_RGBA16_FLOAT;
 };
 
 struct RTXPTRenderTargetDimensions
@@ -76,10 +99,43 @@ struct RTXPTRenderTargetDimensions
     }
 };
 
+struct RTXPTStablePlaneData
+{
+    float3 RayOrigin       = float3{0, 0, 0};
+    float  LastRayTCurrent = 0.0f;
+    float3 RayDir          = float3{0, 0, 1};
+    float  SceneLength     = 0.0f;
+
+    uint3  PackedThpAndMVs             = uint3{0, 0, 0};
+    Uint32 VertexIndexAndRoughness     = 0;
+    uint3  DenoiserPackedBSDFEstimate = uint3{0, 0, 0};
+    Uint32 PackedNormal               = 0;
+
+    Uint32 PackedNoisyRadianceAndSpecAvg[2] = {};
+    Uint32 FlagsAndVertexIndex              = 0;
+    Uint32 PackedCounters                   = 0;
+};
+static_assert(sizeof(RTXPTStablePlaneData) == 80, "RTXPTStablePlaneData layout must match PathTracer/StablePlanes.hlsli StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, RayDir) == 16, "RTXPTStablePlaneData RayDir offset must match StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, PackedThpAndMVs) == 32, "RTXPTStablePlaneData PackedThpAndMVs offset must match StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, DenoiserPackedBSDFEstimate) == 48, "RTXPTStablePlaneData DenoiserPackedBSDFEstimate offset must match StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, PackedNoisyRadianceAndSpecAvg) == 64, "RTXPTStablePlaneData PackedNoisyRadianceAndSpecAvg offset must match StablePlane");
+
+struct RTXPTRenderTargetCreateInfo
+{
+    RTXPTRenderTargetDimensions Dimensions;
+    RTXPTRenderTargetFormats    Formats;
+    bool                        CreateComputeOutput       = false;
+    bool                        CreateAccumulatedRadiance = false;
+    bool                        CreateRealtimeResources   = false;
+    bool                        CreateDenoiserValidation  = false;
+};
+
 class RTXPTRenderTargets
 {
 public:
     void Reset();
+    bool Resize(IRenderDevice* pDevice, const RTXPTRenderTargetCreateInfo& CreateInfo);
     bool Resize(IRenderDevice*                     pDevice,
                 const RTXPTRenderTargetDimensions& Dimensions,
                 const RTXPTRenderTargetFormats&    Formats,
@@ -122,6 +178,44 @@ public:
     ITextureView* GetTemporalFeedback2SRV() const;
     ITextureView* GetCombinedHistoryClampRelaxUAV() const;
     ITextureView* GetCombinedHistoryClampRelaxSRV() const;
+    bool          HasRealtimeRenderTargets() const;
+    bool          AreRealtimeRenderTargetsRequested() const { return m_RealtimeResourcesRequested; }
+    const char*   GetLastFailureReason() const { return m_LastFailureReason.c_str(); }
+    Uint64        GetStablePlanesElementCount() const { return m_StablePlanesElementCount; }
+
+    ITextureView* GetStableRadianceUAV() const;
+    ITextureView* GetStableRadianceSRV() const;
+    ITextureView* GetStablePlanesHeaderUAV() const;
+    ITextureView* GetStablePlanesHeaderSRV() const;
+    IBufferView*  GetStablePlanesBufferUAV() const;
+    IBufferView*  GetStablePlanesBufferSRV() const;
+    IBuffer*      GetStablePlanesBuffer() const;
+    ITextureView* GetThroughputUAV() const;
+    ITextureView* GetThroughputSRV() const;
+    ITextureView* GetSpecularHitTUAV() const;
+    ITextureView* GetSpecularHitTSRV() const;
+    ITextureView* GetScratchFloat1UAV() const;
+    ITextureView* GetScratchFloat1SRV() const;
+    ITextureView* GetDenoiserViewspaceZUAV() const;
+    ITextureView* GetDenoiserViewspaceZSRV() const;
+    ITextureView* GetDenoiserMotionVectorsUAV() const;
+    ITextureView* GetDenoiserMotionVectorsSRV() const;
+    ITextureView* GetDenoiserNormalRoughnessUAV() const;
+    ITextureView* GetDenoiserNormalRoughnessSRV() const;
+    ITextureView* GetDenoiserDiffRadianceHitDistUAV() const;
+    ITextureView* GetDenoiserDiffRadianceHitDistSRV() const;
+    ITextureView* GetDenoiserSpecRadianceHitDistUAV() const;
+    ITextureView* GetDenoiserSpecRadianceHitDistSRV() const;
+    ITextureView* GetDenoiserDisocclusionThresholdMixUAV() const;
+    ITextureView* GetDenoiserDisocclusionThresholdMixSRV() const;
+    ITextureView* GetDenoiserOutDiffRadianceHitDistUAV(Uint32 PlaneIndex) const;
+    ITextureView* GetDenoiserOutDiffRadianceHitDistSRV(Uint32 PlaneIndex) const;
+    ITextureView* GetDenoiserOutSpecRadianceHitDistUAV(Uint32 PlaneIndex) const;
+    ITextureView* GetDenoiserOutSpecRadianceHitDistSRV(Uint32 PlaneIndex) const;
+    ITextureView* GetDenoiserOutValidationUAV() const;
+    ITextureView* GetDenoiserOutValidationSRV() const;
+    ITextureView* GetDenoiserAvgLayerRadianceHalfResUAV() const;
+    ITextureView* GetDenoiserAvgLayerRadianceHalfResSRV() const;
 
     ITextureView* GetAccumulationOutputUAV() const;
     ITextureView* GetSuperResolutionColorSRV() const;
@@ -150,8 +244,14 @@ private:
                       Uint32                   Height,
                       TEXTURE_FORMAT           TargetFormat,
                       BIND_FLAGS               BindFlags,
-                      RefCntAutoPtr<ITexture>& Target);
+                      RefCntAutoPtr<ITexture>& Target,
+                      RESOURCE_DIMENSION       Type      = RESOURCE_DIM_TEX_2D,
+                      Uint32                   ArraySize = 1);
+    bool CreateStablePlanesBuffer(IRenderDevice*          pDevice,
+                                  Uint64                  ElementCount,
+                                  RefCntAutoPtr<IBuffer>& Target);
     bool SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMAT TargetFormat, BIND_FLAGS BindFlags) const;
+    bool FailResize(const char* Reason);
 
     RefCntAutoPtr<ITexture>     m_OutputColor;
     RefCntAutoPtr<ITexture>     m_AccumulatedRadiance;
@@ -164,8 +264,28 @@ private:
     RefCntAutoPtr<ITexture>     m_TemporalFeedback1;
     RefCntAutoPtr<ITexture>     m_TemporalFeedback2;
     RefCntAutoPtr<ITexture>     m_CombinedHistoryClampRelax;
+    RefCntAutoPtr<ITexture>     m_StableRadiance;
+    RefCntAutoPtr<ITexture>     m_StablePlanesHeader;
+    RefCntAutoPtr<IBuffer>      m_StablePlanesBuffer;
+    RefCntAutoPtr<ITexture>     m_Throughput;
+    RefCntAutoPtr<ITexture>     m_SpecularHitT;
+    RefCntAutoPtr<ITexture>     m_ScratchFloat1;
+    RefCntAutoPtr<ITexture>     m_DenoiserViewspaceZ;
+    RefCntAutoPtr<ITexture>     m_DenoiserMotionVectors;
+    RefCntAutoPtr<ITexture>     m_DenoiserNormalRoughness;
+    RefCntAutoPtr<ITexture>     m_DenoiserDiffRadianceHitDist;
+    RefCntAutoPtr<ITexture>     m_DenoiserSpecRadianceHitDist;
+    RefCntAutoPtr<ITexture>     m_DenoiserDisocclusionThresholdMix;
+    std::array<RefCntAutoPtr<ITexture>, kRTXPTStablePlaneCount> m_DenoiserOutDiffRadianceHitDist;
+    std::array<RefCntAutoPtr<ITexture>, kRTXPTStablePlaneCount> m_DenoiserOutSpecRadianceHitDist;
+    RefCntAutoPtr<ITexture>     m_DenoiserOutValidation;
+    RefCntAutoPtr<ITexture>     m_DenoiserAvgLayerRadianceHalfRes;
     bool                        m_AccumulatedRadianceUnavailable = false;
     bool                        m_AccumulatedRadianceRequested   = false;
+    bool                        m_RealtimeResourcesRequested     = false;
+    bool                        m_DenoiserValidationRequested    = false;
+    Uint64                      m_StablePlanesElementCount       = 0;
+    std::string                 m_LastFailureReason;
     RTXPTRenderTargetDimensions m_Dimensions                     = {0, 0, 0, 0, false};
     RTXPTRenderTargetFormats    m_Formats                        = {};
 };

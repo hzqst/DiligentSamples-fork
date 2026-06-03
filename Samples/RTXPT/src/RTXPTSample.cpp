@@ -67,7 +67,6 @@ constexpr bool        kRTXPTDlssRrAvailable        = false;
 constexpr const char* kRTXPTRealtimeDisabledReason = "Realtime PathTrace/Denoise execution starts in G2-G10.";
 constexpr const char* kRTXPTNrdDisabledReason      = "Standalone denoiser disabled: NRD integration starts in G8.";
 constexpr Uint32      kRTXPTRealtimeNoisePeriod    = 8192u;
-constexpr Uint32      kRTXPTGenericTSTileSize      = 8u;
 
 const char* GetRealtimeAAModeName(RTXPTRealtimeAAMode Mode)
 {

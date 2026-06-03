@@ -85,6 +85,18 @@ float3 ApplyOperator(float3 Color)
     }
 }
 
+float GetAverageLuminance()
+{
+    uint Width;
+    uint Height;
+    uint MipLevels;
+    t_Luminance.GetDimensions(0, Width, Height, MipLevels);
+
+    const uint  AvgMip       = MipLevels > 0 ? MipLevels - 1 : 0;
+    const float LogLuminance = t_Luminance.Load(int3(0, 0, AvgMip));
+    return exp2(LogLuminance);
+}
+
 float4 ApplyToneMapping(float2 UV)
 {
     const float4 SourceColor = t_Color.Sample(s_ColorSampler, UV);
@@ -92,7 +104,7 @@ float4 ApplyToneMapping(float2 UV)
 
     if (g_Params.AutoExposure != 0)
     {
-        const float AvgLuminance = max(g_Params.AvgLuminance, 1.0e-6);
+        const float AvgLuminance = max(GetAverageLuminance(), 1.0e-6);
         FinalColor *= clamp(RTXPT_TONEMAPPING_EXPOSURE_KEY / AvgLuminance,
                             g_Params.AutoExposureLumValueMin,
                             g_Params.AutoExposureLumValueMax);

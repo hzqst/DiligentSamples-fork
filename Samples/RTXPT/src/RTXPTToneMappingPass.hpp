@@ -26,13 +26,10 @@
 
 #pragma once
 
-#include <memory>
-
 #include "Buffer.h"
 #include "BufferView.h"
 #include "DeviceContext.h"
 #include "EngineFactory.h"
-#include "GPUCompletionAwaitQueue.hpp"
 #include "PipelineState.h"
 #include "RefCntAutoPtr.hpp"
 #include "RenderDevice.h"
@@ -117,20 +114,12 @@ private:
     bool CreateSamplers(IRenderDevice* pDevice);
     bool CreateLuminanceResources(IRenderDevice* pDevice, Uint32 Width, Uint32 Height, TEXTURE_FORMAT SourceFormat);
     bool UpdateToneMappingConstants(IDeviceContext* pContext, const RTXPTToneMappingParameters& Params, bool Enabled);
-    void PollReadback(IDeviceContext* pContext);
-
-    using AvgLuminanceReadBackQueueType = GPUCompletionAwaitQueue<RefCntAutoPtr<IBuffer>>;
 
     RefCntAutoPtr<IPipelineState>         m_LuminancePSO;
     RefCntAutoPtr<IPipelineState>         m_ToneMapPSO;
-    RefCntAutoPtr<IPipelineState>         m_CapturePSO;
     RefCntAutoPtr<IShaderResourceBinding> m_LuminanceSRB;
     RefCntAutoPtr<IShaderResourceBinding> m_ToneMapSRB;
-    RefCntAutoPtr<IShaderResourceBinding> m_CaptureSRB;
     RefCntAutoPtr<IBuffer>                m_ToneMappingCB;
-    RefCntAutoPtr<IBuffer>                m_AvgLuminanceGPU;
-    RefCntAutoPtr<IBufferView>            m_AvgLuminanceUAV;
-    std::unique_ptr<AvgLuminanceReadBackQueueType> m_AvgLuminanceReadbackQueue;
     RefCntAutoPtr<ITexture>               m_LuminanceTexture;
     RefCntAutoPtr<ITextureView>           m_LuminanceRTV;
     RefCntAutoPtr<ITextureView>           m_LuminanceSRV;

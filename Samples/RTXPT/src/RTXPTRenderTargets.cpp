@@ -120,6 +120,9 @@ void RTXPTRenderTargets::Reset()
     m_AccumulatedRadianceRequested   = false;
     m_RealtimeResourcesRequested     = false;
     m_DenoiserValidationRequested    = false;
+    m_PendingResizeRequestValid      = false;
+    m_PendingRealtimeResources       = false;
+    m_PendingDenoiserValidation      = false;
     m_StablePlanesElementCount       = 0;
     m_LastFailureReason.clear();
     m_Dimensions = {0, 0, 0, 0, false};
@@ -204,8 +207,8 @@ bool RTXPTRenderTargets::SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMA
 
 bool RTXPTRenderTargets::FailResize(const char* Reason)
 {
-    const bool  RealtimeResourcesRequested  = m_RealtimeResourcesRequested;
-    const bool  DenoiserValidationRequested = m_DenoiserValidationRequested;
+    const bool  RealtimeResourcesRequested  = m_PendingResizeRequestValid ? m_PendingRealtimeResources : m_RealtimeResourcesRequested;
+    const bool  DenoiserValidationRequested = m_PendingResizeRequestValid ? m_PendingDenoiserValidation : m_DenoiserValidationRequested;
     std::string Failure                     = Reason != nullptr ? Reason : "RTXPT render target resize failed";
     Reset();
     m_RealtimeResourcesRequested  = RealtimeResourcesRequested;
@@ -224,8 +227,9 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
     const bool                         CreateRealtimeResources   = CreateInfo.CreateRealtimeResources;
     const bool                         CreateDenoiserValidation  = CreateInfo.CreateDenoiserValidation;
 
-    m_RealtimeResourcesRequested  = CreateRealtimeResources;
-    m_DenoiserValidationRequested = CreateDenoiserValidation;
+    m_PendingResizeRequestValid = true;
+    m_PendingRealtimeResources  = CreateRealtimeResources;
+    m_PendingDenoiserValidation = CreateDenoiserValidation;
 
     if (pDevice == nullptr)
         return FailResize("RTXPT render targets require a render device");
@@ -260,7 +264,10 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
         (CreateAccumulatedRadiance || m_AccumulatedRadiance == nullptr);
 
     if (HasRequestedTargets && m_Dimensions == Dimensions && FormatsMatch(m_Formats, Formats))
+    {
+        m_PendingResizeRequestValid = false;
         return true;
+    }
 
     const BIND_FLAGS UavFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
     const BIND_FLAGS HdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;

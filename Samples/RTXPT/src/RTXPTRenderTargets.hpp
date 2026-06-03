@@ -284,6 +284,9 @@ private:
     bool                                                        m_AccumulatedRadianceRequested   = false;
     bool                                                        m_RealtimeResourcesRequested     = false;
     bool                                                        m_DenoiserValidationRequested    = false;
+    bool                                                        m_PendingResizeRequestValid      = false;
+    bool                                                        m_PendingRealtimeResources       = false;
+    bool                                                        m_PendingDenoiserValidation      = false;
     Uint64                                                      m_StablePlanesElementCount       = 0;
     std::string                                                 m_LastFailureReason;
     RTXPTRenderTargetDimensions                                 m_Dimensions = {0, 0, 0, 0, false};

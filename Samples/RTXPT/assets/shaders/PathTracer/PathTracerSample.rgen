@@ -1,3 +1,5 @@
+#include "Config.h"
+
 // Temporary diagnostic mode: compile a minimal raygen that does not include the
 // full path tracer. This isolates DXC/runtime shader-compilation failures from
 // TraceRay, hit groups, material bridge code, and include expansion.
@@ -174,12 +176,6 @@ RaytracingAccelerationStructure                t_SceneBVH;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
 VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
-#else
-// transitional Task 3 bridge: non-reference BUILD/FILL modes use source-name UAVs
-// from PathTracerBridge.hlsli until Task 4 replaces this legacy raygen loop.
-#    define u_Output u_OutputColor
-#    define u_ScreenMotionVectors u_MotionVectors
-#endif
 
 static const float kSpecularRoughnessThreshold = 0.25;
 
@@ -409,5 +405,154 @@ void main()
     u_Depth[pixel]               = primaryDepth;
     u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
 }
+
+#else
+
+#include "PathTracerTypes.hlsli"
+#include "PathPayload.hlsli"
+#include "PathState.hlsli"
+#include "StablePlanes.hlsli"
+#include "PathTracerStablePlanes.hlsli"
+
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES || defined(__INTELLISENSE__)
+float2 FirstHitFromVBuffer(inout PathState path,
+                           const uint basePlaneIndex,
+                           const PathTracer::WorkingContext workingContext)
+{
+    const uint2 pixelPos = path.GetPixelPos();
+    float2      tMinMax  = float2(0.0, kMaxRayTravel);
+
+    StablePlane sp             = workingContext.StablePlanes.LoadStablePlane(pixelPos, basePlaneIndex);
+    uint        stableBranchID = workingContext.StablePlanes.GetBranchID(pixelPos, basePlaneIndex);
+
+    float sceneLength     = sp.SceneLength;
+    float lastRayTCurrent = sp.LastRayTCurrent;
+    uint  vertexIndex     = sp.VertexIndexAndRoughness >> 16;
+
+    float3 thp;
+    float3 dummy;
+    UnpackTwoFp32ToFp16(sp.PackedThpAndMVs, thp, dummy);
+
+    bool isMiss = false;
+    if (!isfinite(sceneLength))
+    {
+        sceneLength = kMaxRayTravel;
+        isMiss      = true;
+    }
+    else
+    {
+        tMinMax.x = lastRayTCurrent * 0.99;
+        tMinMax.y = lastRayTCurrent * 1.01;
+        sceneLength -= lastRayTCurrent;
+    }
+
+    path.setVertexIndex(vertexIndex - 1);
+    path.SetDir(sp.RayDir);
+    path.SetOrigin(sp.RayOrigin);
+    path.setFlag(PathFlags::stablePlaneOnPlane, true);
+    path.setFlag(PathFlags::stablePlaneOnBranch, true);
+    path.setStablePlaneIndex(basePlaneIndex);
+    path.stableBranchID = stableBranchID;
+    path.SetThp(thp);
+    path.SetL(float4(0.0, 0.0, 0.0, 0.0));
+
+    const uint dominantSPIndex = workingContext.StablePlanes.LoadDominantIndex(pixelPos);
+    path.setFlag(PathFlags::stablePlaneOnDominantBranch, dominantSPIndex == basePlaneIndex);
+    path.setCounter(PackedCounters::BouncesFromStablePlane, 0);
+
+    if (PathTracer::HasFinishedSurfaceBounces(path.getVertexIndex() + 1,
+                                              path.getCounter(PackedCounters::DiffuseBounces)))
+        path.setTerminateAtNextBounce();
+
+    PathTracer::UpdatePathTravelledLengthOnly(path, sceneLength);
+
+    if (isMiss)
+        PathTracer::HandleMiss(path, path.GetOrigin(), path.GetDir(), sceneLength, workingContext);
+
+    return tMinMax;
+}
+#endif
+
+void postProcessHit(inout PathState path, const PathTracer::WorkingContext workingContext)
+{
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
+    int         nextPlaneToExplore;
+    const uint2 pixelPos = path.GetPixelPos();
+    if (!path.isActive() &&
+        (nextPlaneToExplore = workingContext.StablePlanes.FindNextToExplore(pixelPos, path.getStablePlaneIndex() + 1)) != -1)
+    {
+        PathPayload payload;
+        workingContext.StablePlanes.ExplorationStart(pixelPos, nextPlaneToExplore, payload.packed);
+        path = PathPayload::unpack(payload);
+    }
+#endif
+}
+
+void nextHit(inout PathState path, inout float2 tMinMax, const PathTracer::WorkingContext workingContext)
+{
+    RayDesc ray = path.getScatterRay().toRayDesc();
+    ray.TMin    = tMinMax.x;
+    ray.TMax    = tMinMax.y;
+
+    PathPayload payload = PathPayload::pack(path);
+    TraceRay(t_SceneBVH,
+             RAY_FLAG_NONE,
+             0xFF,
+             0,
+             1,
+             0,
+             ray,
+             payload);
+    path = PathPayload::unpack(payload);
+
+    tMinMax = float2(0.0, kMaxRayTravel);
+}
+
+void ValidateNaNs(inout PathState path, PathTracer::WorkingContext workingContext)
+{
+    bool somethingWrong = false;
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_BUILD_STABLE_PLANES
+    float4 L = path.GetL();
+    somethingWrong |= any(isnan(L)) || !all(isfinite(L));
+#endif
+    somethingWrong |= any(isnan(path.GetThp())) || !all(isfinite(path.GetThp()));
+    if (somethingWrong)
+    {
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_BUILD_STABLE_PLANES
+        path.SetL(float4(0.0, 0.0, 0.0, 0.0));
+#endif
+        path.SetThp(float3(0.0, 0.0, 0.0));
+    }
+}
+
+[shader("raygeneration")]
+void main()
+{
+    const uint2 pixelPos = DispatchRaysIndex().xy;
+
+    PathState path = PathTracer::EmptyPathInitialize(pixelPos,
+                                                     g_Const.ptConsts.camera.PixelConeSpreadAngle);
+    PathTracer::SetupPathPrimaryRay(path, Bridge::computeCameraRay(pixelPos));
+
+    PathTracer::WorkingContext workingContext = GetWorkingContext();
+    PathTracer::StartPixel(path, workingContext);
+
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
+    float2 tMinMax = FirstHitFromVBuffer(path, 0u, workingContext);
+#else
+    float2 tMinMax = float2(0.0, kMaxRayTravel);
+#endif
+
+    while (path.isActive())
+    {
+        nextHit(path, tMinMax, workingContext);
+        postProcessHit(path, workingContext);
+    }
+
+    ValidateNaNs(path, workingContext);
+    PathTracer::CommitPixel(path, workingContext);
+}
+
+#endif
 
 #endif

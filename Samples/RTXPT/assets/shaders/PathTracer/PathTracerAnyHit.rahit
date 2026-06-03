@@ -1,11 +1,41 @@
+#include "Config.h"
+
+#ifndef RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
+#    define RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC 0
+#endif
+
+#if RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
+
+struct DiagnosticPayload
+{
+    float3 color;
+    float  hitDistance;
+    uint   hit;
+};
+
+[shader("anyhit")] void main(inout DiagnosticPayload                   Payload,
+                             in BuiltInTriangleIntersectionAttributes Attributes)
+{
+}
+
+#else
+
 #define ENABLE_HIT_BRIDGE 1
 #include "PathTracerBridge.hlsli"
 #include "Rendering/Materials/MaterialBridge.hlsli"
 #include "Utils/SampleGenerators.hlsli"
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+using ActiveRayPayload = RTXPTMaterialHitPayload;
+#else
+#    include "PathState.hlsli"
+#    include "PathPayload.hlsli"
+using ActiveRayPayload = PathPayload;
+#endif
+
 // Alpha-test / alpha-blend any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE.
 // Opaque geometry never reaches this shader.
-[shader("anyhit")] void main(inout RTXPTMaterialHitPayload            Payload,
+[shader("anyhit")] void main(inout ActiveRayPayload                  Payload,
                              in BuiltInTriangleIntersectionAttributes Attributes) {
     if (!Bridge::hasSubInstanceTable() || !Bridge::hasMaterialTable())
         return; // No material data - accept the hit.
@@ -44,3 +74,5 @@
         }
     }
 }
+
+#endif

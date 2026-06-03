@@ -1,3 +1,5 @@
+#include "Config.h"
+
 #ifndef RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
 #    define RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC 0
 #endif
@@ -51,13 +53,154 @@ void main(inout DiagnosticPayload Payload,
 #else
 
 #define ENABLE_HIT_BRIDGE 1
-#include "PathTracerBridge.hlsli"
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+#    include "PathTracerBridge.hlsli"
+#else
+#    include "PathTracer.hlsli"
+#endif
 #include "Rendering/Materials/MaterialBridge.hlsli"
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+using ActiveRayPayload = RTXPTMaterialHitPayload;
+#else
+#    include "PathState.hlsli"
+#    include "PathPayload.hlsli"
+using ActiveRayPayload = PathPayload;
+
+namespace PathTracer
+{
+    inline float3 MakeFallbackTangent(float3 normal)
+    {
+        const float3 axis = abs(normal.x) > 0.9 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
+        return normalize(cross(axis, normal));
+    }
+
+    inline SurfaceData LoadCurrentSurfaceData(BuiltInTriangleIntersectionAttributes Attributes,
+                                              out float3 surfaceEmission)
+    {
+        const float3 rayDir = WorldRayDirection();
+
+        float3 baseColor    = float3(Attributes.barycentrics.x,
+                                  Attributes.barycentrics.y,
+                                  1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
+        float3 worldNormal  = -rayDir;
+        float3 faceNormal   = -rayDir;
+        float3 worldPos     = WorldRayOrigin() + rayDir * RayTCurrent();
+        float3 tangent      = MakeFallbackTangent(normalize(worldNormal));
+        float  tangentSign  = 1.0;
+        float  roughness    = 1.0;
+        uint   materialID   = 0u;
+        bool   frontFacing  = true;
+        float  ior          = 1.5;
+        uint   materialFlags = 0u;
+        uint   nestedPriority = 14u;
+        surfaceEmission     = float3(0.0, 0.0, 0.0);
+
+        if (Bridge::hasSubInstanceTable() && Bridge::hasMaterialTable())
+        {
+            const SubInstanceData subInstance = Bridge::getSubInstanceData();
+            const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
+            materialID                       = subInstance.MaterialID;
+
+            GeometryVertexData V0;
+            GeometryVertexData V1;
+            GeometryVertexData V2;
+            Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
+
+            const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
+
+            const float3 geometricNormal = Bridge::computeGeometricNormal(V0, V1, V2);
+            frontFacing                  = dot(-rayDir, geometricNormal) >= 0.0;
+            faceNormal                   = frontFacing ? geometricNormal : -geometricNormal;
+            worldPos                     = Bridge::computeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
+            worldNormal                  = Bridge::interpolateNormal(V0, V1, V2, Attributes.barycentrics);
+            if (dot(worldNormal, worldNormal) < 1e-6)
+                worldNormal = faceNormal;
+            if (dot(worldNormal, faceNormal) < 0.0)
+                worldNormal = -worldNormal;
+
+            const float3 tangentNormal = Bridge::getTangentNormal(material, texCoord);
+            if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
+            {
+                const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, worldNormal);
+                const float3 T            = worldTangent.xyz;
+                const float3 B            = cross(worldNormal, T) * worldTangent.w;
+                const float3 mappedNormal = T * tangentNormal.x + B * tangentNormal.y + worldNormal * tangentNormal.z;
+                const float  lenSq        = dot(mappedNormal, mappedNormal);
+                if (lenSq > 1e-8)
+                {
+                    worldNormal = mappedNormal * rsqrt(lenSq);
+                    if (dot(worldNormal, faceNormal) < 0.0)
+                        worldNormal = -worldNormal;
+                }
+            }
+
+            const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, worldNormal);
+            tangent                   = worldTangent.xyz;
+            tangentSign               = worldTangent.w;
+
+            const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
+            roughness               = metalRough.y;
+            baseColor               = Bridge::getBaseColor(material, texCoord).rgb;
+            surfaceEmission         = Bridge::getEmission(material, texCoord);
+            ior                     = Bridge::loadIoR(materialID);
+            materialFlags           = material.flags;
+            nestedPriority          = min(material.nestedPriority, 14u);
+        }
+
+        worldNormal = normalize(worldNormal);
+        tangent     = normalize(tangent);
+
+        StablePlaneMaterialState mtl;
+        mtl.flags                 = materialFlags;
+        mtl.nestedPriority        = nestedPriority;
+        mtl.psdDominantDeltaLobeP1 = 0u;
+
+        StablePlaneShadingData shadingData;
+        shadingData.posW        = worldPos;
+        shadingData.N           = worldNormal;
+        shadingData.V           = normalize(-rayDir);
+        shadingData.T           = tangent;
+        shadingData.B           = normalize(cross(worldNormal, tangent) * tangentSign);
+        shadingData.materialID  = materialID;
+        shadingData.frontFacing = frontFacing;
+        shadingData.mtl         = mtl;
+
+        ActiveBSDF bsdf;
+        bsdf.data.roughness = roughness;
+
+        return SurfaceData::make(shadingData,
+                                 bsdf,
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
+                                 worldPos,
+#endif
+                                 ior,
+                                 0xFFFFFFFFu,
+                                 0xFFFFFFFFu);
+    }
+
+    inline void HandleHit(inout PathState path,
+                          BuiltInTriangleIntersectionAttributes Attributes,
+                          const WorkingContext workingContext)
+    {
+        float3 surfaceEmission;
+        SurfaceData surfaceData = LoadCurrentSurfaceData(Attributes, surfaceEmission);
+        HandleHit(path,
+                  surfaceData,
+                  surfaceEmission,
+                  WorldRayOrigin(),
+                  WorldRayDirection(),
+                  RayTCurrent(),
+                  workingContext);
+    }
+}
+#endif
+
 [shader("closesthit")]
-void main(inout RTXPTMaterialHitPayload Payload,
+void main(inout ActiveRayPayload Payload,
           in BuiltInTriangleIntersectionAttributes Attributes)
 {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
     Payload.hitFlag     = 1u;
     Payload.hitDistance = RayTCurrent();
     Payload.emission    = float3(0.0, 0.0, 0.0);
@@ -170,6 +313,12 @@ void main(inout RTXPTMaterialHitPayload Payload,
     Payload.baseColor   = BaseColor;
     Payload.metallic    = Metallic;
     Payload.roughness   = Roughness;
+#else
+    PathState path = PathPayload::unpack(Payload);
+    PathTracer::WorkingContext workingContext = GetWorkingContext();
+    PathTracer::HandleHit(path, Attributes, workingContext);
+    Payload = PathPayload::pack(path);
+#endif
 }
 
 // TODO(RTXPT-Port Phase R2): Emissive triangles feed area-light NEE + MIS (constant emitters only). Textured

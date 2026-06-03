@@ -49,6 +49,7 @@
 #include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
 #include "RTXPTSkinnedGeometry.hpp"
+#include "RTXPTVBufferExportPass.hpp"
 
 namespace Diligent
 {
@@ -128,6 +129,12 @@ private:
     void RequestRealtimeCachesReset(const char* Reason);
     void BeginRealtimeFrameResetScope();
     void InvalidatePreviousFrameConstants();
+    bool PathTrace();
+    bool DispatchPathTracePrePass(const RTXPTRayTracingDispatch& BaseDispatch);
+    bool DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTracingDispatch& BaseDispatch);
+    bool RunRealtimePathTraceOnly();
+    bool RunReferencePathTraceAndPostProcess();
+    void RecordRealtimePathTraceStatus(const char* Status);
 
     RTXPTFeatureCaps               m_FeatureCaps;
     std::string                    m_AssetsRoot;
@@ -144,6 +151,10 @@ private:
     RTXPTSkinnedSceneGeometry      m_SkinnedGeometry;
     RTXPTRenderTargets             m_RenderTargets;
     RTXPTRayTracingPass            m_RayTracingPass;
+    RTXPTVBufferExportPass         m_VBufferExportPass;
+    bool                           m_LastRealtimePathTraceExecuted = false;
+    bool                           m_LastRealtimeFinalMergeReady    = false;
+    std::string                    m_RealtimePathTraceStatus;
     RTXPTEmissiveTrianglePass      m_EmissiveTrianglePass;
     RTXPTBlitPass                  m_BlitPass;
     RTXPTPostProcessPipeline       m_PostProcessPipeline;

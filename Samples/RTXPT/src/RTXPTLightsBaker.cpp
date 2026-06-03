@@ -204,10 +204,18 @@ bool RTXPTLightsBaker::UpdateBegin(IRenderDevice* pDevice, const RTXPTLights& Li
     return true;
 }
 
-bool RTXPTLightsBaker::UpdateEnd(IDeviceContext* pContext)
+bool RTXPTLightsBaker::UpdateEnd(IDeviceContext* pContext,
+                                 ITextureView*   pDepthSRV,
+                                 ITextureView*   pMotionVectorsSRV)
 {
     if (!m_Stats.Ready)
         return false;
+
+    // Current Diligent LightsBaker only clears/processes feedback resources.
+    // Depth and motion-vector views are accepted here to preserve the RTXPT-fork
+    // PathTrace call contract for future NEE-AT feedback passes.
+    (void)pDepthSRV;
+    (void)pMotionVectorsSRV;
 
     if (m_ResetFeedbackPending)
     {

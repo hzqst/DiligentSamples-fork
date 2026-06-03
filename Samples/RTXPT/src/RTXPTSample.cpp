@@ -102,6 +102,24 @@ Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 Emis
     return (ClampedCount << 1u) | (EnableEnvNEE ? 1u : 0u);
 }
 
+RTXPTRayTracingDispatch MakePathTraceDispatch(const RTXPTRenderTargets& RenderTargets,
+                                              const SampleMiniConstants& MiniConstants)
+{
+    RTXPTRayTracingDispatch Dispatch;
+    Dispatch.pOutputColorUAV        = RenderTargets.GetOutputColorUAV();
+    Dispatch.pDepthUAV              = RenderTargets.GetDepthUAV();
+    Dispatch.pMotionVectorsUAV      = RenderTargets.GetScreenMotionVectorsUAV();
+    Dispatch.pThroughputUAV         = RenderTargets.GetThroughputUAV();
+    Dispatch.pSpecularHitTUAV       = RenderTargets.GetSpecularHitTUAV();
+    Dispatch.pStableRadianceUAV     = RenderTargets.GetStableRadianceUAV();
+    Dispatch.pStablePlanesHeaderUAV = RenderTargets.GetStablePlanesHeaderUAV();
+    Dispatch.pStablePlanesBufferUAV = RenderTargets.GetStablePlanesBufferUAV();
+    Dispatch.pMiniConstants         = &MiniConstants;
+    Dispatch.Width                  = RenderTargets.GetRenderWidth();
+    Dispatch.Height                 = RenderTargets.GetRenderHeight();
+    return Dispatch;
+}
+
 PathTracerCameraData MakePathTracerCameraData(const FirstPersonCamera& Camera,
                                               Uint32                   RenderWidth,
                                               Uint32                   RenderHeight,
@@ -439,6 +457,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_AccelerationStructures.Reset();
     m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
+    m_VBufferExportPass.Reset();
     m_EmissiveTrianglePass.Reset();
     m_PostProcessPipeline.Reset();
 
@@ -536,6 +555,7 @@ bool RTXPTSample::RebuildSceneDependentResources()
     else
     {
         m_RayTracingPass.Reset();
+        m_VBufferExportPass.Reset();
         m_EmissiveTrianglePass.Reset();
     }
     return ResourcesReady;
@@ -1007,12 +1027,17 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_AccelerationStructures.GetTLAS(),
                                     nullptr,
                                     0,
-                                    false,
-                                    m_AccelerationStructures.GetStats().AlphaBlendedGeometryCount > 0,
-                                    m_ReferenceUI.EnableLDSamplerForBSDF,
+                                     false,
+                                     m_AccelerationStructures.GetStats().AlphaBlendedGeometryCount > 0,
+                                     m_ReferenceUI.EnableLDSamplerForBSDF,
                                     m_FeatureCaps.RayTracing,
                                     m_FeatureCaps.StandaloneRayTracingShaders);
     }
+
+    m_VBufferExportPass.Initialize(m_pDevice,
+                                   m_pEngineFactory,
+                                   m_FrameConstantsCB,
+                                   m_RayTracingPass.GetMiniConstantsBuffer());
 }
 
 bool RTXPTSample::BuildEmissiveTriangles()
@@ -1076,6 +1101,125 @@ void RTXPTSample::ClearFallback(const float4& ClearColor)
     m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor.Data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
+void RTXPTSample::RecordRealtimePathTraceStatus(const char* Status)
+{
+    m_RealtimePathTraceStatus = Status != nullptr ? Status : "";
+}
+
+bool RTXPTSample::DispatchPathTracePrePass(const RTXPTRayTracingDispatch& BaseDispatch)
+{
+    if (!m_RenderTargets.HasRealtimeRenderTargets())
+    {
+        RecordRealtimePathTraceStatus("Realtime render targets are not allocated");
+        return false;
+    }
+
+    const bool PrePassOk =
+        m_RayTracingPass.Dispatch(m_pImmediateContext,
+                                  RTXPTPathTraceVariant::BuildStablePlanes,
+                                  BaseDispatch);
+    if (!PrePassOk)
+    {
+        RecordRealtimePathTraceStatus("BUILD_STABLE_PLANES dispatch failed");
+        return false;
+    }
+
+    RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStablePlanesBuffer());
+    RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetDepthUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetScreenMotionVectorsUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetThroughputUAV());
+
+    const bool VBufferOk =
+        m_VBufferExportPass.Dispatch(m_pImmediateContext,
+                                     m_RenderTargets.GetRenderWidth(),
+                                     m_RenderTargets.GetRenderHeight());
+    if (!VBufferOk)
+    {
+        RecordRealtimePathTraceStatus("VBufferExport dispatch failed");
+        return false;
+    }
+
+    return true;
+}
+
+bool RTXPTSample::PathTrace()
+{
+    m_LastRealtimePathTraceExecuted = false;
+    m_LastRealtimeFinalMergeReady   = false;
+    RecordRealtimePathTraceStatus("");
+
+    SampleMiniConstants MiniConstants = {};
+    const RTXPTRayTracingDispatch BaseDispatch = MakePathTraceDispatch(m_RenderTargets, MiniConstants);
+    const bool UseStablePlanes = m_RealtimeUI.RealtimeMode;
+
+    // PathTracePrePass dispatches BuildStablePlanes, then VBufferExport.
+    if (UseStablePlanes && !DispatchPathTracePrePass(BaseDispatch))
+        return false;
+
+    if (!m_LightsBaker.UpdateEnd(m_pImmediateContext,
+                                 m_RenderTargets.GetDepthSRV(),
+                                 m_RenderTargets.GetScreenMotionVectorsSRV()))
+    {
+        RecordRealtimePathTraceStatus("LightsBaker UpdateEnd failed");
+        return false;
+    }
+
+    // FillStablePlanes/Reference loop runs after LightsBaker.UpdateEnd.
+    if (!DispatchPathTraceLoop(UseStablePlanes, BaseDispatch))
+        return false;
+
+    if (UseStablePlanes)
+    {
+        // RTXDI/ReSTIR final shading, denoising-guide bake, and final merge are future port hooks.
+        m_LastRealtimePathTraceExecuted = true;
+        RecordRealtimePathTraceStatus("Realtime PathTrace dispatched; RTXDI/ReSTIR and DenoisingGuides hooks disabled");
+    }
+    else
+    {
+        RecordRealtimePathTraceStatus("Reference PathTrace dispatched");
+    }
+
+    return true;
+}
+
+bool RTXPTSample::DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTracingDispatch& BaseDispatch)
+{
+    const Uint32 SPP = std::max(m_RealtimeUI.ActualSamplesPerPixel(), 1u);
+    const RTXPTPathTraceVariant Variant =
+        UseStablePlanes ? RTXPTPathTraceVariant::FillStablePlanes : RTXPTPathTraceVariant::Reference;
+
+    for (Uint32 SubSampleIndex = 0; SubSampleIndex < SPP; ++SubSampleIndex)
+    {
+        if (UseStablePlanes)
+        {
+            RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStablePlanesBuffer());
+            RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetSpecularHitTUAV());
+        }
+
+        SampleMiniConstants MiniConstants = {};
+        MiniConstants.params.x = SubSampleIndex;
+
+        RTXPTRayTracingDispatch Dispatch = BaseDispatch;
+        Dispatch.pMiniConstants = &MiniConstants;
+
+        const bool TraceOk = m_RayTracingPass.Dispatch(m_pImmediateContext, Variant, Dispatch);
+        if (!TraceOk)
+        {
+            const char* Status = UseStablePlanes ? "FILL_STABLE_PLANES dispatch failed" : "REFERENCE dispatch failed";
+            RecordRealtimePathTraceStatus(Status);
+            return false;
+        }
+
+        if (UseStablePlanes)
+            RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetSpecularHitTUAV());
+    }
+
+    if (UseStablePlanes)
+        RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStablePlanesBuffer());
+
+    return true;
+}
+
 void RTXPTSample::Render()
 {
     const auto ClearColor = float4{0.05f, 0.05f, 0.07f, 1.0f};
@@ -1092,7 +1236,9 @@ void RTXPTSample::Render()
         return;
     }
 
-    if (!m_LightsBaker.UpdateEnd(m_pImmediateContext))
+    if (!m_LightsBaker.UpdateEnd(m_pImmediateContext,
+                                 m_RenderTargets.GetDepthSRV(),
+                                 m_RenderTargets.GetScreenMotionVectorsSRV()))
     {
         ClearFallback(float4{1.0f, 0.35f, 0.0f, 1.0f});
         return;
@@ -1280,6 +1426,7 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
                 if (!LightsResourcesReady)
                     m_LightsBakerSettingsDirty = true;
                 m_RayTracingPass.Reset();
+                m_VBufferExportPass.Reset();
                 m_EmissiveTrianglePass.Reset();
             }
         }
@@ -2000,7 +2147,14 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Frame index: %u", m_FrameIndex);
         ImGui::Text("Path tracer mode: %s", m_RealtimeUI.RealtimeMode ? "Realtime" : "Reference");
         if (m_RealtimeUI.RealtimeMode)
+        {
             ImGui::TextWrapped("Realtime execution: disabled (%s)", kRTXPTRealtimeDisabledReason);
+            ImGui::TextWrapped("Realtime PathTrace status: %s",
+                               m_RealtimePathTraceStatus.empty() ? "not routed by Render yet" : m_RealtimePathTraceStatus.c_str());
+            ImGui::Text("Realtime PathTrace dispatch: %s", m_LastRealtimePathTraceExecuted ? "executed" : "not executed");
+            ImGui::Text("Realtime final merge: %s", m_LastRealtimeFinalMergeReady ? "ready" : "not ready");
+            ImGui::Text("RTXDI/ReSTIR final hooks: disabled in this port phase");
+        }
         ImGui::Text("Realtime samples per pixel: %u", m_RealtimeUI.ActualSamplesPerPixel());
         ImGui::Text("Realtime AA/SR: %s", GetRealtimeAAModeName(m_RealtimeUI.RealtimeAA));
         ImGui::Text("Standalone NRD requested: %s", m_RealtimeUI.ActualUseStandaloneDenoiser() ? "yes" : "no");

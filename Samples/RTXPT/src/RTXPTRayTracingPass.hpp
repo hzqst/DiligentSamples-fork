@@ -150,6 +150,7 @@ public:
     bool IsReady(RTXPTPathTraceVariant Variant) const;
     bool                            IsReady() const { return m_Stats.Ready; }
     const RTXPTRayTracingPassStats& GetStats() const { return m_Stats; }
+    IBuffer*                        GetMiniConstantsBuffer() const { return m_MiniConstantsCB; }
     const RTXPTRayTracingVariantStats& GetVariantStats(RTXPTPathTraceVariant Variant) const;
 
 private:

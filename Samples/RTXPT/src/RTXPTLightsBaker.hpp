@@ -106,7 +106,7 @@ public:
 
     bool CreateResources(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, Uint32 Width, Uint32 Height, bool ComputeSupported);
     bool UpdateBegin(IRenderDevice* pDevice, const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings);
-    bool UpdateEnd(IDeviceContext* pContext);
+    bool UpdateEnd(IDeviceContext* pContext, ITextureView* pDepthSRV, ITextureView* pMotionVectorsSRV);
 
     bool InfoGUI(float Indent);
     bool DebugGUI(float Indent);

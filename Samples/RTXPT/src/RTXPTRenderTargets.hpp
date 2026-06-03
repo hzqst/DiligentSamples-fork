@@ -74,7 +74,7 @@ public:
     ITexture*     GetLdrColorScratchTexture() const;
     ITextureView* GetComputeColorUAV() const;
     ITextureView* GetComputeColorSRV() const;
-    ITextureView* GetDisplaySRV(bool UseComputeOutput) const;
+    ITextureView* GetPresentationSRV() const;
 
     Uint32         GetWidth() const { return m_Width; }
     Uint32         GetHeight() const { return m_Height; }

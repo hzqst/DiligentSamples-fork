@@ -270,11 +270,8 @@ ITextureView* RTXPTRenderTargets::GetComputeColorSRV() const
     return m_ComputeColor ? m_ComputeColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
 }
 
-ITextureView* RTXPTRenderTargets::GetDisplaySRV(bool UseComputeOutput) const
+ITextureView* RTXPTRenderTargets::GetPresentationSRV() const
 {
-    if (UseComputeOutput && m_ComputeColor)
-        return GetComputeColorSRV();
-
     return GetLdrColorSRV();
 }
 

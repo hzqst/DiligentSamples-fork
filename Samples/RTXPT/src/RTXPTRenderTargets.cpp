@@ -122,8 +122,8 @@ void RTXPTRenderTargets::Reset()
     m_DenoiserValidationRequested    = false;
     m_StablePlanesElementCount       = 0;
     m_LastFailureReason.clear();
-    m_Dimensions                     = {0, 0, 0, 0, false};
-    m_Formats                        = {};
+    m_Dimensions = {0, 0, 0, 0, false};
+    m_Formats    = {};
 }
 
 bool RTXPTRenderTargets::CreateTarget(IRenderDevice*           pDevice,
@@ -328,33 +328,33 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
     const Uint32 DisplayWidth  = Dimensions.DisplayWidth;
     const Uint32 DisplayHeight = Dimensions.DisplayHeight;
 
-    RefCntAutoPtr<ITexture> OutputColor;
-    RefCntAutoPtr<ITexture> AccumulatedRadiance;
-    RefCntAutoPtr<ITexture> SuperResolutionInputColor;
-    RefCntAutoPtr<ITexture> ProcessedOutputColor;
-    RefCntAutoPtr<ITexture> LdrColor;
-    RefCntAutoPtr<ITexture> ComputeColor;
-    RefCntAutoPtr<ITexture> Depth;
-    RefCntAutoPtr<ITexture> ScreenMotionVectors;
-    RefCntAutoPtr<ITexture> TemporalFeedback1;
-    RefCntAutoPtr<ITexture> TemporalFeedback2;
-    RefCntAutoPtr<ITexture> CombinedHistoryClampRelax;
-    RefCntAutoPtr<ITexture> StableRadiance;
-    RefCntAutoPtr<ITexture> StablePlanesHeader;
-    RefCntAutoPtr<IBuffer>  StablePlanesBuffer;
-    RefCntAutoPtr<ITexture> Throughput;
-    RefCntAutoPtr<ITexture> SpecularHitT;
-    RefCntAutoPtr<ITexture> ScratchFloat1;
-    RefCntAutoPtr<ITexture> DenoiserViewspaceZ;
-    RefCntAutoPtr<ITexture> DenoiserMotionVectors;
-    RefCntAutoPtr<ITexture> DenoiserNormalRoughness;
-    RefCntAutoPtr<ITexture> DenoiserDiffRadianceHitDist;
-    RefCntAutoPtr<ITexture> DenoiserSpecRadianceHitDist;
-    RefCntAutoPtr<ITexture> DenoiserDisocclusionThresholdMix;
+    RefCntAutoPtr<ITexture>                                     OutputColor;
+    RefCntAutoPtr<ITexture>                                     AccumulatedRadiance;
+    RefCntAutoPtr<ITexture>                                     SuperResolutionInputColor;
+    RefCntAutoPtr<ITexture>                                     ProcessedOutputColor;
+    RefCntAutoPtr<ITexture>                                     LdrColor;
+    RefCntAutoPtr<ITexture>                                     ComputeColor;
+    RefCntAutoPtr<ITexture>                                     Depth;
+    RefCntAutoPtr<ITexture>                                     ScreenMotionVectors;
+    RefCntAutoPtr<ITexture>                                     TemporalFeedback1;
+    RefCntAutoPtr<ITexture>                                     TemporalFeedback2;
+    RefCntAutoPtr<ITexture>                                     CombinedHistoryClampRelax;
+    RefCntAutoPtr<ITexture>                                     StableRadiance;
+    RefCntAutoPtr<ITexture>                                     StablePlanesHeader;
+    RefCntAutoPtr<IBuffer>                                      StablePlanesBuffer;
+    RefCntAutoPtr<ITexture>                                     Throughput;
+    RefCntAutoPtr<ITexture>                                     SpecularHitT;
+    RefCntAutoPtr<ITexture>                                     ScratchFloat1;
+    RefCntAutoPtr<ITexture>                                     DenoiserViewspaceZ;
+    RefCntAutoPtr<ITexture>                                     DenoiserMotionVectors;
+    RefCntAutoPtr<ITexture>                                     DenoiserNormalRoughness;
+    RefCntAutoPtr<ITexture>                                     DenoiserDiffRadianceHitDist;
+    RefCntAutoPtr<ITexture>                                     DenoiserSpecRadianceHitDist;
+    RefCntAutoPtr<ITexture>                                     DenoiserDisocclusionThresholdMix;
     std::array<RefCntAutoPtr<ITexture>, kRTXPTStablePlaneCount> DenoiserOutDiffRadianceHitDist;
     std::array<RefCntAutoPtr<ITexture>, kRTXPTStablePlaneCount> DenoiserOutSpecRadianceHitDist;
-    RefCntAutoPtr<ITexture> DenoiserOutValidation;
-    RefCntAutoPtr<ITexture> DenoiserAvgLayerRadianceHalfRes;
+    RefCntAutoPtr<ITexture>                                     DenoiserOutValidation;
+    RefCntAutoPtr<ITexture>                                     DenoiserAvgLayerRadianceHalfRes;
 
     if (!CreateTarget(pDevice, "RTXPT OutputColor", RenderWidth, RenderHeight, Formats.OutputColor, UavFlags, OutputColor))
         return FailResize("Failed to create RTXPT OutputColor");
@@ -395,8 +395,8 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
         !CreateTarget(pDevice, "RTXPT ComputeColor", DisplayWidth, DisplayHeight, Formats.ComputeColor, UavFlags, ComputeColor))
         return FailResize("Failed to create RTXPT ComputeColor");
 
-    const Uint32 HalfRenderWidth  = (RenderWidth + 1u) / 2u;
-    const Uint32 HalfRenderHeight = (RenderHeight + 1u) / 2u;
+    const Uint32 HalfRenderWidth          = (RenderWidth + 1u) / 2u;
+    const Uint32 HalfRenderHeight         = (RenderHeight + 1u) / 2u;
     Uint64       StablePlanesElementCount = 0;
 
     if (CreateRealtimeResources)
@@ -447,17 +447,17 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
     }
 
     Reset();
-    m_OutputColor                    = OutputColor;
-    m_AccumulatedRadiance            = AccumulatedRadiance;
-    m_SuperResolutionInputColor      = SuperResolutionInputColor;
-    m_ProcessedOutputColor           = ProcessedOutputColor;
-    m_LdrColor                       = LdrColor;
-    m_ComputeColor                   = ComputeColor;
-    m_Depth                          = Depth;
-    m_ScreenMotionVectors            = ScreenMotionVectors;
-    m_TemporalFeedback1              = TemporalFeedback1;
-    m_TemporalFeedback2              = TemporalFeedback2;
-    m_CombinedHistoryClampRelax      = CombinedHistoryClampRelax;
+    m_OutputColor                      = OutputColor;
+    m_AccumulatedRadiance              = AccumulatedRadiance;
+    m_SuperResolutionInputColor        = SuperResolutionInputColor;
+    m_ProcessedOutputColor             = ProcessedOutputColor;
+    m_LdrColor                         = LdrColor;
+    m_ComputeColor                     = ComputeColor;
+    m_Depth                            = Depth;
+    m_ScreenMotionVectors              = ScreenMotionVectors;
+    m_TemporalFeedback1                = TemporalFeedback1;
+    m_TemporalFeedback2                = TemporalFeedback2;
+    m_CombinedHistoryClampRelax        = CombinedHistoryClampRelax;
     m_StableRadiance                   = StableRadiance;
     m_StablePlanesHeader               = StablePlanesHeader;
     m_StablePlanesBuffer               = StablePlanesBuffer;
@@ -474,14 +474,14 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
     m_DenoiserOutSpecRadianceHitDist   = DenoiserOutSpecRadianceHitDist;
     m_DenoiserOutValidation            = DenoiserOutValidation;
     m_DenoiserAvgLayerRadianceHalfRes  = DenoiserAvgLayerRadianceHalfRes;
-    m_AccumulatedRadianceUnavailable = false;
-    m_AccumulatedRadianceRequested   = CreateAccumulatedRadiance;
-    m_RealtimeResourcesRequested     = CreateRealtimeResources;
-    m_DenoiserValidationRequested    = CreateDenoiserValidation;
-    m_StablePlanesElementCount       = StablePlanesElementCount;
+    m_AccumulatedRadianceUnavailable   = false;
+    m_AccumulatedRadianceRequested     = CreateAccumulatedRadiance;
+    m_RealtimeResourcesRequested       = CreateRealtimeResources;
+    m_DenoiserValidationRequested      = CreateDenoiserValidation;
+    m_StablePlanesElementCount         = StablePlanesElementCount;
     m_LastFailureReason.clear();
-    m_Dimensions                     = Dimensions;
-    m_Formats                        = Formats;
+    m_Dimensions = Dimensions;
+    m_Formats    = Formats;
 
     return true;
 }
@@ -493,10 +493,10 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
                                 bool                               CreateAccumulatedRadiance)
 {
     RTXPTRenderTargetCreateInfo CreateInfo;
-    CreateInfo.Dimensions                 = Dimensions;
-    CreateInfo.Formats                    = Formats;
-    CreateInfo.CreateComputeOutput        = CreateComputeOutput;
-    CreateInfo.CreateAccumulatedRadiance  = CreateAccumulatedRadiance;
+    CreateInfo.Dimensions                = Dimensions;
+    CreateInfo.Formats                   = Formats;
+    CreateInfo.CreateComputeOutput       = CreateComputeOutput;
+    CreateInfo.CreateAccumulatedRadiance = CreateAccumulatedRadiance;
     return Resize(pDevice, CreateInfo);
 }
 

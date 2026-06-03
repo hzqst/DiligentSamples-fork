@@ -222,12 +222,12 @@ RTXPTRenderTargetCreateInfo MakeRenderTargetCreateInfo(const RTXPTRenderTargetDi
                                                        bool                               RayTracingAvailable)
 {
     RTXPTRenderTargetCreateInfo CreateInfo;
-    CreateInfo.Dimensions                 = Dimensions;
-    CreateInfo.Formats                    = {};
-    CreateInfo.CreateComputeOutput        = false;
-    CreateInfo.CreateAccumulatedRadiance  = RayTracingAvailable;
-    CreateInfo.CreateRealtimeResources    = RealtimeUI.RealtimeMode;
-    CreateInfo.CreateDenoiserValidation   = false;
+    CreateInfo.Dimensions                = Dimensions;
+    CreateInfo.Formats                   = {};
+    CreateInfo.CreateComputeOutput       = false;
+    CreateInfo.CreateAccumulatedRadiance = RayTracingAvailable;
+    CreateInfo.CreateRealtimeResources   = RealtimeUI.RealtimeMode;
+    CreateInfo.CreateDenoiserValidation  = false;
     return CreateInfo;
 }
 

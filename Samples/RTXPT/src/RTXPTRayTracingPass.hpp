@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <array>
+
 #include "Buffer.h"
 #include "BufferView.h"
 #include "DeviceContext.h"
@@ -41,6 +43,38 @@
 
 namespace Diligent
 {
+
+struct SampleMiniConstants;
+
+enum class RTXPTPathTraceVariant : Uint32
+{
+    Reference         = 0,
+    BuildStablePlanes = 1,
+    FillStablePlanes  = 2,
+    Count
+};
+
+struct RTXPTRayTracingDispatch
+{
+    ITextureView*              pOutputColorUAV        = nullptr;
+    ITextureView*              pDepthUAV              = nullptr;
+    ITextureView*              pMotionVectorsUAV      = nullptr;
+    ITextureView*              pThroughputUAV         = nullptr;
+    ITextureView*              pSpecularHitTUAV       = nullptr;
+    ITextureView*              pStableRadianceUAV     = nullptr;
+    ITextureView*              pStablePlanesHeaderUAV = nullptr;
+    IBufferView*               pStablePlanesBufferUAV = nullptr;
+    const SampleMiniConstants* pMiniConstants         = nullptr;
+    Uint32                     Width                  = 0;
+    Uint32                     Height                 = 0;
+};
+
+struct RTXPTRayTracingVariantStats
+{
+    bool   Ready             = false;
+    bool   LastTraceExecuted = false;
+    Uint32 TraceCount        = 0;
+};
 
 struct RTXPTRayTracingPassStats
 {
@@ -98,6 +132,10 @@ public:
                     bool                  RayTracingSupported,
                     bool                  StandaloneRTShadersSupported);
 
+    bool Dispatch(IDeviceContext*               pContext,
+                  RTXPTPathTraceVariant         Variant,
+                  const RTXPTRayTracingDispatch& Dispatch);
+
     bool Trace(IDeviceContext* pContext,
                ITextureView*   pOutputUAV,
                ITextureView*   pDepthUAV,
@@ -105,16 +143,28 @@ public:
                Uint32          Width,
                Uint32          Height);
 
+    static void InsertUAVBarrier(IDeviceContext* pContext, ITextureView* pTextureUAV);
+    static void InsertUAVBarrier(IDeviceContext* pContext, IBufferView* pBufferUAV);
+
+    bool IsReady(RTXPTPathTraceVariant Variant) const;
     bool                            IsReady() const { return m_Stats.Ready; }
     const RTXPTRayTracingPassStats& GetStats() const { return m_Stats; }
+    const RTXPTRayTracingVariantStats& GetVariantStats(RTXPTPathTraceVariant Variant) const;
 
 private:
-    RefCntAutoPtr<IPipelineState>         m_PSO;
-    RefCntAutoPtr<IShaderResourceBinding> m_SRB;
-    RefCntAutoPtr<IShaderBindingTable>    m_SBT;
-    RefCntAutoPtr<ITopLevelAS>            m_TLAS;
-    RefCntAutoPtr<IBufferView>            m_IndexBufferView;
-    RTXPTRayTracingPassStats              m_Stats;
+    struct VariantState
+    {
+        RefCntAutoPtr<IPipelineState>         PSO;
+        RefCntAutoPtr<IShaderResourceBinding> SRB;
+        RefCntAutoPtr<IShaderBindingTable>    SBT;
+        RTXPTRayTracingVariantStats           Stats;
+    };
+
+    std::array<VariantState, static_cast<size_t>(RTXPTPathTraceVariant::Count)> m_Variants;
+    RefCntAutoPtr<IBuffer>                                                      m_MiniConstantsCB;
+    RefCntAutoPtr<ITopLevelAS>                                                  m_TLAS;
+    RefCntAutoPtr<IBufferView>                                                  m_IndexBufferView;
+    RTXPTRayTracingPassStats                                                    m_Stats;
 };
 
 } // namespace Diligent

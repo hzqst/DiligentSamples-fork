@@ -85,6 +85,7 @@ static_assert(sizeof(PathTracerConstants) == 80, "PathTracerConstants layout mus
 static_assert(offsetof(PathTracerConstants, _paddingP3_0) == 60, "PathTracerConstants _paddingP3_0 offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerConstants, diffuseBounceCount) == 64, "PathTracerConstants diffuseBounceCount offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerConstants, nestedDielectricsQuality) == 68, "PathTracerConstants nestedDielectricsQuality offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, superResolutionActive) == 72, "PathTracerConstants superResolutionActive offset must match PathTracer/PathTracerShared.h");
 
 struct RTXPTEnvMapConstants
 {

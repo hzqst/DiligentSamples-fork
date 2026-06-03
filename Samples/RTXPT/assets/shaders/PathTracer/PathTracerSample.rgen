@@ -215,6 +215,7 @@ void main()
     uint rejectedDielectricHits   = 0u;
     InteriorList interiorList     = InteriorList::make();
     float        primaryDepth     = g_Const.camera.FarZ;
+    bool         primaryDepthCaptured = false;
 
     [loop]
     while (bounce < maxBounces || terminateAtNextEndpoint)
@@ -240,8 +241,11 @@ void main()
                  ray,
                  payload);
 
-        if (bounce == 0u)
+        if (bounce == 0u && !primaryDepthCaptured)
+        {
             primaryDepth = payload.hitFlag != 0u ? payload.hitDistance : g_Const.camera.FarZ;
+            primaryDepthCaptured = true;
+        }
 
         if (payload.hitFlag == 0u)
         {

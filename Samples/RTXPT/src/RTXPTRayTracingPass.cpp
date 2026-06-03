@@ -209,7 +209,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth = 1; // Raygen drives bounces in a loop; chit/miss/anyhit do not recurse.
     PSOCreateInfo.RayTracingPipeline.ShaderRecordSize  = 0;
     PSOCreateInfo.MaxAttributeSize                     = static_cast<Uint32>(sizeof(float) * 2);
-    // PathPayload = 10 * float4 = 160 bytes (R7 adds vertex normal + shadow fadeout).
+    // RTXPTMaterialHitPayload = 10 * float4 = 160 bytes (R7 adds vertex normal + shadow fadeout).
+    // MaxPayloadSize is also large enough for the future smaller packed realtime PathPayload.
     PSOCreateInfo.MaxPayloadSize = static_cast<Uint32>(sizeof(float) * 40);
 
     // Material data is read by raygen for nested dielectric media and by hit shaders for surface shading.

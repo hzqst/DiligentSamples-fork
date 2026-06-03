@@ -7,6 +7,7 @@
 struct DiagnosticPayload
 {
     float3 color;
+    float  hitDistance;
     uint   hit;
 };
 
@@ -26,8 +27,9 @@ void main(inout DiagnosticPayload Payload)
                                     0.15 + 0.75 * (direction.y * 0.5 + 0.5),
                                     0.25 + 0.65 * (direction.z * 0.5 + 0.5));
 
-    Payload.hit   = 0u;
-    Payload.color = badDirection ? float3(1.0, 0.0, 0.0) : saturate(heatmap);
+    Payload.hit         = 0u;
+    Payload.hitDistance = 1.0;
+    Payload.color       = badDirection ? float3(1.0, 0.0, 0.0) : saturate(heatmap);
 }
 
 #else

@@ -46,6 +46,7 @@ VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
 struct DiagnosticPayload
 {
     float3 color;
+    float  hitDistance;
     uint   hit;
 };
 
@@ -140,8 +141,9 @@ void main()
     ray.TMax      = 10000.0;
 
     DiagnosticPayload payload;
-    payload.color = float3(1.0, 0.0, 1.0);
-    payload.hit   = 0u;
+    payload.color       = float3(1.0, 0.0, 1.0);
+    payload.hitDistance = 1.0;
+    payload.hit         = 0u;
 
     TraceRay(t_SceneBVH,
              RAY_FLAG_NONE,
@@ -153,7 +155,7 @@ void main()
              payload);
 
     u_Output[pixel]              = float4(payload.color, 1.0);
-    u_Depth[pixel]               = payload.hit != 0u ? ray.TMax : 1.0;
+    u_Depth[pixel]               = payload.hit != 0u ? payload.hitDistance : 1.0;
     u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
 }
 

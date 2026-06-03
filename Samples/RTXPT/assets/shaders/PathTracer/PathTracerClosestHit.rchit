@@ -7,6 +7,7 @@
 struct DiagnosticPayload
 {
     float3 color;
+    float  hitDistance;
     uint   hit;
 };
 
@@ -42,8 +43,9 @@ void main(inout DiagnosticPayload Payload,
         ((InstanceID() + 1u) * 0xc2b2ae35u);
     const float3 objectColor = RTXPTDiagnosticColor(hitKey);
 
-    Payload.hit   = 1u;
-    Payload.color = lerp(objectColor, barycentrics, depthShade * 0.45);
+    Payload.hit         = 1u;
+    Payload.hitDistance = RayTCurrent();
+    Payload.color       = lerp(objectColor, barycentrics, depthShade * 0.45);
 }
 
 #else

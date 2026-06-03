@@ -102,6 +102,12 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
     const bool AccumulationResourcesValid =
         !RenderTargets.IsAccumulationActive() ||
         (RenderTargets.GetAccumulatedRadianceSRV() != nullptr && RenderTargets.GetAccumulatedRadianceUAV() != nullptr);
+    const bool SuperResolutionResourcesValid =
+        !RenderTargets.IsSuperResolutionActive() ||
+        (RenderTargets.GetSuperResolutionInputColorSRV() != nullptr &&
+         RenderTargets.GetTemporalFeedback1UAV() != nullptr &&
+         RenderTargets.GetTemporalFeedback2UAV() != nullptr &&
+         RenderTargets.GetCombinedHistoryClampRelaxUAV() != nullptr);
 
     m_Stats.ResourcesValid =
         RenderTargets.GetOutputColorSRV() != nullptr &&
@@ -112,16 +118,13 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
         RenderTargets.GetDepthSRV() != nullptr &&
         RenderTargets.GetScreenMotionVectorsUAV() != nullptr &&
         RenderTargets.GetScreenMotionVectorsSRV() != nullptr &&
-        RenderTargets.GetTemporalFeedback1UAV() != nullptr &&
-        RenderTargets.GetTemporalFeedback2UAV() != nullptr &&
-        RenderTargets.GetCombinedHistoryClampRelaxUAV() != nullptr &&
+        SuperResolutionResourcesValid &&
         RenderTargets.GetProcessedOutputColorSRV() != nullptr &&
         RenderTargets.GetProcessedOutputColorUAV() != nullptr &&
         RenderTargets.GetProcessedOutputColorRTV() != nullptr &&
         RenderTargets.GetLdrColorSRV() != nullptr &&
         RenderTargets.GetLdrColorUAV() != nullptr &&
-        RenderTargets.GetLdrColorRTV() != nullptr &&
-        (!RenderTargets.IsSuperResolutionActive() || RenderTargets.GetSuperResolutionInputColorSRV() != nullptr);
+        RenderTargets.GetLdrColorRTV() != nullptr;
 
     if (!m_Stats.ResourcesValid)
         DEV_ERROR("RTXPT post-process render targets are incomplete");

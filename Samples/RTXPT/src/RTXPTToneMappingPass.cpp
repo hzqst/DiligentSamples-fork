@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "DebugUtilities.hpp"
 #include "GraphicsAccessories.hpp"
@@ -296,8 +297,7 @@ void RTXPTToneMappingPass::Reset()
     m_ToneMappingCB.Release();
     m_AvgLuminanceGPU.Release();
     m_AvgLuminanceUAV.Release();
-    for (auto& Readback : m_AvgLuminanceReadback)
-        Readback.Release();
+    m_AvgLuminanceReadbackQueue.reset();
     m_LuminanceTexture.Release();
     m_LuminanceRTV.Release();
     m_LuminanceSRV.Release();
@@ -311,7 +311,6 @@ void RTXPTToneMappingPass::Reset()
     m_Stats.LastAvgLuminance = kDefaultAvgLuminance;
     m_Width                  = 0;
     m_Height                 = 0;
-    m_LastReadbackWritten    = -1;
     m_LuminanceFormat        = TEX_FORMAT_UNKNOWN;
     m_ComputeSupported       = false;
 }
@@ -496,12 +495,10 @@ bool RTXPTToneMappingPass::CreateLuminanceResources(IRenderDevice* pDevice, Uint
 {
     m_AvgLuminanceGPU.Release();
     m_AvgLuminanceUAV.Release();
-    for (auto& Readback : m_AvgLuminanceReadback)
-        Readback.Release();
+    m_AvgLuminanceReadbackQueue.reset();
     m_LuminanceTexture.Release();
     m_LuminanceRTV.Release();
     m_LuminanceSRV.Release();
-    m_LastReadbackWritten     = -1;
     m_Stats.LastAvgLuminance  = kDefaultAvgLuminance;
     m_Stats.AutoExposureReady = false;
 
@@ -550,11 +547,14 @@ bool RTXPTToneMappingPass::CreateLuminanceResources(IRenderDevice* pDevice, Uint
     ReadbackDesc.Usage          = USAGE_STAGING;
     ReadbackDesc.BindFlags      = BIND_NONE;
     ReadbackDesc.CPUAccessFlags = CPU_ACCESS_READ;
-    for (auto& Readback : m_AvgLuminanceReadback)
+    m_AvgLuminanceReadbackQueue = std::make_unique<AvgLuminanceReadBackQueueType>(pDevice);
+    for (int ReadbackIndex = 0; ReadbackIndex < kReadbackLag; ++ReadbackIndex)
     {
+        RefCntAutoPtr<IBuffer> Readback;
         pDevice->CreateBuffer(ReadbackDesc, nullptr, &Readback);
         if (!Readback)
             return false;
+        m_AvgLuminanceReadbackQueue->Recycle(std::move(Readback));
     }
 
     m_Width                   = Width;
@@ -586,9 +586,7 @@ bool RTXPTToneMappingPass::ResizeResources(IRenderDevice* pDevice, Uint32 Width,
         m_LuminanceSRV &&
         m_AvgLuminanceGPU &&
         m_AvgLuminanceUAV &&
-        m_AvgLuminanceReadback[0] &&
-        m_AvgLuminanceReadback[1] &&
-        m_AvgLuminanceReadback[2])
+        m_AvgLuminanceReadbackQueue)
         return true;
 
     if (!m_LuminancePSO || !m_LuminanceSRB || m_LuminanceFormat != LuminanceFormat)
@@ -684,24 +682,25 @@ bool RTXPTToneMappingPass::UpdateToneMappingConstants(IDeviceContext* pContext, 
 
 void RTXPTToneMappingPass::PollReadback(IDeviceContext* pContext)
 {
-    if (pContext == nullptr || m_LastReadbackWritten < 0)
+    if (pContext == nullptr || !m_AvgLuminanceReadbackQueue)
         return;
 
-    const int ReadbackIndex = (m_LastReadbackWritten + 1) % kReadbackLag;
-    if (!m_AvgLuminanceReadback[ReadbackIndex])
-        return;
+    while (RefCntAutoPtr<IBuffer> pReadback = m_AvgLuminanceReadbackQueue->GetFirstCompleted())
+    {
+        MapHelper<float> Readback{pContext, pReadback, MAP_READ, MAP_FLAG_DO_NOT_WAIT};
+        if (Readback)
+        {
+            const float LogLuminance = *Readback;
+            if (std::isfinite(LogLuminance))
+            {
+                const float AvgLuminance = std::exp2(LogLuminance);
+                if (std::isfinite(AvgLuminance) && AvgLuminance > 0.0f)
+                    m_Stats.LastAvgLuminance = AvgLuminance;
+            }
+        }
 
-    MapHelper<float> Readback{pContext, m_AvgLuminanceReadback[ReadbackIndex], MAP_READ, MAP_FLAG_DO_NOT_WAIT};
-    if (!Readback)
-        return;
-
-    const float LogLuminance = *Readback;
-    if (!std::isfinite(LogLuminance))
-        return;
-
-    const float AvgLuminance = std::exp2(LogLuminance);
-    if (std::isfinite(AvgLuminance) && AvgLuminance > 0.0f)
-        m_Stats.LastAvgLuminance = AvgLuminance;
+        m_AvgLuminanceReadbackQueue->Recycle(std::move(pReadback));
+    }
 }
 
 bool RTXPTToneMappingPass::Render(IDeviceContext* pContext, const RTXPTToneMappingRenderAttribs& Attribs)
@@ -728,7 +727,7 @@ bool RTXPTToneMappingPass::Render(IDeviceContext* pContext, const RTXPTToneMappi
     {
         if (!m_Stats.AutoExposureReady || !m_LuminancePSO || !m_LuminanceSRB ||
             !m_CapturePSO || !m_CaptureSRB || !m_LuminanceRTV || !m_LuminanceSRV ||
-            !m_AvgLuminanceGPU || !m_AvgLuminanceUAV)
+            !m_AvgLuminanceGPU || !m_AvgLuminanceUAV || !m_AvgLuminanceReadbackQueue)
             return false;
 
         const bool LuminanceBound =
@@ -757,21 +756,15 @@ bool RTXPTToneMappingPass::Render(IDeviceContext* pContext, const RTXPTToneMappi
         pContext->CommitShaderResources(m_CaptureSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         pContext->DispatchCompute(DispatchComputeAttribs{1, 1, 1});
 
-        if (m_LastReadbackWritten == -1)
-        {
-            for (int ReadbackIndex = 0; ReadbackIndex < kReadbackLag; ++ReadbackIndex)
-                pContext->CopyBuffer(m_AvgLuminanceGPU, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-                                     m_AvgLuminanceReadback[ReadbackIndex], 0, sizeof(float), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-            pContext->WaitForIdle();
-            m_LastReadbackWritten = 0;
-        }
-        else
-        {
-            m_LastReadbackWritten = (m_LastReadbackWritten + 1) % kReadbackLag;
-            pContext->CopyBuffer(m_AvgLuminanceGPU, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-                                 m_AvgLuminanceReadback[m_LastReadbackWritten], 0, sizeof(float), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        }
         PollReadback(pContext);
+
+        RefCntAutoPtr<IBuffer> pReadback = m_AvgLuminanceReadbackQueue->GetRecycled();
+        if (pReadback)
+        {
+            pContext->CopyBuffer(m_AvgLuminanceGPU, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+                                 pReadback, 0, sizeof(float), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            m_AvgLuminanceReadbackQueue->Enqueue(pContext, std::move(pReadback));
+        }
     }
 
     ITextureView* pToneMapLuminanceSRV = m_LuminanceSRV ? m_LuminanceSRV.RawPtr() : m_FallbackLuminanceSRV.RawPtr();

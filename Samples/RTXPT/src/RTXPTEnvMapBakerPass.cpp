@@ -114,13 +114,13 @@ bool RTXPTEnvMapBakerPass::Bind(IBuffer* pConstants, ITextureView* pSourceCubeSR
         SetVariable("s_LinearWrap", pLinearSampler);
 }
 
-bool RTXPTEnvMapBakerPass::Dispatch(IDeviceContext* pContext, Uint32 ThreadGroupsX, Uint32 ThreadGroupsY)
+bool RTXPTEnvMapBakerPass::Dispatch(IDeviceContext* pContext, Uint32 ThreadGroupsX, Uint32 ThreadGroupsY, RESOURCE_STATE_TRANSITION_MODE StateTransitionMode)
 {
     if (!m_PSO || !m_SRB || pContext == nullptr || ThreadGroupsX == 0 || ThreadGroupsY == 0)
         return false;
 
     pContext->SetPipelineState(m_PSO);
-    pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    pContext->CommitShaderResources(m_SRB, StateTransitionMode);
 
     DispatchComputeAttribs DispatchAttribs;
     DispatchAttribs.ThreadGroupCountX = ThreadGroupsX;

@@ -6,6 +6,10 @@
 
 #include "../Config.h"
 
+#ifndef VK_IMAGE_FORMAT
+#    define VK_IMAGE_FORMAT(format)
+#endif
+
 #define RTXPT_ENVMAP_IMPORTANCE_THREADS 16
 
 static const float kEnvMapImportancePi = 3.14159265358979323846;
@@ -29,8 +33,8 @@ ConstantBuffer<EnvMapImportanceBakerConstants> g_EnvMapImportanceBakerConsts;
 TextureCube<float4> t_EnvMapCube;
 Texture2D<float>    t_SourceImportanceMip;
 Texture2D<float4>   t_SourceRadianceMip;
-RWTexture2D<float>  u_ImportanceMap;
-RWTexture2D<float4> u_RadianceMap;
+VK_IMAGE_FORMAT("r32f") RWTexture2D<float> u_ImportanceMap;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4> u_RadianceMap;
 SamplerState        s_LinearWrap;
 
 float RTXPTEnvMapLuminance(float3 c)

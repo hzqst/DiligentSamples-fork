@@ -46,7 +46,7 @@ public:
 
     bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, const char* Name, const char* EntryPoint);
     bool Bind(IBuffer* pConstants, ITextureView* pSourceCubeSRV, ITextureView* pSourceImportanceMipSRV, ITextureView* pSourceRadianceMipSRV, ITextureView* pImportanceUAV, ITextureView* pRadianceUAV, ISampler* pLinearSampler);
-    bool Dispatch(IDeviceContext* pContext, Uint32 ThreadGroupsX, Uint32 ThreadGroupsY);
+    bool Dispatch(IDeviceContext* pContext, Uint32 ThreadGroupsX, Uint32 ThreadGroupsY, RESOURCE_STATE_TRANSITION_MODE StateTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 private:
     RefCntAutoPtr<IPipelineState>         m_PSO;

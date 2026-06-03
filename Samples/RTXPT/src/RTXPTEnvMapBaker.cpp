@@ -144,6 +144,42 @@ bool UploadImportanceConstants(IDeviceContext* pContext, IBuffer* pBuffer, const
     return true;
 }
 
+void TransitionTextureRange(IDeviceContext*         pContext,
+                            ITexture*              pTexture,
+                            RESOURCE_STATE         OldState,
+                            RESOURCE_STATE         NewState,
+                            Uint32                 FirstMip,
+                            Uint32                 MipCount,
+                            STATE_TRANSITION_FLAGS Flags = STATE_TRANSITION_FLAG_NONE)
+{
+    if (pContext == nullptr || pTexture == nullptr)
+        return;
+
+    StateTransitionDesc Barrier{pTexture,
+                                OldState,
+                                NewState,
+                                FirstMip,
+                                MipCount,
+                                0,
+                                REMAINING_ARRAY_SLICES,
+                                STATE_TRANSITION_TYPE_IMMEDIATE,
+                                Flags};
+    pContext->TransitionResourceState(Barrier);
+}
+
+void TransitionImportanceMaps(IDeviceContext*         pContext,
+                              ITexture*              pImportanceMap,
+                              ITexture*              pRadianceMap,
+                              RESOURCE_STATE         OldState,
+                              RESOURCE_STATE         NewState,
+                              Uint32                 FirstMip,
+                              Uint32                 MipCount,
+                              STATE_TRANSITION_FLAGS Flags = STATE_TRANSITION_FLAG_NONE)
+{
+    TransitionTextureRange(pContext, pImportanceMap, OldState, NewState, FirstMip, MipCount, Flags);
+    TransitionTextureRange(pContext, pRadianceMap, OldState, NewState, FirstMip, MipCount, Flags);
+}
+
 std::string ToLower(std::string Value)
 {
     std::transform(Value.begin(), Value.end(), Value.begin(),
@@ -674,6 +710,14 @@ bool RTXPTEnvMapBaker::CreateImportanceMaps(IRenderDevice* pDevice, IDeviceConte
 
     if (!CreateImportanceTextures(pDevice, Resolution))
         return false;
+    TransitionImportanceMaps(pContext,
+                             m_ImportanceMap,
+                             m_RadianceMap,
+                             RESOURCE_STATE_UNDEFINED,
+                             RESOURCE_STATE_UNORDERED_ACCESS,
+                             0,
+                             REMAINING_MIP_LEVELS,
+                             STATE_TRANSITION_FLAG_UPDATE_STATE | STATE_TRANSITION_FLAG_DISCARD_CONTENT);
     if (!DispatchImportanceBuild(pContext, Resolution))
         return false;
     if (!DispatchImportanceReduce(pContext, Resolution, m_Stats.ImportanceMipLevels))
@@ -822,6 +866,14 @@ bool RTXPTEnvMapBaker::DispatchImportanceReduce(IDeviceContext* pContext, Uint32
 
     for (Uint32 DstMip = 1; DstMip < MipLevels; ++DstMip)
     {
+        TransitionImportanceMaps(pContext,
+                                 m_ImportanceMap,
+                                 m_RadianceMap,
+                                 RESOURCE_STATE_UNORDERED_ACCESS,
+                                 RESOURCE_STATE_SHADER_RESOURCE,
+                                 DstMip - 1u,
+                                 1);
+
         RefCntAutoPtr<ITextureView> SrcImportanceSRV = CreateMipView(m_ImportanceMap, TEXTURE_VIEW_SHADER_RESOURCE, DstMip - 1u);
         RefCntAutoPtr<ITextureView> SrcRadianceSRV   = CreateMipView(m_RadianceMap, TEXTURE_VIEW_SHADER_RESOURCE, DstMip - 1u);
         RefCntAutoPtr<ITextureView> ImportanceUAV    = CreateMipView(m_ImportanceMap, TEXTURE_VIEW_UNORDERED_ACCESS, DstMip);
@@ -849,7 +901,7 @@ bool RTXPTEnvMapBaker::DispatchImportanceReduce(IDeviceContext* pContext, Uint32
         const Uint32 MipDim = std::max(1u, Resolution >> DstMip);
         if (!m_ReduceImportanceMipPass.Bind(m_ImportanceConstants, m_EnvironmentMapSRV, SrcImportanceSRV, SrcRadianceSRV,
                                             ImportanceUAV, RadianceUAV, m_EnvironmentSampler) ||
-            !m_ReduceImportanceMipPass.Dispatch(pContext, DispatchGroupsForDim(MipDim), DispatchGroupsForDim(MipDim)))
+            !m_ReduceImportanceMipPass.Dispatch(pContext, DispatchGroupsForDim(MipDim), DispatchGroupsForDim(MipDim), RESOURCE_STATE_TRANSITION_MODE_NONE))
         {
             m_Stats.Ready           = false;
             m_Stats.ImportanceReady = false;
@@ -858,6 +910,15 @@ bool RTXPTEnvMapBaker::DispatchImportanceReduce(IDeviceContext* pContext, Uint32
             return false;
         }
     }
+
+    TransitionImportanceMaps(pContext,
+                             m_ImportanceMap,
+                             m_RadianceMap,
+                             RESOURCE_STATE_UNORDERED_ACCESS,
+                             RESOURCE_STATE_SHADER_RESOURCE,
+                             MipLevels - 1u,
+                             1,
+                             STATE_TRANSITION_FLAG_UPDATE_STATE);
 
     return true;
 }

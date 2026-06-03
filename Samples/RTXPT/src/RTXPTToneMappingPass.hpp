@@ -26,10 +26,13 @@
 
 #pragma once
 
+#include <memory>
+
 #include "Buffer.h"
 #include "BufferView.h"
 #include "DeviceContext.h"
 #include "EngineFactory.h"
+#include "GPUCompletionAwaitQueue.hpp"
 #include "PipelineState.h"
 #include "RefCntAutoPtr.hpp"
 #include "RenderDevice.h"
@@ -116,6 +119,8 @@ private:
     bool UpdateToneMappingConstants(IDeviceContext* pContext, const RTXPTToneMappingParameters& Params, bool Enabled);
     void PollReadback(IDeviceContext* pContext);
 
+    using AvgLuminanceReadBackQueueType = GPUCompletionAwaitQueue<RefCntAutoPtr<IBuffer>>;
+
     RefCntAutoPtr<IPipelineState>         m_LuminancePSO;
     RefCntAutoPtr<IPipelineState>         m_ToneMapPSO;
     RefCntAutoPtr<IPipelineState>         m_CapturePSO;
@@ -125,7 +130,7 @@ private:
     RefCntAutoPtr<IBuffer>                m_ToneMappingCB;
     RefCntAutoPtr<IBuffer>                m_AvgLuminanceGPU;
     RefCntAutoPtr<IBufferView>            m_AvgLuminanceUAV;
-    RefCntAutoPtr<IBuffer>                m_AvgLuminanceReadback[3];
+    std::unique_ptr<AvgLuminanceReadBackQueueType> m_AvgLuminanceReadbackQueue;
     RefCntAutoPtr<ITexture>               m_LuminanceTexture;
     RefCntAutoPtr<ITextureView>           m_LuminanceRTV;
     RefCntAutoPtr<ITextureView>           m_LuminanceSRV;
@@ -134,9 +139,8 @@ private:
     RefCntAutoPtr<ISampler>               m_LinearSampler;
     RefCntAutoPtr<ISampler>               m_PointSampler;
     RTXPTToneMappingPassStats             m_Stats;
-    Uint32                                m_Width               = 0;
-    Uint32                                m_Height              = 0;
-    int                                   m_LastReadbackWritten = -1;
+    Uint32                                m_Width  = 0;
+    Uint32                                m_Height = 0;
 
     RefCntAutoPtr<IShader> m_FullscreenVS;
     RefCntAutoPtr<IShader> m_LuminancePS;

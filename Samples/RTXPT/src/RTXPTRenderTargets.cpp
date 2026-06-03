@@ -27,6 +27,8 @@
 #include "RTXPTRenderTargets.hpp"
 #include "DebugUtilities.hpp"
 
+#include <algorithm>
+
 namespace Diligent
 {
 
@@ -44,7 +46,41 @@ bool FormatsMatch(const RTXPTRenderTargetFormats& Lhs, const RTXPTRenderTargetFo
         Lhs.Depth == Rhs.Depth &&
         Lhs.ScreenMotionVectors == Rhs.ScreenMotionVectors &&
         Lhs.TemporalFeedback == Rhs.TemporalFeedback &&
-        Lhs.CombinedHistoryClampRelax == Rhs.CombinedHistoryClampRelax;
+        Lhs.CombinedHistoryClampRelax == Rhs.CombinedHistoryClampRelax &&
+        Lhs.StableRadiance == Rhs.StableRadiance &&
+        Lhs.StablePlanesHeader == Rhs.StablePlanesHeader &&
+        Lhs.Throughput == Rhs.Throughput &&
+        Lhs.SpecularHitT == Rhs.SpecularHitT &&
+        Lhs.ScratchFloat1 == Rhs.ScratchFloat1 &&
+        Lhs.DenoiserViewspaceZ == Rhs.DenoiserViewspaceZ &&
+        Lhs.DenoiserMotionVectors == Rhs.DenoiserMotionVectors &&
+        Lhs.DenoiserNormalRoughness == Rhs.DenoiserNormalRoughness &&
+        Lhs.DenoiserDiffRadianceHitDist == Rhs.DenoiserDiffRadianceHitDist &&
+        Lhs.DenoiserSpecRadianceHitDist == Rhs.DenoiserSpecRadianceHitDist &&
+        Lhs.DenoiserDisocclusionThresholdMix == Rhs.DenoiserDisocclusionThresholdMix &&
+        Lhs.DenoiserOutDiffRadianceHitDist == Rhs.DenoiserOutDiffRadianceHitDist &&
+        Lhs.DenoiserOutSpecRadianceHitDist == Rhs.DenoiserOutSpecRadianceHitDist &&
+        Lhs.DenoiserOutValidation == Rhs.DenoiserOutValidation &&
+        Lhs.DenoiserAvgLayerRadianceHalfRes == Rhs.DenoiserAvgLayerRadianceHalfRes;
+}
+
+Uint64 ComputeGenericTSLineStride(Uint32 ImageWidth)
+{
+    const Uint64 SafeWidth  = std::max(ImageWidth, Uint32{1});
+    const Uint64 TileCountX = (SafeWidth + kRTXPTGenericTSTileSize - 1u) / kRTXPTGenericTSTileSize;
+    return TileCountX * kRTXPTGenericTSTileSize;
+}
+
+Uint64 ComputeGenericTSPlaneStride(Uint32 ImageWidth, Uint32 ImageHeight)
+{
+    const Uint64 SafeHeight = std::max(ImageHeight, Uint32{1});
+    const Uint64 TileCountY = (SafeHeight + kRTXPTGenericTSTileSize - 1u) / kRTXPTGenericTSTileSize;
+    return ComputeGenericTSLineStride(ImageWidth) * TileCountY * kRTXPTGenericTSTileSize;
+}
+
+Uint64 ComputeStablePlanesElementCount(Uint32 ImageWidth, Uint32 ImageHeight)
+{
+    return ComputeGenericTSPlaneStride(ImageWidth, ImageHeight) * kRTXPTStablePlaneCount;
 }
 
 } // namespace
@@ -62,8 +98,30 @@ void RTXPTRenderTargets::Reset()
     m_TemporalFeedback1.Release();
     m_TemporalFeedback2.Release();
     m_CombinedHistoryClampRelax.Release();
+    m_StableRadiance.Release();
+    m_StablePlanesHeader.Release();
+    m_StablePlanesBuffer.Release();
+    m_Throughput.Release();
+    m_SpecularHitT.Release();
+    m_ScratchFloat1.Release();
+    m_DenoiserViewspaceZ.Release();
+    m_DenoiserMotionVectors.Release();
+    m_DenoiserNormalRoughness.Release();
+    m_DenoiserDiffRadianceHitDist.Release();
+    m_DenoiserSpecRadianceHitDist.Release();
+    m_DenoiserDisocclusionThresholdMix.Release();
+    for (auto& Texture : m_DenoiserOutDiffRadianceHitDist)
+        Texture.Release();
+    for (auto& Texture : m_DenoiserOutSpecRadianceHitDist)
+        Texture.Release();
+    m_DenoiserOutValidation.Release();
+    m_DenoiserAvgLayerRadianceHalfRes.Release();
     m_AccumulatedRadianceUnavailable = false;
     m_AccumulatedRadianceRequested   = false;
+    m_RealtimeResourcesRequested     = false;
+    m_DenoiserValidationRequested    = false;
+    m_StablePlanesElementCount       = 0;
+    m_LastFailureReason.clear();
     m_Dimensions                     = {0, 0, 0, 0, false};
     m_Formats                        = {};
 }
@@ -74,13 +132,16 @@ bool RTXPTRenderTargets::CreateTarget(IRenderDevice*           pDevice,
                                       Uint32                   Height,
                                       TEXTURE_FORMAT           TargetFormat,
                                       BIND_FLAGS               BindFlags,
-                                      RefCntAutoPtr<ITexture>& Target)
+                                      RefCntAutoPtr<ITexture>& Target,
+                                      RESOURCE_DIMENSION       Type,
+                                      Uint32                   ArraySize)
 {
     TextureDesc Desc;
     Desc.Name      = Name;
-    Desc.Type      = RESOURCE_DIM_TEX_2D;
+    Desc.Type      = Type;
     Desc.Width     = Width;
     Desc.Height    = Height;
+    Desc.ArraySize = ArraySize;
     Desc.Format    = TargetFormat;
     Desc.BindFlags = BindFlags;
 
@@ -104,10 +165,50 @@ bool RTXPTRenderTargets::CreateTarget(IRenderDevice*           pDevice,
     return true;
 }
 
+bool RTXPTRenderTargets::CreateStablePlanesBuffer(IRenderDevice*          pDevice,
+                                                  Uint64                  ElementCount,
+                                                  RefCntAutoPtr<IBuffer>& Target)
+{
+    BufferDesc Desc;
+    Desc.Name              = "RTXPT StablePlanesBuffer";
+    Desc.Usage             = USAGE_DEFAULT;
+    Desc.BindFlags         = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+    Desc.Mode              = BUFFER_MODE_STRUCTURED;
+    Desc.ElementByteStride = sizeof(RTXPTStablePlaneData);
+    Desc.Size              = std::max<Uint64>(ElementCount, Uint64{1}) * sizeof(RTXPTStablePlaneData);
+
+    Target.Release();
+    pDevice->CreateBuffer(Desc, nullptr, &Target);
+    if (!Target)
+    {
+        LOG_ERROR_MESSAGE("Failed to create RTXPT StablePlanesBuffer");
+        return false;
+    }
+
+    if (Target->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) == nullptr ||
+        Target->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS) == nullptr)
+    {
+        LOG_ERROR_MESSAGE("RTXPT StablePlanesBuffer is missing one or more required default views");
+        Target.Release();
+        return false;
+    }
+
+    return true;
+}
+
 bool RTXPTRenderTargets::SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMAT TargetFormat, BIND_FLAGS BindFlags) const
 {
     const auto& FmtInfo = pDevice->GetTextureFormatInfoExt(TargetFormat);
     return (FmtInfo.BindFlags & BindFlags) == BindFlags;
+}
+
+bool RTXPTRenderTargets::FailResize(const char* Reason)
+{
+    std::string Failure = Reason != nullptr ? Reason : "RTXPT render target resize failed";
+    Reset();
+    m_LastFailureReason = Failure;
+    LOG_ERROR_MESSAGE(m_LastFailureReason.c_str());
+    return false;
 }
 
 bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,

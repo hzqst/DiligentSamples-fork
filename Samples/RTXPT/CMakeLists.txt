@@ -22,6 +22,7 @@ set(SOURCE
     src/RTXPTComputePass.cpp
     src/RTXPTAccumulationPass.cpp
     src/RTXPTBloomPass.cpp
+    src/RTXPTSuperResolutionPass.cpp
     src/RTXPTToneMappingPass.cpp
     src/RTXPTBlitPass.cpp
 )
@@ -48,6 +49,7 @@ set(INCLUDE
     src/RTXPTComputePass.hpp
     src/RTXPTAccumulationPass.hpp
     src/RTXPTBloomPass.hpp
+    src/RTXPTSuperResolutionPass.hpp
     src/RTXPTToneMappingPass.hpp
     src/RTXPTBlitPass.hpp
     RTXPT_FORK_MAPPING.md
@@ -114,5 +116,6 @@ target_link_libraries(RTXPT
 PRIVATE
     Diligent-AssetLoader
     Diligent-JSON
+    Diligent-SuperResolution-static
     DiligentFX
 )

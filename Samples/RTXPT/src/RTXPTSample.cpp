@@ -864,6 +864,7 @@ bool RTXPTSample::EnsureRenderTargets()
          WasAccumulationActive != m_AccumulationActive))
     {
         RequestAccumulationReset("Render targets (re)created");
+        m_CurrentSuperResolutionFrame.ResetHistory      = true;
         m_AccumulationFrame                             = 1;
         m_LastFrameConstants.ptConsts.sampleIndex       = 1;
         m_LastFrameConstants.ptConsts.resetAccumulation = 1u;
@@ -939,10 +940,13 @@ void RTXPTSample::Render()
         return;
     }
 
+    RTXPTSuperResolutionFrameDesc CurrentSRFrame = m_CurrentSuperResolutionFrame;
+    CurrentSRFrame.ResetHistory                  = CurrentSRFrame.ResetHistory || m_ResetSuperResolutionHistory || m_ResetAccumulationPending;
+
     const bool SuperResolutionExecuted =
         m_PostProcessPipeline.RunSuperResolution(m_pImmediateContext,
                                                  m_RenderTargets,
-                                                 m_CurrentSuperResolutionFrame,
+                                                 CurrentSRFrame,
                                                  m_CameraNearPlane,
                                                  m_CameraFarPlane,
                                                  m_CameraVerticalFov);
@@ -951,7 +955,7 @@ void RTXPTSample::Render()
         ClearFallback(float4{0.0f, 0.2f, 1.0f, 1.0f});
         return;
     }
-    if (m_CurrentSuperResolutionFrame.Enabled)
+    if (CurrentSRFrame.Enabled && SuperResolutionExecuted)
         m_ResetSuperResolutionHistory = false;
 
     RTXPTBloomParameters BloomParams;

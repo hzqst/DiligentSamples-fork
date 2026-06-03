@@ -534,6 +534,60 @@ bool RTXPTRenderTargets::HasPostProcessTargets() const
         (!m_Dimensions.SuperResolutionActive || m_SuperResolutionInputColor != nullptr);
 }
 
+bool RTXPTRenderTargets::HasRealtimeRenderTargets() const
+{
+    if (!m_RealtimeResourcesRequested)
+        return false;
+
+    const bool HasPerPlaneOutputs =
+        std::all_of(m_DenoiserOutDiffRadianceHitDist.begin(), m_DenoiserOutDiffRadianceHitDist.end(),
+                    [](const RefCntAutoPtr<ITexture>& Texture) { return Texture != nullptr; }) &&
+        std::all_of(m_DenoiserOutSpecRadianceHitDist.begin(), m_DenoiserOutSpecRadianceHitDist.end(),
+                    [](const RefCntAutoPtr<ITexture>& Texture) { return Texture != nullptr; });
+
+    return m_StableRadiance != nullptr &&
+        m_StablePlanesHeader != nullptr &&
+        m_StablePlanesBuffer != nullptr &&
+        m_Throughput != nullptr &&
+        m_SpecularHitT != nullptr &&
+        m_ScratchFloat1 != nullptr &&
+        m_DenoiserViewspaceZ != nullptr &&
+        m_DenoiserMotionVectors != nullptr &&
+        m_DenoiserNormalRoughness != nullptr &&
+        m_DenoiserDiffRadianceHitDist != nullptr &&
+        m_DenoiserSpecRadianceHitDist != nullptr &&
+        m_DenoiserDisocclusionThresholdMix != nullptr &&
+        HasPerPlaneOutputs &&
+        (!m_DenoiserValidationRequested || m_DenoiserOutValidation != nullptr) &&
+        m_DenoiserAvgLayerRadianceHalfRes != nullptr &&
+        m_StablePlanesElementCount > 0;
+}
+
+namespace
+{
+
+ITextureView* GetTextureUAV(const RefCntAutoPtr<ITexture>& Texture)
+{
+    return Texture ? Texture->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+ITextureView* GetTextureSRV(const RefCntAutoPtr<ITexture>& Texture)
+{
+    return Texture ? Texture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+IBufferView* GetBufferUAV(const RefCntAutoPtr<IBuffer>& Buffer)
+{
+    return Buffer ? Buffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS) : nullptr;
+}
+
+IBufferView* GetBufferSRV(const RefCntAutoPtr<IBuffer>& Buffer)
+{
+    return Buffer ? Buffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+} // namespace
+
 ITextureView* RTXPTRenderTargets::GetOutputColorUAV() const
 {
     return m_OutputColor ? m_OutputColor->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) : nullptr;
@@ -663,6 +717,57 @@ ITextureView* RTXPTRenderTargets::GetCombinedHistoryClampRelaxSRV() const
 {
     return m_CombinedHistoryClampRelax ? m_CombinedHistoryClampRelax->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
 }
+
+ITextureView* RTXPTRenderTargets::GetStableRadianceUAV() const { return GetTextureUAV(m_StableRadiance); }
+ITextureView* RTXPTRenderTargets::GetStableRadianceSRV() const { return GetTextureSRV(m_StableRadiance); }
+ITextureView* RTXPTRenderTargets::GetStablePlanesHeaderUAV() const { return GetTextureUAV(m_StablePlanesHeader); }
+ITextureView* RTXPTRenderTargets::GetStablePlanesHeaderSRV() const { return GetTextureSRV(m_StablePlanesHeader); }
+IBufferView*  RTXPTRenderTargets::GetStablePlanesBufferUAV() const { return GetBufferUAV(m_StablePlanesBuffer); }
+IBufferView*  RTXPTRenderTargets::GetStablePlanesBufferSRV() const { return GetBufferSRV(m_StablePlanesBuffer); }
+IBuffer*      RTXPTRenderTargets::GetStablePlanesBuffer() const { return m_StablePlanesBuffer; }
+ITextureView* RTXPTRenderTargets::GetThroughputUAV() const { return GetTextureUAV(m_Throughput); }
+ITextureView* RTXPTRenderTargets::GetThroughputSRV() const { return GetTextureSRV(m_Throughput); }
+ITextureView* RTXPTRenderTargets::GetSpecularHitTUAV() const { return GetTextureUAV(m_SpecularHitT); }
+ITextureView* RTXPTRenderTargets::GetSpecularHitTSRV() const { return GetTextureSRV(m_SpecularHitT); }
+ITextureView* RTXPTRenderTargets::GetScratchFloat1UAV() const { return GetTextureUAV(m_ScratchFloat1); }
+ITextureView* RTXPTRenderTargets::GetScratchFloat1SRV() const { return GetTextureSRV(m_ScratchFloat1); }
+ITextureView* RTXPTRenderTargets::GetDenoiserViewspaceZUAV() const { return GetTextureUAV(m_DenoiserViewspaceZ); }
+ITextureView* RTXPTRenderTargets::GetDenoiserViewspaceZSRV() const { return GetTextureSRV(m_DenoiserViewspaceZ); }
+ITextureView* RTXPTRenderTargets::GetDenoiserMotionVectorsUAV() const { return GetTextureUAV(m_DenoiserMotionVectors); }
+ITextureView* RTXPTRenderTargets::GetDenoiserMotionVectorsSRV() const { return GetTextureSRV(m_DenoiserMotionVectors); }
+ITextureView* RTXPTRenderTargets::GetDenoiserNormalRoughnessUAV() const { return GetTextureUAV(m_DenoiserNormalRoughness); }
+ITextureView* RTXPTRenderTargets::GetDenoiserNormalRoughnessSRV() const { return GetTextureSRV(m_DenoiserNormalRoughness); }
+ITextureView* RTXPTRenderTargets::GetDenoiserDiffRadianceHitDistUAV() const { return GetTextureUAV(m_DenoiserDiffRadianceHitDist); }
+ITextureView* RTXPTRenderTargets::GetDenoiserDiffRadianceHitDistSRV() const { return GetTextureSRV(m_DenoiserDiffRadianceHitDist); }
+ITextureView* RTXPTRenderTargets::GetDenoiserSpecRadianceHitDistUAV() const { return GetTextureUAV(m_DenoiserSpecRadianceHitDist); }
+ITextureView* RTXPTRenderTargets::GetDenoiserSpecRadianceHitDistSRV() const { return GetTextureSRV(m_DenoiserSpecRadianceHitDist); }
+ITextureView* RTXPTRenderTargets::GetDenoiserDisocclusionThresholdMixUAV() const { return GetTextureUAV(m_DenoiserDisocclusionThresholdMix); }
+ITextureView* RTXPTRenderTargets::GetDenoiserDisocclusionThresholdMixSRV() const { return GetTextureSRV(m_DenoiserDisocclusionThresholdMix); }
+
+ITextureView* RTXPTRenderTargets::GetDenoiserOutDiffRadianceHitDistUAV(Uint32 PlaneIndex) const
+{
+    return PlaneIndex < m_DenoiserOutDiffRadianceHitDist.size() ? GetTextureUAV(m_DenoiserOutDiffRadianceHitDist[PlaneIndex]) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetDenoiserOutDiffRadianceHitDistSRV(Uint32 PlaneIndex) const
+{
+    return PlaneIndex < m_DenoiserOutDiffRadianceHitDist.size() ? GetTextureSRV(m_DenoiserOutDiffRadianceHitDist[PlaneIndex]) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetDenoiserOutSpecRadianceHitDistUAV(Uint32 PlaneIndex) const
+{
+    return PlaneIndex < m_DenoiserOutSpecRadianceHitDist.size() ? GetTextureUAV(m_DenoiserOutSpecRadianceHitDist[PlaneIndex]) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetDenoiserOutSpecRadianceHitDistSRV(Uint32 PlaneIndex) const
+{
+    return PlaneIndex < m_DenoiserOutSpecRadianceHitDist.size() ? GetTextureSRV(m_DenoiserOutSpecRadianceHitDist[PlaneIndex]) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetDenoiserOutValidationUAV() const { return GetTextureUAV(m_DenoiserOutValidation); }
+ITextureView* RTXPTRenderTargets::GetDenoiserOutValidationSRV() const { return GetTextureSRV(m_DenoiserOutValidation); }
+ITextureView* RTXPTRenderTargets::GetDenoiserAvgLayerRadianceHalfResUAV() const { return GetTextureUAV(m_DenoiserAvgLayerRadianceHalfRes); }
+ITextureView* RTXPTRenderTargets::GetDenoiserAvgLayerRadianceHalfResSRV() const { return GetTextureSRV(m_DenoiserAvgLayerRadianceHalfRes); }
 
 ITextureView* RTXPTRenderTargets::GetAccumulationOutputUAV() const
 {

@@ -58,7 +58,12 @@ struct RTXPTRenderTargetDimensions
 
     bool IsValid() const
     {
-        return RenderWidth > 0 && RenderHeight > 0 && DisplayWidth > 0 && DisplayHeight > 0;
+        if (RenderWidth == 0 || RenderHeight == 0 || DisplayWidth == 0 || DisplayHeight == 0)
+            return false;
+
+        return SuperResolutionActive ?
+            RenderWidth <= DisplayWidth && RenderHeight <= DisplayHeight :
+            RenderWidth == DisplayWidth && RenderHeight == DisplayHeight;
     }
 
     bool operator==(const RTXPTRenderTargetDimensions& RHS) const
@@ -161,7 +166,7 @@ private:
     RefCntAutoPtr<ITexture>     m_CombinedHistoryClampRelax;
     bool                        m_AccumulatedRadianceUnavailable = false;
     bool                        m_AccumulatedRadianceRequested   = false;
-    RTXPTRenderTargetDimensions m_Dimensions                     = {};
+    RTXPTRenderTargetDimensions m_Dimensions                     = {0, 0, 0, 0, false};
     RTXPTRenderTargetFormats    m_Formats                        = {};
 };
 

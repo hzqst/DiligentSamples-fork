@@ -64,7 +64,7 @@ void RTXPTRenderTargets::Reset()
     m_CombinedHistoryClampRelax.Release();
     m_AccumulatedRadianceUnavailable = false;
     m_AccumulatedRadianceRequested   = false;
-    m_Dimensions                     = {};
+    m_Dimensions                     = {0, 0, 0, 0, false};
     m_Formats                        = {};
 }
 
@@ -147,6 +147,17 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
     m_Formats                      = Formats;
     m_AccumulatedRadianceRequested = CreateAccumulatedRadiance;
 
+    const auto Fail = [this]() {
+        Reset();
+        return false;
+    };
+
+    const auto FailAccumulatedRadianceUnavailable = [this]() {
+        Reset();
+        m_AccumulatedRadianceUnavailable = true;
+        return false;
+    };
+
     const BIND_FLAGS UavFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
     const BIND_FLAGS HdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
     const BIND_FLAGS LdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
@@ -154,62 +165,61 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
     if (!SupportsBindFlags(pDevice, m_Formats.OutputColor, UavFlags))
     {
         LOG_ERROR_MESSAGE("RGBA16F UAV OutputColor is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     if (CreateAccumulatedRadiance && !SupportsBindFlags(pDevice, m_Formats.AccumulatedRadiance, UavFlags))
     {
         LOG_ERROR_MESSAGE("RGBA32F UAV AccumulatedRadiance is not supported; reference accumulation is unavailable");
-        m_AccumulatedRadianceUnavailable = true;
-        return false;
+        return FailAccumulatedRadianceUnavailable();
     }
 
     if (m_Dimensions.SuperResolutionActive && !SupportsBindFlags(pDevice, m_Formats.SuperResolutionInputColor, UavFlags))
     {
         LOG_ERROR_MESSAGE("RGBA16F UAV SuperResolutionInputColor is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     if (!SupportsBindFlags(pDevice, m_Formats.Depth, UavFlags))
     {
         LOG_ERROR_MESSAGE("R32F UAV Depth is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     if (!SupportsBindFlags(pDevice, m_Formats.ScreenMotionVectors, UavFlags))
     {
         LOG_ERROR_MESSAGE("RG16F UAV ScreenMotionVectors is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     if (!SupportsBindFlags(pDevice, m_Formats.ProcessedOutputColor, HdrRtFlags))
     {
         LOG_ERROR_MESSAGE("HDR UAV/RTV ProcessedOutputColor is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     if (!SupportsBindFlags(pDevice, m_Formats.LdrColor, LdrRtFlags))
     {
         LOG_ERROR_MESSAGE("LDR UAV/RTV targets are not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     if (!SupportsBindFlags(pDevice, m_Formats.TemporalFeedback, UavFlags))
     {
         LOG_ERROR_MESSAGE("RGBA16_SNORM UAV TemporalFeedback is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     if (!SupportsBindFlags(pDevice, m_Formats.CombinedHistoryClampRelax, UavFlags))
     {
         LOG_ERROR_MESSAGE("R8 UAV CombinedHistoryClampRelax is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     if (CreateComputeOutput && !SupportsBindFlags(pDevice, m_Formats.ComputeColor, UavFlags))
     {
         LOG_ERROR_MESSAGE("RGBA8 UAV ComputeColor is not supported; RTXPT post-processing resource graph is unavailable");
-        return false;
+        return Fail();
     }
 
     const Uint32 RenderWidth   = m_Dimensions.RenderWidth;
@@ -218,41 +228,41 @@ bool RTXPTRenderTargets::Resize(IRenderDevice*                     pDevice,
     const Uint32 DisplayHeight = m_Dimensions.DisplayHeight;
 
     if (!CreateTarget(pDevice, "RTXPT OutputColor", RenderWidth, RenderHeight, m_Formats.OutputColor, UavFlags, m_OutputColor))
-        return false;
+        return Fail();
 
     if (CreateAccumulatedRadiance &&
         !m_AccumulatedRadianceUnavailable &&
         !CreateTarget(pDevice, "RTXPT AccumulatedRadiance", RenderWidth, RenderHeight, m_Formats.AccumulatedRadiance, UavFlags, m_AccumulatedRadiance))
-        return false;
+        return Fail();
 
     if (m_Dimensions.SuperResolutionActive &&
         !CreateTarget(pDevice, "RTXPT SuperResolutionInputColor", RenderWidth, RenderHeight, m_Formats.SuperResolutionInputColor, UavFlags, m_SuperResolutionInputColor))
-        return false;
+        return Fail();
 
     if (!CreateTarget(pDevice, "RTXPT Depth", RenderWidth, RenderHeight, m_Formats.Depth, UavFlags, m_Depth))
-        return false;
+        return Fail();
 
     if (!CreateTarget(pDevice, "RTXPT ScreenMotionVectors", RenderWidth, RenderHeight, m_Formats.ScreenMotionVectors, UavFlags, m_ScreenMotionVectors))
-        return false;
+        return Fail();
 
     if (!CreateTarget(pDevice, "RTXPT ProcessedOutputColor", DisplayWidth, DisplayHeight, m_Formats.ProcessedOutputColor, HdrRtFlags, m_ProcessedOutputColor))
-        return false;
+        return Fail();
 
     if (!CreateTarget(pDevice, "RTXPT LdrColor", DisplayWidth, DisplayHeight, m_Formats.LdrColor, LdrRtFlags, m_LdrColor))
-        return false;
+        return Fail();
 
     if (!CreateTarget(pDevice, "RTXPT TemporalFeedback1", DisplayWidth, DisplayHeight, m_Formats.TemporalFeedback, UavFlags, m_TemporalFeedback1))
-        return false;
+        return Fail();
 
     if (!CreateTarget(pDevice, "RTXPT TemporalFeedback2", DisplayWidth, DisplayHeight, m_Formats.TemporalFeedback, UavFlags, m_TemporalFeedback2))
-        return false;
+        return Fail();
 
     if (!CreateTarget(pDevice, "RTXPT CombinedHistoryClampRelax", DisplayWidth, DisplayHeight, m_Formats.CombinedHistoryClampRelax, UavFlags, m_CombinedHistoryClampRelax))
-        return false;
+        return Fail();
 
     if (CreateComputeOutput &&
         !CreateTarget(pDevice, "RTXPT ComputeColor", DisplayWidth, DisplayHeight, m_Formats.ComputeColor, UavFlags, m_ComputeColor))
-        return false;
+        return Fail();
 
     return true;
 }

@@ -821,12 +821,13 @@ bool RTXPTSample::EnsureRenderTargets()
     const bool           WasAccumulationActive = m_AccumulationActive;
 
     const RTXPTRenderTargetFormats Formats;
-    const bool                     Ok = m_RenderTargets.Resize(m_pDevice,
-                                                              SCDesc.Width,
-                                                              SCDesc.Height,
-                                                              Formats,
-                                                              m_FeatureCaps.ComputeShaders,
-                                                              m_FeatureCaps.RayTracing);
+    constexpr bool                 CreateComputeOutput = false;
+    const bool                     Ok                  = m_RenderTargets.Resize(m_pDevice,
+                                                               SCDesc.Width,
+                                                               SCDesc.Height,
+                                                               Formats,
+                                                               CreateComputeOutput,
+                                                               m_FeatureCaps.RayTracing);
     const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
 
     m_AccumulationActive =
@@ -952,17 +953,8 @@ void RTXPTSample::Render()
         return;
     }
 
-    const bool ComputeExecuted =
-        m_EnableDebugComputePass &&
-        m_DebugComputePass.Dispatch(m_pImmediateContext,
-                                    m_RenderTargets.GetOutputColorSRV(),
-                                    m_RenderTargets.GetComputeColorUAV(),
-                                    m_RenderTargets.GetWidth(),
-                                    m_RenderTargets.GetHeight());
-
-    ITextureView* pDisplaySRV = ComputeExecuted ? m_RenderTargets.GetComputeColorSRV() :
-                                                  m_RenderTargets.GetLdrColorSRV();
-    if (!m_BlitPass.Render(m_pImmediateContext, m_pSwapChain, pDisplaySRV))
+    ITextureView* pPresentationSRV = m_RenderTargets.GetPresentationSRV();
+    if (!m_BlitPass.Render(m_pImmediateContext, m_pSwapChain, pPresentationSRV))
     {
         ClearFallback(float4{0.0f, 1.0f, 1.0f, 1.0f});
         return;
@@ -1035,12 +1027,13 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     m_HasLastCameraMatrices = false;
 
     const RTXPTRenderTargetFormats Formats;
-    const bool                     Ok = m_RenderTargets.Resize(m_pDevice,
-                                                              Width,
-                                                              Height,
-                                                              Formats,
-                                                              m_FeatureCaps.ComputeShaders,
-                                                              m_FeatureCaps.RayTracing);
+    constexpr bool                 CreateComputeOutput = false;
+    const bool                     Ok                  = m_RenderTargets.Resize(m_pDevice,
+                                                               Width,
+                                                               Height,
+                                                               Formats,
+                                                               CreateComputeOutput,
+                                                               m_FeatureCaps.RayTracing);
     const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
     m_AccumulationActive =
         Ok && ResourcesValid &&

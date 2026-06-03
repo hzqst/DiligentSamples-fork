@@ -413,12 +413,14 @@ namespace PathTracer
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
         if (path.hasFlag(PathFlags::stablePlaneOnDominantBranch))
         {
+            // Placeholder until real scatter/delta-lobe plumbing records dominant-layer specular travel distance.
             Bridge::ExportSpecHitTStart(path);
             Bridge::ExportSpecHitTStop(path);
         }
 #endif
 
-        // Full realtime material scattering is intentionally left for the material-plumbing task.
+        // Conservative Task 4 stopgap: material-plumbing must replace this termination with
+        // real scatter/delta-lobe continuation when ActiveBSDF sampling is wired.
         path.terminate();
     }
 #endif

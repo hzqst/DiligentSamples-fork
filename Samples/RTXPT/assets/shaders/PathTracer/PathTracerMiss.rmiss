@@ -63,7 +63,7 @@ void main(inout ActiveRayPayload Payload)
 #else
     PathState path = PathPayload::unpack(Payload);
     PathTracer::WorkingContext workingContext = GetWorkingContext();
-    PathTracer::HandleMiss(path, WorldRayOrigin(), WorldRayDirection(), kMaxRayTravel, workingContext);
+    PathTracer::HandleMiss(path, WorldRayOrigin(), WorldRayDirection(), RayTCurrent(), workingContext);
     Payload = PathPayload::pack(path);
 #endif
 }

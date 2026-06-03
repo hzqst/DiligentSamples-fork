@@ -80,9 +80,6 @@ namespace PathTracer
     {
         const float3 rayDir = WorldRayDirection();
 
-        float3 baseColor    = float3(Attributes.barycentrics.x,
-                                  Attributes.barycentrics.y,
-                                  1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
         float3 worldNormal  = -rayDir;
         float3 faceNormal   = -rayDir;
         float3 worldPos     = WorldRayOrigin() + rayDir * RayTCurrent();
@@ -141,7 +138,6 @@ namespace PathTracer
 
             const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
             roughness               = metalRough.y;
-            baseColor               = Bridge::getBaseColor(material, texCoord).rgb;
             surfaceEmission         = Bridge::getEmission(material, texCoord);
             ior                     = Bridge::loadIoR(materialID);
             materialFlags           = material.flags;

@@ -446,7 +446,7 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `Shaders/Bindings/ShaderResourceBindings.hlsli` | `assets/shaders/PostProcessing/RTXPTPostProcessBindings.hlsli` or local declarations in each post-process shader | P4-P8 | Resource naming reference: `t_LdrColorScratch`, `u_OutputColor`, `u_ProcessedOutputColor`, `u_PostTonemapOutputColor`. Diligent binding slots may differ, but names and ownership should remain recognizable. |
 | `Sample.cpp::PostProcessPreToneMapping` | `src/RTXPTPostProcessPipeline.cpp`, `src/RTXPTBloomPass.cpp`, `src/RTXPTPostProcessPass.cpp` | P4 | HDR post-process scheduling: bloom first, optional HDR test second. |
 | `Sample.cpp::PostProcessPostToneMapping` | `src/RTXPTPostProcessPipeline.cpp`, `src/RTXPTPostProcessPass.cpp` | P4 | LDR post-process scheduling after tone mapping, including `LdrColor` to `LdrColorScratch` copy. |
-| `Sample.cpp` final `m_CommonPasses->BlitTexture` | `src/RTXPTBlitPass.{hpp,cpp}` or an existing Diligent full-screen helper | P5 | Final swapchain copy. Normal source is `LdrColor`, not `OutputColor`. |
+| `Sample.cpp` final `m_CommonPasses->BlitTexture` | `src/RTXPTBlitPass.{hpp,cpp}` plus `RTXPTRenderTargets::GetPresentationSRV()` | P5 | Final swapchain copy. `GetPresentationSRV()` returns `LdrColor`, and no debug/compute output may replace the normal swapchain source. |
 | `SampleUI.h` / `SampleUI.cpp` tone-mapping and post-process controls | `src/RTXPTSample.{hpp,cpp}` | P3-P5 | Existing disabled controls become live as each pass lands. UI changes must request only the histories they invalidate. |
 | `Shaders/PathTracer/PathTracer.hlsli::CommitPixel` | `assets/shaders/PathTracer/PathTracerSample.rgen` | P2 | Diligent raygen writes raw `pathRadiance` to `u_Output` in reference mode. Accumulation and tone mapping are not raygen responsibilities. |
 
@@ -457,9 +457,9 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `OutputColor` | `RTXPTRenderTargets` | Prefer `TEX_FORMAT_RGBA16_FLOAT`; allow a documented closest supported HDR UAV fallback | render size | Raygen reference path tracer in P2; stable-plane merge in P7 | Accumulation, TAA/DLSS/DLSS-RR, HDR post-process | Raw HDR radiance only. It is not display-ready and must not contain ACES output. |
 | `AccumulatedRadiance` | `RTXPTRenderTargets` | `TEX_FORMAT_RGBA32_FLOAT` | render size | `RTXPTAccumulationPass` | `RTXPTAccumulationPass` | Reference-mode accumulation history. Unsupported UAV format disables accumulation with a visible reason. |
 | `ProcessedOutputColor` | `RTXPTRenderTargets` | Same HDR format family as `OutputColor` | display size after P6, render size until render/display split exists | Accumulation, TAA, DLSS, DLSS-RR, or final merge | HDR post-process and tone mapping | This is the HDR image that tone mapping reads. |
-| `LdrColor` | `RTXPTRenderTargets` | `TEX_FORMAT_RGBA8_UNORM` or Diligent-supported sRGB equivalent when needed | display size | `RTXPTToneMappingPass` | LDR post-process, overlays, final blit | Normal final display source. |
+| `LdrColor` | `RTXPTRenderTargets` | `TEX_FORMAT_RGBA8_UNORM` or Diligent-supported sRGB equivalent when needed | display size | `RTXPTToneMappingPass` | LDR post-process, final blit | Normal final display source. |
 | `LdrColorScratch` | `RTXPTRenderTargets` | Match `LdrColor` | display size | Copy/ping-pong before LDR effects | LDR post-process | Exists before LDR edge/test pass is enabled. |
-| `ComputeColor` | `RTXPTRenderTargets` | Existing debug format | swapchain size | `RTXPTComputePass` | Debug display only | Diagnostic path only; not part of the long-term post-processing framework. |
+| `ComputeColor` | `RTXPTRenderTargets` | Existing debug format | swapchain size | Legacy `RTXPTComputePass` only when explicitly reintroduced outside P5 | No normal presentation consumer | Diagnostic scratch only; P5 does not request or present it. |
 
 ### Phase 6 Behavioral Contracts
 
@@ -469,7 +469,8 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 - `PathTracerConstants::exposureScale` remains a temporary bridge until P3, then tone-mapping exposure data moves into tone-map pass state.
 - Disabling tone mapping is a post-process pass-through from `ProcessedOutputColor` to `LdrColor`; it is not a raygen macro or branch.
 - Tone mapping and auto exposure must not feed back into `AccumulatedRadiance`.
-- Bloom, LDR edge/test effects, overlays, TAA, NRD, DLSS, and DLSS-RR are optional consumers/producers around the base `OutputColor -> ProcessedOutputColor -> LdrColor` chain.
+- Bloom, LDR edge/test effects, TAA, NRD, DLSS, and DLSS-RR are optional consumers/producers around the base `OutputColor -> ProcessedOutputColor -> LdrColor` chain.
+- Final presentation reads only `LdrColor` through `RTXPTRenderTargets::GetPresentationSRV()`.
 - P1-P5 must stay backend-neutral for D3D12 and Vulkan. P8 integrations may be D3D12/NVIDIA-only, but must compile out cleanly elsewhere.
 
 ## Skinned glTF Current Geometry

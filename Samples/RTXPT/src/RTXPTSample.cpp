@@ -287,6 +287,8 @@ void RTXPTSample::ModifyEngineInitInfo(const ModifyEngineInitInfoAttribs& Attrib
 {
     SampleBase::ModifyEngineInitInfo(Attribs);
 
+    Attribs.EngineCI.Features.RayTracing = DEVICE_FEATURE_STATE_ENABLED;
+
 #ifdef DILIGENT_DEBUG
     Attribs.EngineCI.EnableValidation = true;
     Attribs.EngineCI.SetValidationLevel(VALIDATION_LEVEL_2);

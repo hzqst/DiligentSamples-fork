@@ -174,4 +174,13 @@ static_assert(offsetof(SampleConstants, camera) == 896, "SampleConstants camera 
 static_assert(offsetof(SampleConstants, ptConsts) == 1008, "SampleConstants ptConsts offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(SampleConstants, envMap) == 1408, "SampleConstants envMap offset must match PathTracer/PathTracerShared.h");
 
+struct SampleMiniConstants
+{
+    uint4 params  = {};
+    uint4 params1 = {};
+    uint4 params2 = {};
+    uint4 params3 = {};
+};
+static_assert(sizeof(SampleMiniConstants) == 64, "SampleMiniConstants layout must match PathTracer/PathTracerShared.h");
+
 } // namespace Diligent

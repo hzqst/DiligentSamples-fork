@@ -141,6 +141,14 @@ struct SampleConstants
     RTXPTEnvMapConstants envMap;
 };
 
+struct SampleMiniConstants
+{
+    uint4 params;
+    uint4 params1;
+    uint4 params2;
+    uint4 params3;
+};
+
 static const uint RTXPT_GENERIC_TS_TILE_SIZE = 8u;
 
 uint RTXPTGenericTSComputeLineStride(uint imageWidth)

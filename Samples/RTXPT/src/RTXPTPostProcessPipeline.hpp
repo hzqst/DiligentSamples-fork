@@ -33,6 +33,7 @@
 #include "RTXPTAccumulationPass.hpp"
 #include "RTXPTBloomPass.hpp"
 #include "RTXPTRenderTargets.hpp"
+#include "RTXPTSuperResolutionPass.hpp"
 #include "RTXPTToneMappingPass.hpp"
 #include "SwapChain.h"
 
@@ -41,13 +42,15 @@ namespace Diligent
 
 struct RTXPTPostProcessPipelineStats
 {
-    bool Ready                  = false;
-    bool ResourcesValid         = false;
-    bool AccumulationStageReady = false;
-    bool HdrStageReady          = false;
-    bool BloomStageReady        = false;
-    bool ToneMappingStageReady  = false;
-    bool LdrStageReady          = false;
+    bool Ready                     = false;
+    bool ResourcesValid            = false;
+    bool AccumulationStageReady    = false;
+    bool SuperResolutionStageReady = false;
+    bool LastSuperResolutionActive = false;
+    bool HdrStageReady             = false;
+    bool BloomStageReady           = false;
+    bool ToneMappingStageReady     = false;
+    bool LdrStageReady             = false;
 };
 
 class RTXPTPostProcessPipeline
@@ -67,6 +70,20 @@ public:
                          Uint32                    SampleIndex,
                          bool                      ResetAccumulation);
 
+    RTXPTSuperResolutionFrameDesc ResolveSuperResolutionFrameDesc(const RTXPTSuperResolutionSettings& Settings,
+                                                                  Uint32                              DisplayWidth,
+                                                                  Uint32                              DisplayHeight,
+                                                                  TEXTURE_FORMAT                      OutputFormat,
+                                                                  bool                                ResetHistory,
+                                                                  float                               TimeDeltaSeconds);
+
+    bool RunSuperResolution(IDeviceContext*                      pContext,
+                            const RTXPTRenderTargets&            RenderTargets,
+                            const RTXPTSuperResolutionFrameDesc& FrameDesc,
+                            float                                CameraNear,
+                            float                                CameraFar,
+                            float                                CameraFovAngleVert);
+
     bool RunPreToneMapping(IDeviceContext*             pContext,
                            const RTXPTRenderTargets&   RenderTargets,
                            const RTXPTBloomParameters& BloomParams);
@@ -78,11 +95,13 @@ public:
 
     bool                                 IsReady() const { return m_Stats.Ready; }
     const RTXPTPostProcessPipelineStats& GetStats() const { return m_Stats; }
+    const RTXPTSuperResolutionPass&      GetSuperResolutionPass() const { return m_SuperResolutionPass; }
 
 private:
     RTXPTPostProcessPipelineStats m_Stats;
     RefCntAutoPtr<IRenderDevice>  m_Device;
     RTXPTAccumulationPass         m_AccumulationPass;
+    RTXPTSuperResolutionPass      m_SuperResolutionPass;
     RTXPTBloomPass                m_BloomPass;
     RTXPTToneMappingPass          m_ToneMappingPass;
 };

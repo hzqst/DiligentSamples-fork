@@ -36,6 +36,7 @@ namespace Diligent
 void RTXPTPostProcessPipeline::Reset()
 {
     m_AccumulationPass.Reset();
+    m_SuperResolutionPass.Reset();
     m_BloomPass.Reset();
     m_ToneMappingPass.Reset();
     m_Device.Release();
@@ -62,6 +63,13 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     }
 
     m_Device = pDevice;
+
+    m_Stats.SuperResolutionStageReady = m_SuperResolutionPass.Initialize(pDevice);
+    if (!m_Stats.SuperResolutionStageReady)
+    {
+        DEV_ERROR("RTXPT super-resolution pass failed to initialize");
+        return false;
+    }
 
     m_Stats.AccumulationStageReady = m_AccumulationPass.Initialize(pDevice, pEngineFactory, ComputeSupported);
     if (!m_Stats.AccumulationStageReady)
@@ -96,17 +104,36 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
         RenderTargets.GetOutputColorUAV() != nullptr &&
         RenderTargets.GetAccumulatedRadianceSRV() != nullptr &&
         RenderTargets.GetAccumulatedRadianceUAV() != nullptr &&
+        RenderTargets.GetAccumulationOutputUAV() != nullptr &&
+        RenderTargets.GetDepthUAV() != nullptr &&
+        RenderTargets.GetDepthSRV() != nullptr &&
+        RenderTargets.GetScreenMotionVectorsUAV() != nullptr &&
+        RenderTargets.GetScreenMotionVectorsSRV() != nullptr &&
+        RenderTargets.GetTemporalFeedback1UAV() != nullptr &&
+        RenderTargets.GetTemporalFeedback2UAV() != nullptr &&
+        RenderTargets.GetCombinedHistoryClampRelaxUAV() != nullptr &&
         RenderTargets.GetProcessedOutputColorSRV() != nullptr &&
         RenderTargets.GetProcessedOutputColorUAV() != nullptr &&
         RenderTargets.GetProcessedOutputColorRTV() != nullptr &&
         RenderTargets.GetLdrColorSRV() != nullptr &&
         RenderTargets.GetLdrColorUAV() != nullptr &&
-        RenderTargets.GetLdrColorRTV() != nullptr;
+        RenderTargets.GetLdrColorRTV() != nullptr &&
+        (!RenderTargets.IsSuperResolutionActive() || RenderTargets.GetSuperResolutionInputColorSRV() != nullptr);
 
     if (!m_Stats.ResourcesValid)
         DEV_ERROR("RTXPT post-process render targets are incomplete");
 
     return m_Stats.ResourcesValid;
+}
+
+RTXPTSuperResolutionFrameDesc RTXPTPostProcessPipeline::ResolveSuperResolutionFrameDesc(const RTXPTSuperResolutionSettings& Settings,
+                                                                                        Uint32                              DisplayWidth,
+                                                                                        Uint32                              DisplayHeight,
+                                                                                        TEXTURE_FORMAT                      OutputFormat,
+                                                                                        bool                                ResetHistory,
+                                                                                        float                               TimeDeltaSeconds)
+{
+    return m_SuperResolutionPass.ResolveFrameDesc(Settings, DisplayWidth, DisplayHeight, OutputFormat, ResetHistory, TimeDeltaSeconds);
 }
 
 bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*           pContext,
@@ -123,16 +150,31 @@ bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*           pContex
     RTXPTAccumulationDispatch Dispatch;
     Dispatch.pInputColorSRV          = RenderTargets.GetOutputColorSRV();
     Dispatch.pAccumulatedRadianceUAV = RenderTargets.GetAccumulatedRadianceUAV();
-    Dispatch.pProcessedOutputUAV     = RenderTargets.GetProcessedOutputColorUAV();
-    Dispatch.InputWidth              = RenderTargets.GetWidth();
-    Dispatch.InputHeight             = RenderTargets.GetHeight();
-    Dispatch.OutputWidth             = RenderTargets.GetWidth();
-    Dispatch.OutputHeight            = RenderTargets.GetHeight();
+    Dispatch.pProcessedOutputUAV     = RenderTargets.GetAccumulationOutputUAV();
+    Dispatch.InputWidth              = RenderTargets.GetRenderWidth();
+    Dispatch.InputHeight             = RenderTargets.GetRenderHeight();
+    Dispatch.OutputWidth             = RenderTargets.GetRenderWidth();
+    Dispatch.OutputHeight            = RenderTargets.GetRenderHeight();
     Dispatch.PixelOffset             = float2{0.0f, 0.0f};
     Dispatch.BlendFactor             = BlendFactor;
 
     const bool Executed            = m_AccumulationPass.Render(pContext, Dispatch);
     m_Stats.AccumulationStageReady = m_AccumulationPass.IsReady();
+    return Executed;
+}
+
+bool RTXPTPostProcessPipeline::RunSuperResolution(IDeviceContext*                      pContext,
+                                                  const RTXPTRenderTargets&            RenderTargets,
+                                                  const RTXPTSuperResolutionFrameDesc& FrameDesc,
+                                                  float                                CameraNear,
+                                                  float                                CameraFar,
+                                                  float                                CameraFovAngleVert)
+{
+    const bool Executed               = m_SuperResolutionPass.Execute(pContext, RenderTargets, FrameDesc, CameraNear, CameraFar, CameraFovAngleVert);
+    m_Stats.SuperResolutionStageReady = true;
+    m_Stats.LastSuperResolutionActive = FrameDesc.Enabled;
+    if (!Executed)
+        DEV_ERROR("RTXPT temporal super-resolution pass failed");
     return Executed;
 }
 
@@ -144,7 +186,7 @@ bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*             pCo
         BloomParams.Enabled &&
         BloomParams.Intensity > 0.0f &&
         BloomParams.Radius > 0.0f;
-    if (BloomEnabled && !m_BloomPass.ResizeResources(m_Device, RenderTargets.GetWidth(), RenderTargets.GetHeight(), RenderTargets.GetProcessedOutputColorFormat()))
+    if (BloomEnabled && !m_BloomPass.ResizeResources(m_Device, RenderTargets.GetDisplayWidth(), RenderTargets.GetDisplayHeight(), RenderTargets.GetProcessedOutputColorFormat()))
     {
         m_Stats.BloomStageReady = m_BloomPass.IsReady();
         DEV_ERROR("RTXPT bloom pass failed to resize resources");
@@ -154,8 +196,8 @@ bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*             pCo
     RTXPTBloomRenderAttribs BloomAttribs;
     BloomAttribs.pSourceSRV = RenderTargets.GetProcessedOutputColorSRV();
     BloomAttribs.pTargetRTV = RenderTargets.GetProcessedOutputColorRTV();
-    BloomAttribs.Width      = RenderTargets.GetWidth();
-    BloomAttribs.Height     = RenderTargets.GetHeight();
+    BloomAttribs.Width      = RenderTargets.GetDisplayWidth();
+    BloomAttribs.Height     = RenderTargets.GetDisplayHeight();
     BloomAttribs.Format     = RenderTargets.GetProcessedOutputColorFormat();
     BloomAttribs.Params     = BloomParams;
 
@@ -175,7 +217,7 @@ bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   
                                               const RTXPTToneMappingParameters& Params,
                                               bool                              Enabled)
 {
-    if (!m_ToneMappingPass.ResizeResources(m_Device, RenderTargets.GetWidth(), RenderTargets.GetHeight(), RenderTargets.GetProcessedOutputColorFormat()))
+    if (!m_ToneMappingPass.ResizeResources(m_Device, RenderTargets.GetDisplayWidth(), RenderTargets.GetDisplayHeight(), RenderTargets.GetProcessedOutputColorFormat()))
     {
         m_Stats.ToneMappingStageReady = m_ToneMappingPass.IsReady();
         DEV_ERROR("RTXPT tone mapping pass failed to resize resources");
@@ -185,8 +227,8 @@ bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   
     RTXPTToneMappingRenderAttribs Attribs;
     Attribs.pSourceSRV = RenderTargets.GetProcessedOutputColorSRV();
     Attribs.pLdrRTV    = RenderTargets.GetLdrColorRTV();
-    Attribs.Width      = RenderTargets.GetWidth();
-    Attribs.Height     = RenderTargets.GetHeight();
+    Attribs.Width      = RenderTargets.GetDisplayWidth();
+    Attribs.Height     = RenderTargets.GetDisplayHeight();
     Attribs.Enabled    = Enabled;
     Attribs.pParams    = &Params;
 

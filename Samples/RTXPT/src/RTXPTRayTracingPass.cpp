@@ -581,7 +581,10 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     for (RTXPTPathTraceVariant Variant : Variants)
     {
         if (!CreateVariant(Variant))
+        {
+            Reset();
             return false;
+        }
     }
 
     if (FullPathTracer)
@@ -599,15 +602,24 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
                                    RTXPTPathTraceVariant          Variant,
                                    const RTXPTRayTracingDispatch& DispatchInfo)
 {
+    m_Stats.LastTraceExecuted = false;
+
     const size_t VariantIdx = GetVariantIndex(Variant);
     if (VariantIdx >= m_Variants.size())
+    {
+        DEV_ERROR("RTXPT dispatch received invalid path trace variant");
         return false;
+    }
 
     VariantState& State = m_Variants[VariantIdx];
     State.Stats.LastTraceExecuted = false;
-    m_Stats.LastTraceExecuted     = false;
 
-    if (!IsReady(Variant) || pContext == nullptr)
+    if (!IsReady(Variant))
+    {
+        DEV_ERROR("RTXPT path trace variant is not ready: ", GetVariantName(Variant));
+        return false;
+    }
+    if (pContext == nullptr)
         return false;
     if (DispatchInfo.Width == 0 || DispatchInfo.Height == 0)
         return false;

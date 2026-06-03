@@ -24,7 +24,7 @@ namespace PathTracer
         return nestedQuality == 2u ? 16u : 4u;
     }
 
-    bool HandleNestedDielectrics(PathPayload payload,
+    bool HandleNestedDielectrics(RTXPTMaterialHitPayload payload,
                                  uint nestedQuality,
                                  inout InteriorList interiorList,
                                  inout uint rejectedHits,
@@ -50,7 +50,7 @@ namespace PathTracer
         return true;
     }
 
-    void UpdateNestedDielectricsOnScatterTransmission(PathPayload payload, uint lobe, inout InteriorList interiorList)
+    void UpdateNestedDielectricsOnScatterTransmission(RTXPTMaterialHitPayload payload, uint lobe, inout InteriorList interiorList)
     {
         if ((lobe & kLobeTypeTransmission) == 0u || payload.thinSurface != 0u)
             return;

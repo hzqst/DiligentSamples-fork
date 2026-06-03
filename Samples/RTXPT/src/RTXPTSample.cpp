@@ -1038,6 +1038,8 @@ bool RTXPTSample::EnsureRenderTargets()
     const bool                        WasValid              = m_RenderTargets.IsValid();
     const RTXPTRenderTargetDimensions OldDimensions         = m_RenderTargets.GetDimensions();
     const bool                        WasAccumulationActive = m_AccumulationActive;
+    const bool                        WasRealtimeRequested  = m_RenderTargets.AreRealtimeRenderTargetsRequested();
+    const bool                        WasRealtimeAllocated  = m_RenderTargets.HasRealtimeRenderTargets();
 
     SanitizeRealtimeSettings(m_RealtimeUI);
     const RTXPTRenderTargetCreateInfo CreateInfo =
@@ -1052,7 +1054,9 @@ bool RTXPTSample::EnsureRenderTargets()
     if (Ok && ResourcesValid &&
         (!WasValid ||
          !(OldDimensions == m_CurrentTargetDimensions) ||
-         WasAccumulationActive != m_AccumulationActive))
+         WasAccumulationActive != m_AccumulationActive ||
+         WasRealtimeRequested != m_RenderTargets.AreRealtimeRenderTargetsRequested() ||
+         WasRealtimeAllocated != m_RenderTargets.HasRealtimeRenderTargets()))
     {
         RequestAccumulationReset("Render targets (re)created");
         RequestRealtimeReset(RTXPT_REALTIME_RESET_RENDER_TARGET_RECREATE |
@@ -1345,6 +1349,7 @@ void RTXPTSample::UpdateUI()
                 {
                     m_RealtimeUI.RealtimeMode = NewRealtimeMode;
                     RequestRealtimeReset(RTXPT_REALTIME_RESET_ACCUMULATION |
+                                             RTXPT_REALTIME_RESET_RENDER_TARGET_RECREATE |
                                              RTXPT_REALTIME_RESET_REALTIME_CACHES |
                                              RTXPT_REALTIME_RESET_NRD_HISTORY |
                                              RTXPT_REALTIME_RESET_TAA_SR_HISTORY,

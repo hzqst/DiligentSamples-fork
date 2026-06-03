@@ -204,9 +204,13 @@ bool RTXPTRenderTargets::SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMA
 
 bool RTXPTRenderTargets::FailResize(const char* Reason)
 {
-    std::string Failure = Reason != nullptr ? Reason : "RTXPT render target resize failed";
+    const bool  RealtimeResourcesRequested  = m_RealtimeResourcesRequested;
+    const bool  DenoiserValidationRequested = m_DenoiserValidationRequested;
+    std::string Failure                     = Reason != nullptr ? Reason : "RTXPT render target resize failed";
     Reset();
-    m_LastFailureReason = Failure;
+    m_RealtimeResourcesRequested  = RealtimeResourcesRequested;
+    m_DenoiserValidationRequested = DenoiserValidationRequested;
+    m_LastFailureReason           = Failure;
     LOG_ERROR_MESSAGE(m_LastFailureReason.c_str());
     return false;
 }
@@ -219,6 +223,9 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
     const bool                         CreateAccumulatedRadiance = CreateInfo.CreateAccumulatedRadiance;
     const bool                         CreateRealtimeResources   = CreateInfo.CreateRealtimeResources;
     const bool                         CreateDenoiserValidation  = CreateInfo.CreateDenoiserValidation;
+
+    m_RealtimeResourcesRequested  = CreateRealtimeResources;
+    m_DenoiserValidationRequested = CreateDenoiserValidation;
 
     if (pDevice == nullptr)
         return FailResize("RTXPT render targets require a render device");

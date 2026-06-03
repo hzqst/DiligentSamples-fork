@@ -63,6 +63,11 @@ set(SHADERS
     assets/shaders/PathTracer/PathTracerHelpers.hlsli
     assets/shaders/PathTracer/PathTracerShared.h
     assets/shaders/PathTracer/PathTracerBridge.hlsli
+    assets/shaders/PathTracer/PathPayload.hlsli
+    assets/shaders/PathTracer/PathState.hlsli
+    assets/shaders/PathTracer/PathTracerTypes.hlsli
+    assets/shaders/PathTracer/StablePlanes.hlsli
+    assets/shaders/PathTracer/PathTracerStablePlanes.hlsli
     assets/shaders/PathTracer/PathTracerNestedDielectrics.hlsli
     assets/shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli
     assets/shaders/PathTracer/Rendering/Materials/LobeType.hlsli

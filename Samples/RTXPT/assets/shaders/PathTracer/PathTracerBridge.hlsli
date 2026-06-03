@@ -1,11 +1,17 @@
 #ifndef __PATH_TRACER_BRIDGE_HLSLI__
 #define __PATH_TRACER_BRIDGE_HLSLI__
 
+#include "Config.h"
 #include "PathTracerShared.h"
 #include "Lighting/LightingTypes.hlsli"
 
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
+#    include "PathTracerTypes.hlsli"
+#endif
+
 // Global shader resources used by the scene bridge. C++ binds these as static SRVs/UAVs.
 ConstantBuffer<SampleConstants>        g_Const;
+ConstantBuffer<SampleMiniConstants>    g_MiniConst;
 StructuredBuffer<SubInstanceData>      t_SubInstanceData;
 StructuredBuffer<PolymorphicLightInfo> t_Lights;
 StructuredBuffer<LightingControlData>  t_LightingControl;
@@ -24,8 +30,34 @@ StructuredBuffer<GeometryVertexData>   t_VertexBuffer;
 StructuredBuffer<GeometryVertexData>   t_SkinnedVertexBuffer;
 Buffer<uint>                           t_IndexBuffer;
 
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_OutputColor;
+VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>        u_Depth;
+VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>       u_MotionVectors;
+VK_IMAGE_FORMAT("r32ui")   RWTexture2D<uint>         u_Throughput;
+VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>        u_SpecularHitT;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_StableRadiance;
+VK_IMAGE_FORMAT("r32ui")   RWTexture2DArray<uint>    u_StablePlanesHeader;
+RWStructuredBuffer<StablePlane>                      u_StablePlanesBuffer;
+#endif
+
 namespace Bridge
 {
+    uint getSampleIndex()
+    {
+        return g_Const.ptConsts.sampleBaseIndex + g_MiniConst.params.x;
+    }
+
+    float getNoisyRadianceAttenuation()
+    {
+        return g_Const.ptConsts.invSubSampleCount;
+    }
+
+    uint2 getPixelPosition()
+    {
+        return DispatchRaysIndex().xy;
+    }
+
 #ifdef ENABLE_HIT_BRIDGE
     // Linear index for the SubInstanceData entry that describes the currently hit (instance, geometry).
     // C++ stores the per-instance sub-instance base in InstanceID(), and GeometryIndex() is used to
@@ -206,6 +238,93 @@ namespace Bridge
     {
         return t_EmissiveTriangles[index];
     }
+
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
+    Ray computeCameraRay(const uint2 pixelPos)
+    {
+        SampleGenerator sg = SampleGenerator_makeStateless(pixelPos, 0u, getSampleIndex(), kSampleEffect_Base);
+        const float2 subPixelOffset =
+            g_Const.ptConsts.camera.Jitter +
+            (sampleNext2D(sg) - 0.5.xx) * g_Const.ptConsts.perPixelJitterAAScale;
+        const float2 cameraDoFSample = sampleNext2D(sg);
+        CameraRay cameraRay = ComputeRayThinlens(g_Const.ptConsts.camera, pixelPos, subPixelOffset, cameraDoFSample);
+        return Ray::make(cameraRay.origin, cameraRay.dir, cameraRay.tMin, cameraRay.tMax);
+    }
+
+    float3 computeMotionVector(float3 posW, float3 prevPosW)
+    {
+        float4 clipPos = mul(float4(posW, 1.0), g_Const.view.MatWorldToClipNoOffset);
+        float4 prevClipPos = mul(float4(prevPosW, 1.0), g_Const.previousView.MatWorldToClipNoOffset);
+        clipPos.xyz /= clipPos.w;
+        prevClipPos.xyz /= prevClipPos.w;
+
+        if (clipPos.w <= 0.0 || prevClipPos.w <= 0.0)
+            return float3(0.0, 0.0, 0.0);
+
+        float3 motion;
+        motion.xy = (prevClipPos.xy - clipPos.xy) * g_Const.view.ClipToWindowScale;
+        motion.z  = prevClipPos.w - clipPos.w;
+        return motion;
+    }
+
+    void ExportSurfaceInit(uint2 pixelPos)
+    {
+        u_Depth[pixelPos]         = 0.0;
+        u_MotionVectors[pixelPos] = float2(0.0, 0.0);
+        u_Throughput[pixelPos]    = 0u;
+        u_SpecularHitT[pixelPos]  = 0.0;
+    }
+
+    void ExportNonSurface(uint2 pixelPos)
+    {
+        u_Depth[pixelPos]         = 0.0;
+        u_MotionVectors[pixelPos] = float2(0.0, 0.0);
+        u_Throughput[pixelPos]    = 0u;
+    }
+
+    void ExportSurface(const PathState path, PathTracer::SurfaceData surfaceData, float sceneLength, float3 motionVectors)
+    {
+        const uint2 pixelPos = path.GetPixelPos();
+        u_Depth[pixelPos]         = sceneLength;
+        u_MotionVectors[pixelPos] = motionVectors.xy;
+        u_Throughput[pixelPos]    = Pack_R11G11B10_FLOAT(saturate(path.GetThp()));
+    }
+
+    void ExportNonSurface(const PathState path, float3 virtualWorldPos, float3 motionVectors)
+    {
+        const uint2 pixelPos = path.GetPixelPos();
+        u_Depth[pixelPos]         = 0.0;
+        u_MotionVectors[pixelPos] = motionVectors.xy;
+        u_Throughput[pixelPos]    = 0u;
+    }
+
+    void ExportSpecHitTStart(const PathState path)
+    {
+        u_SpecularHitT[path.GetPixelPos()] = -path.GetSceneLength();
+    }
+
+    void ExportSpecHitTStop(const PathState path)
+    {
+        const uint2 pixelPos = path.GetPixelPos();
+        const float denoisingSceneLength = u_SpecularHitT[pixelPos];
+        if (denoisingSceneLength < 0.0)
+            u_SpecularHitT[pixelPos] = max(0.0, path.GetSceneLength() + denoisingSceneLength);
+    }
+#endif
 } // namespace Bridge
+
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
+PathTracer::WorkingContext GetWorkingContext()
+{
+    PathTracer::WorkingContext ret;
+    ret.PtConsts      = g_Const.ptConsts;
+    ret.StablePlanes  = StablePlanesContext::make(u_StablePlanesHeader,
+                                                  u_StablePlanesBuffer,
+                                                  u_StableRadiance,
+                                                  g_Const.ptConsts);
+    ret.OutputColor   = u_OutputColor;
+    return ret;
+}
+#endif
 
 #endif // __PATH_TRACER_BRIDGE_HLSLI__

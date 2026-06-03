@@ -1,6 +1,54 @@
 #ifndef __PATH_TRACER_HELPERS_HLSLI__
 #define __PATH_TRACER_HELPERS_HLSLI__
 
+#include "PathTracerShared.h"
+
+#ifndef HLF_MAX
+#    define HLF_MAX 6.5504e+4F
+#endif
+
+#ifndef kMaxSceneDistance
+#    define kMaxSceneDistance 50000.0
+#endif
+
+#ifndef kEnvironmentMapSceneDistance
+#    define kEnvironmentMapSceneDistance (kMaxSceneDistance * 100.0)
+#endif
+
+#ifndef kMaxRayTravel
+#    define kMaxRayTravel (1e15f)
+#endif
+
+#ifndef cStablePlaneCount
+#    define cStablePlaneCount (3u)
+#endif
+
+#ifndef PT_USE_RESTIR_DI
+#    define PT_USE_RESTIR_DI 0
+#endif
+
+#ifndef PT_USE_RESTIR_GI
+#    define PT_USE_RESTIR_GI 0
+#endif
+
+#ifndef RTXPT_USE_APPROXIMATE_MIS
+#    define RTXPT_USE_APPROXIMATE_MIS 0
+#endif
+
+#ifndef RTXPT_NESTED_DIELECTRICS_QUALITY
+#    define RTXPT_NESTED_DIELECTRICS_QUALITY 1
+#endif
+
+typedef float    lpfloat;
+typedef float2   lpfloat2;
+typedef float3   lpfloat3;
+typedef float4   lpfloat4;
+typedef float3x3 lpfloat3x3;
+typedef uint     lpuint;
+typedef uint2    lpuint2;
+typedef uint3    lpuint3;
+typedef uint4    lpuint4;
+
 float ComputeRayOriginComponent(float worldPosition, float faceNormal)
 {
     const float originScale = 1.0 / 16.0;
@@ -141,6 +189,239 @@ float FireflyFilterShort(float signalAverage, float threshold, float fireflyFilt
 {
     const float fft = threshold * fireflyFilterK;
     return (signalAverage > fft) ? (fft / signalAverage) : 1.0;
+}
+
+struct Ray
+{
+    float3 origin;
+    float  tMin;
+    float3 dir;
+    float  tMax;
+
+    static Ray make(float3 origin, float3 dir, float tMin = 0.0, float tMax = kMaxRayTravel)
+    {
+        Ray ray;
+        ray.origin = origin;
+        ray.dir    = dir;
+        ray.tMin   = tMin;
+        ray.tMax   = tMax;
+        return ray;
+    }
+
+    RayDesc toRayDesc()
+    {
+        RayDesc rayDesc;
+        rayDesc.Origin    = origin;
+        rayDesc.TMin      = tMin;
+        rayDesc.Direction = dir;
+        rayDesc.TMax      = tMax;
+        return rayDesc;
+    }
+};
+
+struct RayCone
+{
+    uint widthSpreadAngleFP16;
+
+    static RayCone make(float width, float spreadAngle)
+    {
+        RayCone cone;
+        cone.widthSpreadAngleFP16 = (f32tof16(width) << 16) | f32tof16(spreadAngle);
+        return cone;
+    }
+
+    float getWidth() { return f16tof32(widthSpreadAngleFP16 >> 16); }
+    float getSpreadAngle() { return f16tof32(widthSpreadAngleFP16 & 0xffff); }
+};
+
+uint Pack_R11G11B10_FLOAT(float3 rgb)
+{
+    rgb    = min(rgb, asfloat(0x477C0000));
+    uint r = ((f32tof16(rgb.x) + 8) >> 4) & 0x000007FF;
+    uint g = ((f32tof16(rgb.y) + 8) << 7) & 0x003FF800;
+    uint b = ((f32tof16(rgb.z) + 16) << 17) & 0xFFC00000;
+    return r | g | b;
+}
+
+uint PackTwoFp32ToFp16(float a, float b)
+{
+    return (f32tof16(clamp(a, -HLF_MAX, HLF_MAX)) << 16) | f32tof16(clamp(b, -HLF_MAX, HLF_MAX));
+}
+
+void UnpackTwoFp32ToFp16(uint packed, out float a, out float b)
+{
+    a = f16tof32(packed >> 16);
+    b = f16tof32(packed & 0xffff);
+}
+
+uint3 PackTwoFp32ToFp16(float3 a, float3 b)
+{
+    return (f32tof16(clamp(a, -HLF_MAX, HLF_MAX)) << 16) | f32tof16(clamp(b, -HLF_MAX, HLF_MAX));
+}
+
+void UnpackTwoFp32ToFp16(uint3 packed, out float3 a, out float3 b)
+{
+    a = f16tof32(packed >> 16);
+    b = f16tof32(packed & 0xffff);
+}
+
+uint Fp32ToFp16(float2 v)
+{
+    const uint2 r = f32tof16(clamp(v, -HLF_MAX, HLF_MAX));
+    return (r.y << 16) | (r.x & 0xffff);
+}
+
+uint Fp32ToFp16NoClamp(float2 v)
+{
+    const uint2 r = f32tof16(v);
+    return (r.y << 16) | (r.x & 0xffff);
+}
+
+float2 Fp16ToFp32(uint r)
+{
+    return f16tof32(uint2(r & 0xffff, r >> 16));
+}
+
+uint2 Fp32ToFp16(float4 v)
+{
+    return uint2(Fp32ToFp16(v.xy), Fp32ToFp16(v.zw));
+}
+
+uint2 Fp32ToFp16NoClamp(float4 v)
+{
+    return uint2(Fp32ToFp16NoClamp(v.xy), Fp32ToFp16NoClamp(v.zw));
+}
+
+float4 Fp16ToFp32(uint2 d)
+{
+    const float2 d0 = Fp16ToFp32(d.x);
+    const float2 d1 = Fp16ToFp32(d.y);
+    return float4(d0, d1);
+}
+
+float2 OctWrap(float2 v)
+{
+    return (1.0 - abs(v.yx)) * float2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+float2 Encode_Oct(float3 n)
+{
+    n /= max(abs(n.x) + abs(n.y) + abs(n.z), 1e-7);
+    n.xy = n.z >= 0.0 ? n.xy : OctWrap(n.xy);
+    return n.xy;
+}
+
+float3 Decode_Oct(float2 f)
+{
+    float3 n = float3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    float  t = saturate(-n.z);
+    n.xy += float2(n.x >= 0.0 ? -t : t, n.y >= 0.0 ? -t : t);
+    return normalize(n);
+}
+
+uint NDirToOctUnorm32(float3 n)
+{
+    const float2 p = saturate(Encode_Oct(n) * 0.5 + 0.5);
+    return uint(p.x * 0xfffe) | (uint(p.y * 0xfffe) << 16);
+}
+
+float3 OctToNDirUnorm32(uint pUnorm)
+{
+    float2 p;
+    p.x = saturate(float(pUnorm & 0xffff) / 0xfffe);
+    p.y = saturate(float(pUnorm >> 16) / 0xfffe);
+    return Decode_Oct(p * 2.0 - 1.0);
+}
+
+uint NDirToOctUnorm30(float3 n)
+{
+    const float2 p = saturate(Encode_Oct(n) * 0.5 + 0.5);
+    return (uint(p.x * 0x7fff + 0.5) & 0x7fff) | ((uint(p.y * 0x7fff + 0.5) & 0x7fff) << 15);
+}
+
+float3 OctToNDirUnorm30(uint pUnorm)
+{
+    float2 p;
+    p.x = saturate(float(pUnorm & 0x7fff) / 0x7fff);
+    p.y = saturate(float((pUnorm >> 15) & 0x7fff) / 0x7fff);
+    return Decode_Oct(p * 2.0 - 1.0);
+}
+
+uint2 PackOrthoMatrix(float3x3 xform)
+{
+    uint2 packed;
+    const uint handedness = dot(cross(xform[0], xform[1]), xform[2]) > 0.0;
+    packed.x = NDirToOctUnorm30(xform[0]);
+    packed.y = NDirToOctUnorm30(xform[1]) | (handedness << 31);
+    return packed;
+}
+
+float3x3 UnpackOrthoMatrix(uint2 packed)
+{
+    const uint handedness = packed.y >> 31;
+    packed.y &= 0x7fffffff;
+    float3x3 xform;
+    xform[0] = OctToNDirUnorm30(packed.x);
+    xform[1] = OctToNDirUnorm30(packed.y);
+    xform[2] = handedness != 0 ? cross(xform[0], xform[1]) : cross(xform[1], xform[0]);
+    return xform;
+}
+
+float3x3 MatrixRotateFromTo(const float3 from, const float3 to, uniform bool columnMajor = true)
+{
+    const float e = dot(from, to);
+    if (abs(e) > 1.0 - 1e-10)
+        return float3x3(1, 0, 0, 0, 1, 0, 0, 0, 1);
+
+    const float3 v = cross(from, to);
+    const float  h = 1.0 / (1.0 + e);
+    float3x3 mtx;
+    mtx[0][0] = e + h * v.x * v.x;
+    mtx[0][1] = h * v.x * v.y + (columnMajor ? -v.z : v.z);
+    mtx[0][2] = h * v.x * v.z + (columnMajor ? v.y : -v.y);
+    mtx[1][0] = h * v.x * v.y + (columnMajor ? v.z : -v.z);
+    mtx[1][1] = e + h * v.y * v.y;
+    mtx[1][2] = h * v.z * v.y + (columnMajor ? -v.x : v.x);
+    mtx[2][0] = h * v.x * v.z + (columnMajor ? -v.y : v.y);
+    mtx[2][1] = h * v.z * v.y + (columnMajor ? v.x : -v.x);
+    mtx[2][2] = e + h * v.z * v.z;
+    return mtx;
+}
+
+uint2 PathIDToPixel(uint id)
+{
+    return uint2(id >> 16, id & 0xffff);
+}
+
+uint PathIDFromPixel(uint2 pixel)
+{
+    return (pixel.x << 16) | pixel.y;
+}
+
+uint Morton16BitEncode(uint x, uint y)
+{
+    uint temp = (x & 0xff) | ((y & 0xff) << 16);
+    temp      = (temp ^ (temp << 4)) & 0x0f0f0f0f;
+    temp      = (temp ^ (temp << 2)) & 0x33333333;
+    temp      = (temp ^ (temp << 1)) & 0x55555555;
+    return ((temp >> 15) | temp) & 0xffff;
+}
+
+uint GenericTSPixelToAddress(const uint2 pixelPos, const uint planeIndex, const uint lineStride, const uint planeStride)
+{
+    const uint tileSize       = 8u;
+    const uint xInTile        = pixelPos.x % tileSize;
+    const uint yInTile        = pixelPos.y % tileSize;
+    const uint tilePixelIndex = Morton16BitEncode(xInTile, yInTile);
+    const uint tileBaseX      = pixelPos.x - xInTile;
+    const uint tileBaseY      = pixelPos.y - yInTile;
+    return tileBaseX * tileSize + tileBaseY * lineStride + tilePixelIndex + planeIndex * planeStride;
+}
+
+float3 ReinhardMax(float3 color)
+{
+    const float luminance = max(1e-7, max(max(color.x, color.y), color.z));
+    return color / (luminance + 1.0);
 }
 
 #endif // __PATH_TRACER_HELPERS_HLSLI__

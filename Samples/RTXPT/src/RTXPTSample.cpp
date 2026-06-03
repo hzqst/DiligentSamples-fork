@@ -1221,53 +1221,15 @@ bool RTXPTSample::DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTrac
     return true;
 }
 
-void RTXPTSample::Render()
+bool RTXPTSample::RunReferencePathTraceAndPostProcess()
 {
-    const auto ClearColor = float4{0.05f, 0.05f, 0.07f, 1.0f};
-
-    if (!EnsureRenderTargets())
+    if (!PathTrace())
     {
-        ClearFallback(float4{1.0f, 0.0f, 0.0f, 1.0f});
-        return;
-    }
-
-    if (m_RealtimeUI.RealtimeMode)
-    {
-        ClearFallback(float4{0.08f, 0.08f, 0.10f, 1.0f});
-        return;
-    }
-
-    if (!m_LightsBaker.UpdateEnd(m_pImmediateContext,
-                                 m_RenderTargets.GetDepthSRV(),
-                                 m_RenderTargets.GetScreenMotionVectorsSRV()))
-    {
-        ClearFallback(float4{1.0f, 0.35f, 0.0f, 1.0f});
-        return;
-    }
-
-    const bool TraceExecuted =
-        m_RayTracingPass.Trace(m_pImmediateContext,
-                               m_RenderTargets.GetOutputColorUAV(),
-                               m_RenderTargets.GetDepthUAV(),
-                               m_RenderTargets.GetScreenMotionVectorsUAV(),
-                               m_RenderTargets.GetRenderWidth(),
-                               m_RenderTargets.GetRenderHeight());
-
-    if (!TraceExecuted)
-    {
-        if (!m_RayTracingPass.IsReady())
+        if (!m_RayTracingPass.IsReady(RTXPTPathTraceVariant::Reference))
             ClearFallback(float4{1.0f, 0.0f, 1.0f, 1.0f});
-        else if (m_RenderTargets.GetOutputColorUAV() == nullptr)
-            ClearFallback(float4{1.0f, 0.45f, 0.0f, 1.0f});
-        else if (m_RenderTargets.GetDepthUAV() == nullptr)
-            ClearFallback(float4{0.2f, 0.4f, 1.0f, 1.0f});
-        else if (m_RenderTargets.GetScreenMotionVectorsUAV() == nullptr)
-            ClearFallback(float4{0.0f, 0.6f, 1.0f, 1.0f});
-        else if (m_RenderTargets.GetRenderWidth() == 0 || m_RenderTargets.GetRenderHeight() == 0)
-            ClearFallback(float4{1.0f, 1.0f, 1.0f, 1.0f});
         else
             ClearFallback(float4{1.0f, 1.0f, 0.0f, 1.0f});
-        return;
+        return false;
     }
 
     const float BloomRadius    = std::clamp(m_ReferenceUI.BloomRadius, 0.0f, 64.0f);
@@ -1281,7 +1243,7 @@ void RTXPTSample::Render()
     if (!AccumulationExecuted)
     {
         ClearFallback(float4{0.0f, 0.2f, 1.0f, 1.0f});
-        return;
+        return false;
     }
 
     RTXPTBloomParameters BloomParams;
@@ -1296,7 +1258,7 @@ void RTXPTSample::Render()
     if (!PreTonePostProcessExecuted)
     {
         ClearFallback(float4{0.9f, 0.2f, 0.6f, 1.0f});
-        return;
+        return false;
     }
 
     const bool ToneMappingExecuted =
@@ -1307,15 +1269,56 @@ void RTXPTSample::Render()
     if (!ToneMappingExecuted)
     {
         ClearFallback(float4{0.0f, 0.8f, 0.3f, 1.0f});
-        return;
+        return false;
     }
 
     ITextureView* pPresentationSRV = m_RenderTargets.GetPresentationSRV();
     if (!m_BlitPass.Render(m_pImmediateContext, m_pSwapChain, pPresentationSRV))
     {
         ClearFallback(float4{0.0f, 1.0f, 1.0f, 1.0f});
+        return false;
+    }
+
+    return true;
+}
+
+bool RTXPTSample::RunRealtimePathTraceOnly()
+{
+    if (!m_RenderTargets.HasRealtimeRenderTargets())
+    {
+        RecordRealtimePathTraceStatus(m_RenderTargets.GetLastFailureReason());
+        ClearFallback(float4{0.08f, 0.08f, 0.10f, 1.0f});
+        return false;
+    }
+
+    const bool PathTraceOk = PathTrace();
+    if (!PathTraceOk)
+    {
+        ClearFallback(float4{0.9f, 0.15f, 0.05f, 1.0f});
+        return false;
+    }
+
+    // FILL_STABLE_PLANES writes stable-plane radiance storage, not final OutputColor.
+    // G7/G9 will replace this fallback with NoDenoiserFinalMerge or NRD final merge.
+    ClearFallback(float4{0.08f, 0.08f, 0.10f, 1.0f});
+    return true;
+}
+
+void RTXPTSample::Render()
+{
+    if (!EnsureRenderTargets())
+    {
+        ClearFallback(float4{1.0f, 0.0f, 0.0f, 1.0f});
         return;
     }
+
+    if (m_RealtimeUI.RealtimeMode)
+    {
+        RunRealtimePathTraceOnly();
+        return;
+    }
+
+    RunReferencePathTraceAndPostProcess();
 }
 
 void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
@@ -2149,12 +2152,10 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Path tracer mode: %s", m_RealtimeUI.RealtimeMode ? "Realtime" : "Reference");
         if (m_RealtimeUI.RealtimeMode)
         {
-            ImGui::TextWrapped("Realtime route: %s", kRTXPTRealtimeRoutePendingReason);
-            ImGui::TextWrapped("Realtime PathTrace status: %s",
-                               m_RealtimePathTraceStatus.empty() ? "not routed by Render yet" : m_RealtimePathTraceStatus.c_str());
-            ImGui::Text("Realtime PathTrace dispatch: %s", m_LastRealtimePathTraceExecuted ? "executed" : "not executed");
-            ImGui::Text("Realtime final merge: %s", m_LastRealtimeFinalMergeReady ? "ready" : "not ready");
-            ImGui::Text("RTXDI/ReSTIR final hooks: disabled in this port phase");
+            ImGui::Text("Realtime PathTrace: %s", m_LastRealtimePathTraceExecuted ? "BUILD/FILL dispatched" : "not dispatched");
+            ImGui::Text("Realtime final merge: pending G7/G9");
+            if (!m_RealtimePathTraceStatus.empty())
+                ImGui::TextWrapped("Realtime PathTrace status: %s", m_RealtimePathTraceStatus.c_str());
         }
         ImGui::Text("Realtime samples per pixel: %u", m_RealtimeUI.ActualSamplesPerPixel());
         ImGui::Text("Realtime AA/SR: %s", GetRealtimeAAModeName(m_RealtimeUI.RealtimeAA));

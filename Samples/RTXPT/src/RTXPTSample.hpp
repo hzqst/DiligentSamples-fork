@@ -129,6 +129,8 @@ private:
     void RequestRealtimeCachesReset(const char* Reason);
     void BeginRealtimeFrameResetScope();
     void InvalidatePreviousFrameConstants();
+    bool RunReferencePathTraceAndPostProcess();
+    bool RunRealtimePathTraceOnly();
     bool PathTrace();
     bool DispatchPathTracePrePass(const RTXPTRayTracingDispatch& BaseDispatch);
     bool DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTracingDispatch& BaseDispatch);

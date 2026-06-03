@@ -112,6 +112,10 @@ add_sample_app(RTXPT
         YES
 )
 
+if (NOT SUPER_RESOLUTION_SUPPORTED)
+    message(FATAL_ERROR "RTXPT requires Diligent SuperResolution; configure without DILIGENT_NO_SUPER_RESOLUTION or disable the RTXPT sample")
+endif()
+
 target_link_libraries(RTXPT
 PRIVATE
     Diligent-AssetLoader
@@ -119,3 +123,12 @@ PRIVATE
     Diligent-SuperResolution-static
     DiligentFX
 )
+
+if (DILIGENT_DSR_SUPPORTED)
+    target_link_libraries(RTXPT PRIVATE DirectSR-AgilitySDK)
+    copy_directsr_dlls(RTXPT)
+endif()
+
+if (DILIGENT_DLSS_SUPPORTED)
+    copy_dlss_dlls(RTXPT)
+endif()

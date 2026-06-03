@@ -132,8 +132,6 @@ private:
     bool PathTrace();
     bool DispatchPathTracePrePass(const RTXPTRayTracingDispatch& BaseDispatch);
     bool DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTracingDispatch& BaseDispatch);
-    bool RunRealtimePathTraceOnly();
-    bool RunReferencePathTraceAndPostProcess();
     void RecordRealtimePathTraceStatus(const char* Status);
 
     RTXPTFeatureCaps               m_FeatureCaps;

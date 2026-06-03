@@ -64,7 +64,7 @@ constexpr bool        kRTXPTStandaloneNrdAvailable = false;
 constexpr bool        kRTXPTRealtimeTaaAvailable   = false;
 constexpr bool        kRTXPTRealtimeSrAvailable    = false;
 constexpr bool        kRTXPTDlssRrAvailable        = false;
-constexpr const char* kRTXPTRealtimeDisabledReason = "Realtime PathTrace/Denoise execution starts in G2-G10.";
+constexpr const char* kRTXPTRealtimeRoutePendingReason = "Realtime presentation/denoise/final merge route is pending.";
 constexpr const char* kRTXPTNrdDisabledReason      = "Standalone denoiser disabled: NRD integration starts in G8.";
 constexpr Uint32      kRTXPTRealtimeNoisePeriod    = 8192u;
 
@@ -1125,6 +1125,7 @@ bool RTXPTSample::DispatchPathTracePrePass(const RTXPTRayTracingDispatch& BaseDi
     }
 
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStablePlanesBuffer());
+    RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStablePlanesHeaderUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetDepthUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetScreenMotionVectorsUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetThroughputUAV());
@@ -1504,7 +1505,7 @@ void RTXPTSample::UpdateUI()
                 }
             }
             if (m_RealtimeUI.RealtimeMode && ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", kRTXPTRealtimeDisabledReason);
+                ImGui::SetTooltip("%s", kRTXPTRealtimeRoutePendingReason);
         }
 
         ImGui::TextColored(CategoryColor, "Setup:");
@@ -2148,7 +2149,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Path tracer mode: %s", m_RealtimeUI.RealtimeMode ? "Realtime" : "Reference");
         if (m_RealtimeUI.RealtimeMode)
         {
-            ImGui::TextWrapped("Realtime execution: disabled (%s)", kRTXPTRealtimeDisabledReason);
+            ImGui::TextWrapped("Realtime route: %s", kRTXPTRealtimeRoutePendingReason);
             ImGui::TextWrapped("Realtime PathTrace status: %s",
                                m_RealtimePathTraceStatus.empty() ? "not routed by Render yet" : m_RealtimePathTraceStatus.c_str());
             ImGui::Text("Realtime PathTrace dispatch: %s", m_LastRealtimePathTraceExecuted ? "executed" : "not executed");

@@ -58,10 +58,10 @@ void RTXPTRenderTargets::Reset()
     m_Formats                        = {};
 }
 
-bool RTXPTRenderTargets::CreateTarget(IRenderDevice* pDevice,
-                                      const char*    Name,
-                                      TEXTURE_FORMAT TargetFormat,
-                                      BIND_FLAGS     BindFlags,
+bool RTXPTRenderTargets::CreateTarget(IRenderDevice*           pDevice,
+                                      const char*              Name,
+                                      TEXTURE_FORMAT           TargetFormat,
+                                      BIND_FLAGS               BindFlags,
                                       RefCntAutoPtr<ITexture>& Target)
 {
     TextureDesc Desc;

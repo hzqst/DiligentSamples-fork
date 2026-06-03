@@ -55,10 +55,10 @@ inline RTXPTCameraBasis MakeRTXPTDonutCameraBasis(const QuaternionF& Rotation)
 {
     RTXPTCameraBasis Basis;
 
-    Basis.Forward = NormalizeRTXPTCameraAxisOrFallback(Rotation.RotateVector(float3{0.0f, 0.0f, -1.0f}), Basis.Forward);
+    Basis.Forward          = NormalizeRTXPTCameraAxisOrFallback(Rotation.RotateVector(float3{0.0f, 0.0f, -1.0f}), Basis.Forward);
     const float3 RotatedUp = NormalizeRTXPTCameraAxisOrFallback(Rotation.RotateVector(float3{0.0f, 1.0f, 0.0f}), Basis.Up);
 
-    Basis.Right = cross(Basis.Forward, RotatedUp);
+    Basis.Right             = cross(Basis.Forward, RotatedUp);
     const float RightLength = length(Basis.Right);
     if (RightLength > 1e-5f)
     {

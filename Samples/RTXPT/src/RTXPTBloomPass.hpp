@@ -80,12 +80,12 @@ private:
     bool CreateShaders(IRenderDevice* pDevice, IEngineFactory* pEngineFactory);
     bool CreatePipelines(IRenderDevice* pDevice, TEXTURE_FORMAT Format);
     bool CreateIntermediateTexture(IRenderDevice* pDevice, const char* Name, Uint32 Width, Uint32 Height, TEXTURE_FORMAT Format, RefCntAutoPtr<ITexture>& Texture);
-    bool CreateIntermediateTextures(IRenderDevice* pDevice,
-                                    Uint32         Downscale1Width,
-                                    Uint32         Downscale1Height,
-                                    Uint32         Downscale2Width,
-                                    Uint32         Downscale2Height,
-                                    TEXTURE_FORMAT Format,
+    bool CreateIntermediateTextures(IRenderDevice*           pDevice,
+                                    Uint32                   Downscale1Width,
+                                    Uint32                   Downscale1Height,
+                                    Uint32                   Downscale2Width,
+                                    Uint32                   Downscale2Height,
+                                    TEXTURE_FORMAT           Format,
                                     RefCntAutoPtr<ITexture>& Downscale1,
                                     RefCntAutoPtr<ITexture>& Downscale2,
                                     RefCntAutoPtr<ITexture>& Blur1,
@@ -96,27 +96,27 @@ private:
     bool UpdateBlurConstants(IDeviceContext* pContext, IBuffer* pBuffer, const float2& PixStep, float EffectiveSigma);
 
 private:
-    RTXPTBloomPassStats                    m_Stats;
-    RefCntAutoPtr<IShader>                 m_FullscreenVS;
-    RefCntAutoPtr<IShader>                 m_CopyPS;
-    RefCntAutoPtr<IShader>                 m_BlurPS;
-    RefCntAutoPtr<IPipelineState>          m_CopyPSO;
-    RefCntAutoPtr<IPipelineState>          m_ApplyPSO;
-    RefCntAutoPtr<IPipelineState>          m_BlurPSO;
-    RefCntAutoPtr<IShaderResourceBinding>  m_CopySRB;
-    RefCntAutoPtr<IShaderResourceBinding>  m_ApplySRB;
-    RefCntAutoPtr<IShaderResourceBinding>  m_HBlurSRB;
-    RefCntAutoPtr<IShaderResourceBinding>  m_VBlurSRB;
-    RefCntAutoPtr<IBuffer>                 m_HBlurCB;
-    RefCntAutoPtr<IBuffer>                 m_VBlurCB;
-    RefCntAutoPtr<ISampler>                m_LinearSampler;
-    RefCntAutoPtr<ITexture>                m_Downscale1;
-    RefCntAutoPtr<ITexture>                m_Downscale2;
-    RefCntAutoPtr<ITexture>                m_Blur1;
-    RefCntAutoPtr<ITexture>                m_Blur2;
-    TEXTURE_FORMAT                         m_Format = TEX_FORMAT_UNKNOWN;
-    Uint32                                 m_Width  = 0;
-    Uint32                                 m_Height = 0;
+    RTXPTBloomPassStats                   m_Stats;
+    RefCntAutoPtr<IShader>                m_FullscreenVS;
+    RefCntAutoPtr<IShader>                m_CopyPS;
+    RefCntAutoPtr<IShader>                m_BlurPS;
+    RefCntAutoPtr<IPipelineState>         m_CopyPSO;
+    RefCntAutoPtr<IPipelineState>         m_ApplyPSO;
+    RefCntAutoPtr<IPipelineState>         m_BlurPSO;
+    RefCntAutoPtr<IShaderResourceBinding> m_CopySRB;
+    RefCntAutoPtr<IShaderResourceBinding> m_ApplySRB;
+    RefCntAutoPtr<IShaderResourceBinding> m_HBlurSRB;
+    RefCntAutoPtr<IShaderResourceBinding> m_VBlurSRB;
+    RefCntAutoPtr<IBuffer>                m_HBlurCB;
+    RefCntAutoPtr<IBuffer>                m_VBlurCB;
+    RefCntAutoPtr<ISampler>               m_LinearSampler;
+    RefCntAutoPtr<ITexture>               m_Downscale1;
+    RefCntAutoPtr<ITexture>               m_Downscale2;
+    RefCntAutoPtr<ITexture>               m_Blur1;
+    RefCntAutoPtr<ITexture>               m_Blur2;
+    TEXTURE_FORMAT                        m_Format = TEX_FORMAT_UNKNOWN;
+    Uint32                                m_Width  = 0;
+    Uint32                                m_Height = 0;
 };
 
 } // namespace Diligent

@@ -119,7 +119,7 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
     return m_Stats.ResourcesValid;
 }
 
-bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*            pContext,
+bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*           pContext,
                                                const RTXPTRenderTargets& RenderTargets,
                                                Uint32                    SampleIndex,
                                                bool                      ResetAccumulation)
@@ -141,12 +141,12 @@ bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*            pConte
     Dispatch.PixelOffset             = float2{0.0f, 0.0f};
     Dispatch.BlendFactor             = BlendFactor;
 
-    const bool Executed = m_AccumulationPass.Render(pContext, Dispatch);
+    const bool Executed            = m_AccumulationPass.Render(pContext, Dispatch);
     m_Stats.AccumulationStageReady = m_AccumulationPass.IsReady();
     return Executed;
 }
 
-bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*                    pContext,
+bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*                   pContext,
                                                  const RTXPTRenderTargets&         RenderTargets,
                                                  const RTXPTBloomParameters&       BloomParams,
                                                  const RTXPTPostProcessParameters& PostProcessParams)
@@ -171,7 +171,7 @@ bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*                
     BloomAttribs.Params     = BloomParams;
 
     const bool BloomExecuted = m_BloomPass.Render(pContext, BloomAttribs);
-    m_Stats.BloomStageReady = m_BloomPass.IsReady();
+    m_Stats.BloomStageReady  = m_BloomPass.IsReady();
     if (!BloomExecuted)
     {
         DEV_ERROR("RTXPT bloom pass failed to render");
@@ -184,7 +184,7 @@ bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*                
     PostAttribs.Height              = RenderTargets.GetHeight();
     PostAttribs.Params              = PostProcessParams;
 
-    const bool HdrTestExecuted = m_PostProcessPass.RunHdrTest(pContext, PostAttribs);
+    const bool HdrTestExecuted    = m_PostProcessPass.RunHdrTest(pContext, PostAttribs);
     m_Stats.PostProcessStageReady = m_PostProcessPass.IsReady();
     if (!HdrTestExecuted)
     {
@@ -195,7 +195,7 @@ bool RTXPTPostProcessPipeline::RunPreToneMapping(IDeviceContext*                
     return true;
 }
 
-bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                    pContext,
+bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   pContext,
                                               const RTXPTRenderTargets&         RenderTargets,
                                               const RTXPTToneMappingParameters& Params,
                                               bool                              Enabled)
@@ -215,14 +215,14 @@ bool RTXPTPostProcessPipeline::RunToneMapping(IDeviceContext*                   
     Attribs.Enabled    = Enabled;
     Attribs.pParams    = &Params;
 
-    const bool Executed = m_ToneMappingPass.Render(pContext, Attribs);
+    const bool Executed           = m_ToneMappingPass.Render(pContext, Attribs);
     m_Stats.ToneMappingStageReady = m_ToneMappingPass.IsReady();
     if (!Executed)
         DEV_ERROR("RTXPT tone mapping pass failed to render");
     return Executed;
 }
 
-bool RTXPTPostProcessPipeline::RunPostToneMapping(IDeviceContext*                    pContext,
+bool RTXPTPostProcessPipeline::RunPostToneMapping(IDeviceContext*                   pContext,
                                                   const RTXPTRenderTargets&         RenderTargets,
                                                   const RTXPTPostProcessParameters& PostProcessParams)
 {
@@ -236,7 +236,7 @@ bool RTXPTPostProcessPipeline::RunPostToneMapping(IDeviceContext*               
     Attribs.Params                  = PostProcessParams;
 
     const bool EdgeDetectionExecuted = m_PostProcessPass.RunEdgeDetection(pContext, Attribs);
-    m_Stats.PostProcessStageReady = m_PostProcessPass.IsReady();
+    m_Stats.PostProcessStageReady    = m_PostProcessPass.IsReady();
     if (!EdgeDetectionExecuted)
     {
         DEV_ERROR("RTXPT LDR edge detection failed");

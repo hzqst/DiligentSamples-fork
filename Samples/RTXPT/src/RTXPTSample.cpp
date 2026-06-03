@@ -43,20 +43,20 @@ namespace Diligent
 namespace
 {
 
-constexpr float       kDefaultCameraNearPlane                 = 1.0f;
-constexpr float       kDefaultCameraFarPlane                  = 10000.0f;
-constexpr float       kMinClipPlaneSeparation                 = 1e-3f;
-constexpr int         kMaxBounceSliderValue                   = 48;
-constexpr const char* kPreferredSceneName                     = "bistro-programmer-art.scene.json";
-constexpr const char* kSceneFileSuffix                        = ".scene.json";
-constexpr Uint32      kMaxPackedEmissiveTriangleCount         = 0x7fffffffu;
-constexpr bool        kReferencePathTraceMode                 = true;
-const float           kPhysicalEVMin                          = std::log2(0.1f * 0.1f * 0.1f);
-const float           kPhysicalEVMax                          = std::log2(100000.0f * 100.0f * 100.0f);
-constexpr int         kToneMapOperatorMin                     = static_cast<int>(RTXPTToneMapperOperator::Linear);
-constexpr int         kToneMapOperatorMax                     = static_cast<int>(RTXPTToneMapperOperator::Aces);
-constexpr int         kExposureModeMin                        = static_cast<int>(RTXPTExposureMode::AperturePriority);
-constexpr int         kExposureModeMax                        = static_cast<int>(RTXPTExposureMode::ShutterPriority);
+constexpr float       kDefaultCameraNearPlane         = 1.0f;
+constexpr float       kDefaultCameraFarPlane          = 10000.0f;
+constexpr float       kMinClipPlaneSeparation         = 1e-3f;
+constexpr int         kMaxBounceSliderValue           = 48;
+constexpr const char* kPreferredSceneName             = "bistro-programmer-art.scene.json";
+constexpr const char* kSceneFileSuffix                = ".scene.json";
+constexpr Uint32      kMaxPackedEmissiveTriangleCount = 0x7fffffffu;
+constexpr bool        kReferencePathTraceMode         = true;
+const float           kPhysicalEVMin                  = std::log2(0.1f * 0.1f * 0.1f);
+const float           kPhysicalEVMax                  = std::log2(100000.0f * 100.0f * 100.0f);
+constexpr int         kToneMapOperatorMin             = static_cast<int>(RTXPTToneMapperOperator::Linear);
+constexpr int         kToneMapOperatorMax             = static_cast<int>(RTXPTToneMapperOperator::Aces);
+constexpr int         kExposureModeMin                = static_cast<int>(RTXPTExposureMode::AperturePriority);
+constexpr int         kExposureModeMax                = static_cast<int>(RTXPTExposureMode::ShutterPriority);
 static_assert(kToneMapOperatorMin == 0 && kToneMapOperatorMax == 5, "Tone-map UI assumes contiguous operator values");
 static_assert(kExposureModeMin == 0 && kExposureModeMax == 1, "Tone-map UI assumes contiguous exposure mode values");
 
@@ -264,9 +264,9 @@ void SanitizeToneMappingParameters(RTXPTToneMappingParameters& Params)
 
 void ResetToneMappingSettings(RTXPTReferenceUIState& UI)
 {
-    UI.EnableToneMapping              = true;
-    UI.ToneMapping                    = {};
-    UI.ToneMapping.ToneMapOperator    = RTXPTToneMapperOperator::HableUc2;
+    UI.EnableToneMapping           = true;
+    UI.ToneMapping                 = {};
+    UI.ToneMapping.ToneMapOperator = RTXPTToneMapperOperator::HableUc2;
     SanitizeToneMappingParameters(UI.ToneMapping);
 }
 
@@ -816,12 +816,12 @@ bool RTXPTSample::EnsureRenderTargets()
     const RTXPTRenderTargetFormats Formats;
     constexpr bool                 CreateComputeOutput = false;
     const bool                     Ok                  = m_RenderTargets.Resize(m_pDevice,
-                                                               SCDesc.Width,
-                                                               SCDesc.Height,
-                                                               Formats,
-                                                               CreateComputeOutput,
-                                                               m_FeatureCaps.RayTracing);
-    const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
+                                           SCDesc.Width,
+                                           SCDesc.Height,
+                                           Formats,
+                                           CreateComputeOutput,
+                                           m_FeatureCaps.RayTracing);
+    const bool                     ResourcesValid      = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
 
     m_AccumulationActive =
         Ok && ResourcesValid &&
@@ -834,13 +834,13 @@ bool RTXPTSample::EnsureRenderTargets()
          WasAccumulationActive != m_AccumulationActive))
     {
         RequestAccumulationReset("Render targets (re)created");
-        m_AccumulationFrame                              = 1;
+        m_AccumulationFrame                             = 1;
         m_LastFrameConstants.ptConsts.sampleIndex       = 1;
         m_LastFrameConstants.ptConsts.resetAccumulation = 1u;
         if (m_FrameConstantsCB)
         {
             MapHelper<SampleConstants> Constants{m_pImmediateContext, m_FrameConstantsCB, MAP_WRITE, MAP_FLAG_DISCARD};
-            *Constants = m_LastFrameConstants;
+            *Constants                 = m_LastFrameConstants;
             m_ResetAccumulationPending = false;
         }
     }
@@ -1022,12 +1022,12 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     const RTXPTRenderTargetFormats Formats;
     constexpr bool                 CreateComputeOutput = false;
     const bool                     Ok                  = m_RenderTargets.Resize(m_pDevice,
-                                                               Width,
-                                                               Height,
-                                                               Formats,
-                                                               CreateComputeOutput,
-                                                               m_FeatureCaps.RayTracing);
-    const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
+                                           Width,
+                                           Height,
+                                           Formats,
+                                           CreateComputeOutput,
+                                           m_FeatureCaps.RayTracing);
+    const bool                     ResourcesValid      = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
     m_AccumulationActive =
         Ok && ResourcesValid &&
         m_RenderTargets.IsAccumulationActive() &&
@@ -1478,8 +1478,8 @@ void RTXPTSample::UpdateUI()
     {
         ImGui::Indent(Indent);
 
-        const RTXPTAccelerationStructureStats& ASStats      = m_AccelerationStructures.GetStats();
-        const RTXPTRayTracingPassStats&        RTPassStats  = m_RayTracingPass.GetStats();
+        const RTXPTAccelerationStructureStats& ASStats     = m_AccelerationStructures.GetStats();
+        const RTXPTRayTracingPassStats&        RTPassStats = m_RayTracingPass.GetStats();
 
         ImGui::Text("Backend: %s", GetRenderDeviceTypeString(m_pDevice->GetDeviceInfo().Type));
         ImGui::Text("RayTracing: %s", m_FeatureCaps.RayTracing ? "yes" : "no");

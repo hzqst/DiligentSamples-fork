@@ -247,7 +247,7 @@ void RTXPTBloomPass::Reset()
     m_FullscreenVS.Release();
     m_CopyPS.Release();
     m_BlurPS.Release();
-    m_Stats = {};
+    m_Stats  = {};
     m_Format = TEX_FORMAT_UNKNOWN;
     m_Width  = 0;
     m_Height = 0;
@@ -367,11 +367,11 @@ bool RTXPTBloomPass::CreatePipelines(IRenderDevice* pDevice, TEXTURE_FORMAT Form
     return true;
 }
 
-bool RTXPTBloomPass::CreateIntermediateTexture(IRenderDevice* pDevice,
-                                               const char*    Name,
-                                               Uint32         Width,
-                                               Uint32         Height,
-                                               TEXTURE_FORMAT Format,
+bool RTXPTBloomPass::CreateIntermediateTexture(IRenderDevice*           pDevice,
+                                               const char*              Name,
+                                               Uint32                   Width,
+                                               Uint32                   Height,
+                                               TEXTURE_FORMAT           Format,
                                                RefCntAutoPtr<ITexture>& Texture)
 {
     Texture.Release();
@@ -393,12 +393,12 @@ bool RTXPTBloomPass::CreateIntermediateTexture(IRenderDevice* pDevice,
         Texture->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET) != nullptr;
 }
 
-bool RTXPTBloomPass::CreateIntermediateTextures(IRenderDevice* pDevice,
-                                                Uint32         Downscale1Width,
-                                                Uint32         Downscale1Height,
-                                                Uint32         Downscale2Width,
-                                                Uint32         Downscale2Height,
-                                                TEXTURE_FORMAT Format,
+bool RTXPTBloomPass::CreateIntermediateTextures(IRenderDevice*           pDevice,
+                                                Uint32                   Downscale1Width,
+                                                Uint32                   Downscale1Height,
+                                                Uint32                   Downscale2Width,
+                                                Uint32                   Downscale2Height,
+                                                TEXTURE_FORMAT           Format,
                                                 RefCntAutoPtr<ITexture>& Downscale1,
                                                 RefCntAutoPtr<ITexture>& Downscale2,
                                                 RefCntAutoPtr<ITexture>& Blur1,
@@ -445,26 +445,26 @@ bool RTXPTBloomPass::ResizeResources(IRenderDevice* pDevice, Uint32 Width, Uint3
     if (!RecreateTextures)
         return true;
 
-    m_Downscale1 = std::move(Downscale1);
-    m_Downscale2 = std::move(Downscale2);
-    m_Blur1      = std::move(Blur1);
-    m_Blur2      = std::move(Blur2);
-    m_Format = Format;
-    m_Width                  = Width;
-    m_Height                 = Height;
-    m_Stats.DownscaleWidth   = Downscale1Width;
-    m_Stats.DownscaleHeight  = Downscale1Height;
-    m_Stats.BlurWidth        = Downscale2Width;
-    m_Stats.BlurHeight       = Downscale2Height;
+    m_Downscale1            = std::move(Downscale1);
+    m_Downscale2            = std::move(Downscale2);
+    m_Blur1                 = std::move(Blur1);
+    m_Blur2                 = std::move(Blur2);
+    m_Format                = Format;
+    m_Width                 = Width;
+    m_Height                = Height;
+    m_Stats.DownscaleWidth  = Downscale1Width;
+    m_Stats.DownscaleHeight = Downscale1Height;
+    m_Stats.BlurWidth       = Downscale2Width;
+    m_Stats.BlurHeight      = Downscale2Height;
     return true;
 }
 
-bool RTXPTBloomPass::DrawFullscreen(IDeviceContext*          pContext,
-                                    IPipelineState*          pPSO,
-                                    IShaderResourceBinding*  pSRB,
-                                    ITextureView*            pRTV,
-                                    Uint32                   Width,
-                                    Uint32                   Height)
+bool RTXPTBloomPass::DrawFullscreen(IDeviceContext*         pContext,
+                                    IPipelineState*         pPSO,
+                                    IShaderResourceBinding* pSRB,
+                                    ITextureView*           pRTV,
+                                    Uint32                  Width,
+                                    Uint32                  Height)
 {
     if (pContext == nullptr || pPSO == nullptr || pSRB == nullptr || pRTV == nullptr || Width == 0 || Height == 0)
         return false;

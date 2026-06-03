@@ -64,26 +64,26 @@ public:
 
     bool ValidateRenderTargets(const RTXPTRenderTargets& RenderTargets);
 
-    bool RunAccumulation(IDeviceContext*            pContext,
+    bool RunAccumulation(IDeviceContext*           pContext,
                          const RTXPTRenderTargets& RenderTargets,
                          Uint32                    SampleIndex,
                          bool                      ResetAccumulation);
 
-    bool RunPreToneMapping(IDeviceContext*                    pContext,
+    bool RunPreToneMapping(IDeviceContext*                   pContext,
                            const RTXPTRenderTargets&         RenderTargets,
                            const RTXPTBloomParameters&       BloomParams,
                            const RTXPTPostProcessParameters& PostProcessParams);
 
-    bool RunToneMapping(IDeviceContext*                    pContext,
+    bool RunToneMapping(IDeviceContext*                   pContext,
                         const RTXPTRenderTargets&         RenderTargets,
                         const RTXPTToneMappingParameters& Params,
                         bool                              Enabled);
 
-    bool RunPostToneMapping(IDeviceContext*                    pContext,
+    bool RunPostToneMapping(IDeviceContext*                   pContext,
                             const RTXPTRenderTargets&         RenderTargets,
                             const RTXPTPostProcessParameters& PostProcessParams);
 
-    bool                                  IsReady() const { return m_Stats.Ready; }
+    bool                                 IsReady() const { return m_Stats.Ready; }
     const RTXPTPostProcessPipelineStats& GetStats() const { return m_Stats; }
 
 private:

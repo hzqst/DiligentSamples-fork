@@ -84,10 +84,10 @@ public:
     TEXTURE_FORMAT GetLdrColorFormat() const { return m_Formats.LdrColor; }
 
 private:
-    bool CreateTarget(IRenderDevice* pDevice,
-                      const char*    Name,
-                      TEXTURE_FORMAT TargetFormat,
-                      BIND_FLAGS     BindFlags,
+    bool CreateTarget(IRenderDevice*           pDevice,
+                      const char*              Name,
+                      TEXTURE_FORMAT           TargetFormat,
+                      BIND_FLAGS               BindFlags,
                       RefCntAutoPtr<ITexture>& Target);
     bool SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMAT TargetFormat, BIND_FLAGS BindFlags) const;
 

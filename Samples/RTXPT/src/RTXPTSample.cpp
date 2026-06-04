@@ -64,7 +64,8 @@ constexpr bool        kRTXPTStandaloneNrdAvailable = false;
 constexpr bool        kRTXPTRealtimeTaaAvailable   = false;
 constexpr bool        kRTXPTRealtimeSrAvailable    = false;
 constexpr bool        kRTXPTDlssRrAvailable        = false;
-constexpr const char* kRTXPTRealtimeRoutePendingReason = "Realtime presentation/denoise/final merge route is pending.";
+constexpr const char* kRTXPTRealtimeRoutePendingReason =
+    "Standalone denoise/NRD remains deferred to G8; no-denoiser final merge and presentation are active.";
 constexpr const char* kRTXPTNrdDisabledReason      = "Standalone denoiser disabled: NRD integration starts in G8.";
 constexpr Uint32      kRTXPTRealtimeNoisePeriod    = 8192u;
 
@@ -1418,13 +1419,39 @@ bool RTXPTSample::PresentRealtimeFinalOutput()
 
 bool RTXPTSample::RunRealtimePostProcess()
 {
-    // G8 replaces this branch with prepare -> NRD -> final merge when standalone NRD is available.
+    // G8 enables this branch by inserting standalone NRD between prepare and final merge for each stable plane.
     const bool UseStandaloneDenoiser = false;
 
     if (UseStandaloneDenoiser)
     {
-        RecordRealtimePathTraceStatus("Standalone NRD final merge is deferred to G8");
-        return false;
+        for (Uint32 PlaneIndex = 0; PlaneIndex < static_cast<Uint32>(m_RealtimeUI.StablePlanesActiveCount); ++PlaneIndex)
+        {
+            const bool InitOutput = PlaneIndex == 0;
+            if (!m_PostProcessPipeline.RunDenoiserPrepare(m_pImmediateContext,
+                                                          m_RenderTargets,
+                                                          m_RealtimeUI.NRDMethod,
+                                                          PlaneIndex,
+                                                          InitOutput))
+            {
+                RecordRealtimePathTraceStatus("Denoiser prepare dispatch failed");
+                return false;
+            }
+
+            // G8 inserts RTXPTNrdIntegration::Dispatch() here for this stable plane.
+
+            const bool HasValidation = m_RenderTargets.GetDenoiserOutValidationSRV() != nullptr;
+            if (!m_PostProcessPipeline.RunDenoiserFinalMerge(m_pImmediateContext,
+                                                             m_RenderTargets,
+                                                             m_RealtimeUI.NRDMethod,
+                                                             PlaneIndex,
+                                                             HasValidation))
+            {
+                RecordRealtimePathTraceStatus("Denoiser final merge dispatch failed");
+                return false;
+            }
+        }
+
+        return PresentRealtimeFinalOutput();
     }
 
     if (!RunRealtimeNoDenoiserFinalMerge())

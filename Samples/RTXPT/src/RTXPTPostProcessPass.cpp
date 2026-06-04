@@ -31,6 +31,8 @@
 #include "MapHelper.hpp"
 #include "ShaderMacroHelper.hpp"
 
+#include <string>
+
 namespace Diligent
 {
 
@@ -252,8 +254,17 @@ bool RTXPTPostProcessPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
 
     m_FrameConstants = pFrameConstants;
 
+    std::string ShaderSearchPaths = "shaders;shaders\\PostProcessing;shaders\\PathTracer";
+#if RTXPT_HAS_NRD
+    if (RTXPT_NRD_SHADER_INCLUDE_DIR[0] != '\0')
+    {
+        ShaderSearchPaths += ";";
+        ShaderSearchPaths += RTXPT_NRD_SHADER_INCLUDE_DIR;
+    }
+#endif
+
     RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
-    pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders;shaders\\PostProcessing;shaders\\PathTracer", &pShaderSourceFactory);
+    pEngineFactory->CreateDefaultShaderSourceStreamFactory(ShaderSearchPaths.c_str(), &pShaderSourceFactory);
     if (!pShaderSourceFactory)
     {
         DEV_ERROR("Failed to create RTXPT post-process shader source factory");
@@ -320,6 +331,7 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
 
     ShaderMacroHelper Macros;
     Macros.Add("RTXPT_POST_PROCESS_MODE", GetModeMacro(Pass));
+    Macros.Add("RTXPT_HAS_NRD_HEADERS", RTXPT_HAS_NRD ? 1 : 0);
 
     ShaderCreateInfo ShaderCI = BaseShaderCI;
     ShaderCI.Desc.Name        = GetPassName(Pass);

@@ -9,6 +9,13 @@
 
 #if RTXPT_HAS_NRD_HEADERS
 #define NRD_HEADER_ONLY
+#include <NRDEncoding.hlsli>
+#if NRD_NORMAL_ENCODING != 2
+#error NRD_NORMAL_ENCODING must be 2
+#endif
+#if NRD_ROUGHNESS_ENCODING != 1
+#error NRD_ROUGHNESS_ENCODING must be 1
+#endif
 #include <NRD.hlsli>
 #endif
 
@@ -47,7 +54,7 @@ float RTXPTDenoiserReblurGetNormHitDist(float HitDist, float ViewZ, float Roughn
 {
 #if RTXPT_HAS_NRD_HEADERS
     // G8 replaces the fallback hit params with NRD CommonSettings-derived constants.
-    const float4 HitParams = float4(3.0, 0.1, 10.0, 0.0);
+    const float4 HitParams = float4(3.0, 0.1, 20.0, 0.0);
     return REBLUR_FrontEnd_GetNormHitDist(HitDist, ViewZ, HitParams, Roughness);
 #else
     return HitDist > 0.0 ? saturate(HitDist / max(abs(ViewZ), 1.0)) : 0.0;

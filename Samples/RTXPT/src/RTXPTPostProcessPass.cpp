@@ -338,6 +338,10 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
     ShaderMacroHelper Macros;
     Macros.Add("RTXPT_POST_PROCESS_MODE", GetModeMacro(Pass));
     Macros.Add("RTXPT_HAS_NRD_HEADERS", RTXPT_HAS_NRD ? 1 : 0);
+#if RTXPT_HAS_NRD
+    Macros.Add("NRD_NORMAL_ENCODING", 2);
+    Macros.Add("NRD_ROUGHNESS_ENCODING", 1);
+#endif
 
     ShaderCreateInfo ShaderCI = BaseShaderCI;
     ShaderCI.Desc.Name        = GetPassName(Pass);

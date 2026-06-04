@@ -18,6 +18,8 @@ set(SOURCE
     src/RTXPTRenderTargets.cpp
     src/RTXPTPostProcessPipeline.cpp
     src/RTXPTPostProcessPass.cpp
+    src/RTXPTNrdConfig.cpp
+    src/RTXPTNrdIntegration.cpp
     src/RTXPTRayTracingPass.cpp
     src/RTXPTDenoisingGuidesBaker.cpp
     src/RTXPTEmissiveTrianglePass.cpp
@@ -48,6 +50,8 @@ set(INCLUDE
     src/RTXPTRenderTargets.hpp
     src/RTXPTPostProcessPipeline.hpp
     src/RTXPTPostProcessPass.hpp
+    src/RTXPTNrdConfig.hpp
+    src/RTXPTNrdIntegration.hpp
     src/RTXPTRayTracingPass.hpp
     src/RTXPTDenoisingGuidesBaker.hpp
     src/RTXPTEmissiveTrianglePass.hpp
@@ -112,6 +116,49 @@ set(SHADERS
     assets/shaders/RTXPTBlit.psh
 )
 
+set(RTXPT_NRD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/NRD" CACHE PATH "NVIDIA NRD SDK root for the RTXPT standalone denoiser")
+set(RTXPT_NRI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/NRI" CACHE PATH "NVIDIA NRI SDK root used by the RTXPT NRD submodule when NRD_NRI is enabled")
+set(RTXPT_HAS_NRD OFF)
+set(RTXPT_NRD_SHADER_INCLUDE_DIR "")
+set(RTXPT_NRD_SHADER_SOURCE_DIR "")
+set(RTXPT_NRI_ROOT_NORMALIZED "")
+set(RTXPT_NRI_AVAILABLE OFF)
+set(NRD_NRI OFF CACHE BOOL "Build NRD NRI integration")
+
+if(RTXPT_NRD_ROOT)
+    file(TO_CMAKE_PATH "${RTXPT_NRD_ROOT}" RTXPT_NRD_ROOT_NORMALIZED)
+    if(RTXPT_NRI_ROOT)
+        file(TO_CMAKE_PATH "${RTXPT_NRI_ROOT}" RTXPT_NRI_ROOT_NORMALIZED)
+        if(EXISTS "${RTXPT_NRI_ROOT_NORMALIZED}/CMakeLists.txt")
+            set(FETCHCONTENT_SOURCE_DIR_NRI "${RTXPT_NRI_ROOT_NORMALIZED}" CACHE PATH "Use RTXPT's local NRI submodule when NRD_NRI is enabled" FORCE)
+            set(RTXPT_NRI_AVAILABLE ON)
+        elseif(NRD_NRI)
+            message(WARNING "NRD_NRI is ON, but RTXPT_NRI_ROOT does not contain a valid NRI checkout.")
+        endif()
+    endif()
+
+    set(RTXPT_NRD_INCLUDE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Include")
+    set(RTXPT_NRD_SHADER_INCLUDE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders/Include")
+    set(RTXPT_NRD_SHADER_SOURCE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders/Source")
+
+    if(EXISTS "${RTXPT_NRD_ROOT_NORMALIZED}/CMakeLists.txt" AND
+       EXISTS "${RTXPT_NRD_INCLUDE_DIR}/NRD.h" AND
+       EXISTS "${RTXPT_NRD_INCLUDE_DIR}/NRDSettings.h" AND
+       EXISTS "${RTXPT_NRD_INCLUDE_DIR}/NRDDescs.h" AND
+       EXISTS "${RTXPT_NRD_SHADER_INCLUDE_DIR}/NRD.hlsli" AND
+       EXISTS "${RTXPT_NRD_SHADER_SOURCE_DIR}/REBLUR_DiffuseSpecular_TemporalAccumulation.cs.hlsl" AND
+       (NOT NRD_NRI OR RTXPT_NRI_AVAILABLE))
+        set(NRD_STATIC_LIBRARY ON CACHE BOOL "Build NRD as a static library" FORCE)
+        set(NRD_EMBEDS_DXIL_SHADERS OFF CACHE BOOL "RTXPT compiles NRD HLSL through Diligent DXC" FORCE)
+        set(NRD_EMBEDS_DXBC_SHADERS OFF CACHE BOOL "RTXPT compiles NRD HLSL through Diligent DXC" FORCE)
+        set(NRD_EMBEDS_SPIRV_SHADERS OFF CACHE BOOL "RTXPT compiles NRD HLSL through Diligent DXC" FORCE)
+        add_subdirectory("${RTXPT_NRD_ROOT_NORMALIZED}" "${CMAKE_CURRENT_BINARY_DIR}/NRD")
+        set(RTXPT_HAS_NRD ON)
+    else()
+        message(WARNING "RTXPT_NRD_ROOT is set, but required NRD files were not found, or NRD_NRI is ON without a valid RTXPT_NRI_ROOT. RTXPT standalone NRD will be disabled.")
+    endif()
+endif()
+
 add_sample_app(RTXPT
     IDE_FOLDER
         DiligentSamples/Samples
@@ -136,6 +183,21 @@ PRIVATE
     Diligent-SuperResolution-static
     DiligentFX
 )
+
+target_compile_definitions(RTXPT
+PRIVATE
+    RTXPT_HAS_NRD=$<BOOL:${RTXPT_HAS_NRD}>
+    RTXPT_NRD_SHADER_INCLUDE_DIR="${RTXPT_NRD_SHADER_INCLUDE_DIR}"
+    RTXPT_NRD_SHADER_SOURCE_DIR="${RTXPT_NRD_SHADER_SOURCE_DIR}"
+)
+
+if(RTXPT_HAS_NRD)
+    target_link_libraries(RTXPT PRIVATE NRD)
+    target_include_directories(RTXPT PRIVATE
+        "${RTXPT_NRD_INCLUDE_DIR}"
+        "${RTXPT_NRD_SHADER_INCLUDE_DIR}"
+    )
+endif()
 
 if (DILIGENT_DSR_SUPPORTED)
     target_link_libraries(RTXPT PRIVATE DirectSR-AgilitySDK)

@@ -30,11 +30,15 @@
 
 #if RTXPT_HAS_NRD
 #    include "GraphicsTypesX.hpp"
+#    include "MapHelper.hpp"
+#    include "Shader.h"
 #    include "ShaderMacroHelper.hpp"
 
 #    include <algorithm>
 #    include <array>
 #    include <cstddef>
+#    include <cstring>
+#    include <limits>
 #    include <sstream>
 #    include <string>
 #    include <utility>
@@ -208,6 +212,55 @@ TEXTURE_FORMAT ToDiligentFormat(nrd::Format Format)
 Uint32 DivideUp(Uint32 Value, Uint32 Divisor)
 {
     return Value / Divisor + (Value % Divisor != 0 ? 1u : 0u);
+}
+
+void CopyMatrixToNrd(float* pDst, const float4x4& Matrix)
+{
+    static_assert(sizeof(float4x4) == sizeof(float) * 16, "Unexpected matrix layout");
+    std::memcpy(pDst, &Matrix, sizeof(Matrix));
+}
+
+Uint16 ToNrdDimension(Uint32 Value)
+{
+    return static_cast<Uint16>(std::min<Uint32>(Value, std::numeric_limits<Uint16>::max()));
+}
+
+const char* GetNrdResourceTypeName(nrd::ResourceType Type)
+{
+    switch (Type)
+    {
+        case nrd::ResourceType::IN_MV:
+            return "IN_MV";
+        case nrd::ResourceType::IN_NORMAL_ROUGHNESS:
+            return "IN_NORMAL_ROUGHNESS";
+        case nrd::ResourceType::IN_VIEWZ:
+            return "IN_VIEWZ";
+        case nrd::ResourceType::IN_DISOCCLUSION_THRESHOLD_MIX:
+            return "IN_DISOCCLUSION_THRESHOLD_MIX";
+        case nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST:
+            return "IN_DIFF_RADIANCE_HITDIST";
+        case nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST:
+            return "IN_SPEC_RADIANCE_HITDIST";
+        case nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST:
+            return "OUT_DIFF_RADIANCE_HITDIST";
+        case nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST:
+            return "OUT_SPEC_RADIANCE_HITDIST";
+        case nrd::ResourceType::OUT_VALIDATION:
+            return "OUT_VALIDATION";
+        case nrd::ResourceType::TRANSIENT_POOL:
+            return "TRANSIENT_POOL";
+        case nrd::ResourceType::PERMANENT_POOL:
+            return "PERMANENT_POOL";
+        default:
+            return "unsupported";
+    }
+}
+
+TEXTURE_VIEW_TYPE GetDiligentViewType(nrd::DescriptorType DescriptorType)
+{
+    return DescriptorType == nrd::DescriptorType::TEXTURE ?
+        TEXTURE_VIEW_SHADER_RESOURCE :
+        TEXTURE_VIEW_UNORDERED_ACCESS;
 }
 
 } // namespace
@@ -384,6 +437,33 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
         if (!pCS)
             return Fail("Failed to create NRD compute shader");
 
+        PipelineState& Pipeline = m_Pipelines[PipelineIndex];
+        for (Uint32 ResourceIndex = 0; ResourceIndex < pCS->GetResourceCount(); ++ResourceIndex)
+        {
+            ShaderResourceDesc ResourceDesc;
+            pCS->GetResourceDesc(ResourceIndex, ResourceDesc);
+            if (ResourceDesc.Name == nullptr || ResourceDesc.Name[0] == '\0')
+                return Fail("NRD shader reflected an unnamed resource");
+
+            switch (ResourceDesc.Type)
+            {
+                case SHADER_RESOURCE_TYPE_CONSTANT_BUFFER:
+                    Pipeline.ConstantBufferNames.emplace_back(ResourceDesc.Name);
+                    break;
+                case SHADER_RESOURCE_TYPE_SAMPLER:
+                    Pipeline.SamplerNames.emplace_back(ResourceDesc.Name);
+                    break;
+                case SHADER_RESOURCE_TYPE_TEXTURE_SRV:
+                    Pipeline.TextureSRVNames.emplace_back(ResourceDesc.Name);
+                    break;
+                case SHADER_RESOURCE_TYPE_TEXTURE_UAV:
+                    Pipeline.TextureUAVNames.emplace_back(ResourceDesc.Name);
+                    break;
+                default:
+                    break;
+            }
+        }
+
         ComputePipelineStateCreateInfo PSOCreateInfo;
         PSOCreateInfo.PSODesc.Name         = ShaderInfo.FilePath.c_str();
         PSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_COMPUTE;
@@ -393,12 +473,12 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
         ResourceLayout.DefaultVariableType   = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
         PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-        pDevice->CreateComputePipelineState(PSOCreateInfo, &m_Pipelines[PipelineIndex].PSO);
-        if (!m_Pipelines[PipelineIndex].PSO)
+        pDevice->CreateComputePipelineState(PSOCreateInfo, &Pipeline.PSO);
+        if (!Pipeline.PSO)
             return Fail("Failed to create NRD compute PSO");
 
-        m_Pipelines[PipelineIndex].PSO->CreateShaderResourceBinding(&m_Pipelines[PipelineIndex].SRB, true);
-        if (!m_Pipelines[PipelineIndex].SRB)
+        Pipeline.PSO->CreateShaderResourceBinding(&Pipeline.SRB, true);
+        if (!Pipeline.SRB)
             return Fail("Failed to create NRD shader resource binding");
     }
 
@@ -457,6 +537,362 @@ bool RTXPTNrdIntegration::CreatePoolTextures(IRenderDevice* pDevice, Uint32 Widt
             return false;
     }
 
+    return true;
+}
+
+bool RTXPTNrdIntegration::BindDispatchResources(IDeviceContext*,
+                                                const nrd::DispatchDesc&    DispatchDesc,
+                                                const nrd::PipelineDesc&    PipelineDesc,
+                                                PipelineState&              Pipeline,
+                                                const RTXPTNrdFrameAttribs& Attribs)
+{
+    if (!Pipeline.SRB)
+        return Fail("NRD dispatch pipeline SRB is not initialized");
+    if (DispatchDesc.resourcesNum != 0 && DispatchDesc.resources == nullptr)
+        return Fail("NRD dispatch resource list is null");
+    if (PipelineDesc.resourceRangesNum != 0 && PipelineDesc.resourceRanges == nullptr)
+        return Fail("NRD dispatch resource range list is null");
+
+    const RTXPTRenderTargets& RenderTargets = *Attribs.pRenderTargets;
+
+    auto ResolveExternalView = [&](ITextureView*       pSRV,
+                                   ITextureView*       pUAV,
+                                   nrd::DescriptorType DescriptorType,
+                                   const char*         ResourceName,
+                                   ITextureView*&      pView) {
+        pView = DescriptorType == nrd::DescriptorType::TEXTURE ? pSRV : pUAV;
+        if (pView != nullptr)
+            return true;
+
+        std::ostringstream Message;
+        Message << "Unavailable NRD " << ResourceName << ' '
+                << (DescriptorType == nrd::DescriptorType::TEXTURE ? "SRV" : "UAV");
+        return Fail(Message.str().c_str());
+    };
+
+    auto ResolvePoolView = [&](const std::vector<RefCntAutoPtr<ITexture>>& Pool,
+                               Uint32                                      Index,
+                               nrd::DescriptorType                         DescriptorType,
+                               const char*                                 PoolName,
+                               ITextureView*&                              pView) {
+        if (Index >= Pool.size())
+        {
+            std::ostringstream Message;
+            Message << "NRD " << PoolName << " pool resource index is out of range";
+            return Fail(Message.str().c_str());
+        }
+
+        ITexture* pTexture = Pool[Index];
+        if (pTexture == nullptr)
+        {
+            std::ostringstream Message;
+            Message << "NRD " << PoolName << " pool texture is not initialized";
+            return Fail(Message.str().c_str());
+        }
+
+        pView = pTexture->GetDefaultView(GetDiligentViewType(DescriptorType));
+        if (pView != nullptr)
+            return true;
+
+        std::ostringstream Message;
+        Message << "Unavailable NRD " << PoolName << " pool "
+                << (DescriptorType == nrd::DescriptorType::TEXTURE ? "SRV" : "UAV");
+        return Fail(Message.str().c_str());
+    };
+
+    auto ResolveResourceView = [&](const nrd::ResourceDesc& Resource,
+                                   nrd::DescriptorType      DescriptorType,
+                                   ITextureView*&           pView) {
+        switch (Resource.type)
+        {
+            case nrd::ResourceType::IN_MV:
+                return ResolveExternalView(RenderTargets.GetDenoiserMotionVectorsSRV(), RenderTargets.GetDenoiserMotionVectorsUAV(), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::IN_NORMAL_ROUGHNESS:
+                return ResolveExternalView(RenderTargets.GetDenoiserNormalRoughnessSRV(), RenderTargets.GetDenoiserNormalRoughnessUAV(), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::IN_VIEWZ:
+                return ResolveExternalView(RenderTargets.GetDenoiserViewspaceZSRV(), RenderTargets.GetDenoiserViewspaceZUAV(), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST:
+                return ResolveExternalView(RenderTargets.GetDenoiserSpecRadianceHitDistSRV(), RenderTargets.GetDenoiserSpecRadianceHitDistUAV(), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST:
+                return ResolveExternalView(RenderTargets.GetDenoiserDiffRadianceHitDistSRV(), RenderTargets.GetDenoiserDiffRadianceHitDistUAV(), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::IN_DISOCCLUSION_THRESHOLD_MIX:
+                return ResolveExternalView(RenderTargets.GetDenoiserDisocclusionThresholdMixSRV(), RenderTargets.GetDenoiserDisocclusionThresholdMixUAV(), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST:
+                return ResolveExternalView(RenderTargets.GetDenoiserOutSpecRadianceHitDistSRV(Attribs.PlaneIndex), RenderTargets.GetDenoiserOutSpecRadianceHitDistUAV(Attribs.PlaneIndex), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST:
+                return ResolveExternalView(RenderTargets.GetDenoiserOutDiffRadianceHitDistSRV(Attribs.PlaneIndex), RenderTargets.GetDenoiserOutDiffRadianceHitDistUAV(Attribs.PlaneIndex), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::OUT_VALIDATION:
+                return ResolveExternalView(RenderTargets.GetDenoiserOutValidationSRV(), RenderTargets.GetDenoiserOutValidationUAV(), DescriptorType, GetNrdResourceTypeName(Resource.type), pView);
+            case nrd::ResourceType::TRANSIENT_POOL:
+                return ResolvePoolView(m_TransientTextures, Resource.indexInPool, DescriptorType, "transient", pView);
+            case nrd::ResourceType::PERMANENT_POOL:
+                return ResolvePoolView(m_PermanentTextures, Resource.indexInPool, DescriptorType, "permanent", pView);
+            default:
+            {
+                std::ostringstream Message;
+                Message << "Unsupported NRD dispatch resource type: " << GetNrdResourceTypeName(Resource.type);
+                return Fail(Message.str().c_str());
+            }
+        }
+    };
+
+    auto BindTexture = [&](const std::string& Name, ITextureView* pView) {
+        IShaderResourceVariable* pVar = Pipeline.SRB->GetVariableByName(SHADER_TYPE_COMPUTE, Name.c_str());
+        if (pVar == nullptr)
+        {
+            std::ostringstream Message;
+            Message << "Missing reflected NRD texture variable: " << Name;
+            return Fail(Message.str().c_str());
+        }
+        if (pView == nullptr)
+        {
+            std::ostringstream Message;
+            Message << "Unavailable view for reflected NRD texture variable: " << Name;
+            return Fail(Message.str().c_str());
+        }
+
+        pVar->Set(pView);
+        return true;
+    };
+
+    Uint32 ResourceIndex = 0;
+    Uint32 SRVNameIndex  = 0;
+    Uint32 UAVNameIndex  = 0;
+
+    for (Uint32 RangeIndex = 0; RangeIndex < PipelineDesc.resourceRangesNum; ++RangeIndex)
+    {
+        const nrd::ResourceRangeDesc& Range = PipelineDesc.resourceRanges[RangeIndex];
+        if (Range.descriptorType != nrd::DescriptorType::TEXTURE &&
+            Range.descriptorType != nrd::DescriptorType::STORAGE_TEXTURE)
+        {
+            return Fail("Unsupported NRD dispatch descriptor type");
+        }
+
+        std::vector<std::string>& Names     = Range.descriptorType == nrd::DescriptorType::TEXTURE ? Pipeline.TextureSRVNames : Pipeline.TextureUAVNames;
+        Uint32&                   NameIndex = Range.descriptorType == nrd::DescriptorType::TEXTURE ? SRVNameIndex : UAVNameIndex;
+
+        for (Uint32 DescriptorIndex = 0; DescriptorIndex < Range.descriptorsNum; ++DescriptorIndex)
+        {
+            if (ResourceIndex >= DispatchDesc.resourcesNum)
+                return Fail("NRD dispatch resource range exceeds resource list");
+            if (NameIndex >= Names.size())
+                return Fail("NRD reflected texture resource count does not match dispatch resources");
+
+            const nrd::ResourceDesc& Resource = DispatchDesc.resources[ResourceIndex];
+            ITextureView*            pView    = nullptr;
+            if (!ResolveResourceView(Resource, Range.descriptorType, pView) ||
+                !BindTexture(Names[NameIndex], pView))
+            {
+                return false;
+            }
+
+            ++ResourceIndex;
+            ++NameIndex;
+        }
+    }
+
+    if (ResourceIndex != DispatchDesc.resourcesNum)
+        return Fail("NRD dispatch resource list has unbound entries");
+    if (SRVNameIndex != Pipeline.TextureSRVNames.size() ||
+        UAVNameIndex != Pipeline.TextureUAVNames.size())
+    {
+        return Fail("NRD reflected texture resources have no dispatch mapping");
+    }
+
+    return true;
+}
+
+void RTXPTNrdIntegration::PopulateCommonSettings(nrd::CommonSettings& Settings, const RTXPTNrdFrameAttribs& Attribs) const
+{
+    Settings = {};
+
+    const SampleConstants&       FrameConstants = *Attribs.pFrameConstants;
+    const RTXPTRenderTargets&    RenderTargets  = *Attribs.pRenderTargets;
+    const RTXPTRealtimeSettings& Realtime       = *Attribs.pRealtime;
+    const Uint32                 RenderWidth    = RenderTargets.GetRenderWidth();
+    const Uint32                 RenderHeight   = RenderTargets.GetRenderHeight();
+
+    CopyMatrixToNrd(Settings.worldToViewMatrix, FrameConstants.view.MatWorldToView);
+    CopyMatrixToNrd(Settings.worldToViewMatrixPrev, FrameConstants.previousView.MatWorldToView);
+    CopyMatrixToNrd(Settings.viewToClipMatrix, FrameConstants.view.MatViewToClip);
+    CopyMatrixToNrd(Settings.viewToClipMatrixPrev, FrameConstants.previousView.MatViewToClip);
+
+    Settings.isMotionVectorInWorldSpace          = false;
+    Settings.motionVectorScale[0]                = RenderWidth != 0 ? 1.0f / static_cast<float>(RenderWidth) : 0.0f;
+    Settings.motionVectorScale[1]                = RenderHeight != 0 ? 1.0f / static_cast<float>(RenderHeight) : 0.0f;
+    Settings.motionVectorScale[2]                = 1.0f;
+    Settings.cameraJitter[0]                     = FrameConstants.view.PixelOffset.x;
+    Settings.cameraJitter[1]                     = FrameConstants.view.PixelOffset.y;
+    Settings.cameraJitterPrev[0]                 = FrameConstants.previousView.PixelOffset.x;
+    Settings.cameraJitterPrev[1]                 = FrameConstants.previousView.PixelOffset.y;
+    Settings.frameIndex                          = Attribs.FrameIndex;
+    Settings.denoisingRange                      = 20000.0f;
+    Settings.enableValidation                    = Attribs.EnableValidation && RenderTargets.GetDenoiserOutValidationUAV() != nullptr;
+    Settings.disocclusionThreshold               = Realtime.NRDDisocclusionThreshold;
+    Settings.disocclusionThresholdAlternate      = Realtime.NRDDisocclusionThresholdAlternate;
+    Settings.isDisocclusionThresholdMixAvailable = Realtime.NRDUseAlternateDisocclusionThresholdMix;
+    Settings.timeDeltaBetweenFrames              = Attribs.TimeDeltaSeconds;
+    Settings.accumulationMode                    = Attribs.ResetHistory ? nrd::AccumulationMode::CLEAR_AND_RESTART : nrd::AccumulationMode::CONTINUE;
+    Settings.resourceSize[0]                     = ToNrdDimension(RenderWidth);
+    Settings.resourceSize[1]                     = ToNrdDimension(RenderHeight);
+    Settings.resourceSizePrev[0]                 = ToNrdDimension(RenderWidth);
+    Settings.resourceSizePrev[1]                 = ToNrdDimension(RenderHeight);
+    Settings.rectSize[0]                         = ToNrdDimension(RenderWidth);
+    Settings.rectSize[1]                         = ToNrdDimension(RenderHeight);
+    Settings.rectSizePrev[0]                     = ToNrdDimension(RenderWidth);
+    Settings.rectSizePrev[1]                     = ToNrdDimension(RenderHeight);
+}
+
+bool RTXPTNrdIntegration::Dispatch(IDeviceContext* pContext, const RTXPTNrdFrameAttribs& Attribs)
+{
+    m_Stats.LastDispatchExecuted = false;
+    m_Stats.LastDispatches       = 0;
+
+    if (!IsReady() || m_Instance == nullptr)
+        return Fail("RTXPT NRD integration is not ready");
+    if (pContext == nullptr)
+        return Fail("RTXPT NRD dispatch requires a device context");
+    if (Attribs.pRenderTargets == nullptr || Attribs.pFrameConstants == nullptr || Attribs.pRealtime == nullptr)
+        return Fail("RTXPT NRD dispatch requires render targets, frame constants, and realtime settings");
+    if (Attribs.PlaneIndex >= kRTXPTStablePlaneCount)
+        return Fail("RTXPT NRD dispatch plane index is out of range");
+    if (Attribs.pRealtime->NRDMethod != m_Stats.Method)
+        return Fail("RTXPT NRD dispatch method does not match the initialized denoiser");
+
+    const Uint32 RenderWidth  = Attribs.pRenderTargets->GetRenderWidth();
+    const Uint32 RenderHeight = Attribs.pRenderTargets->GetRenderHeight();
+    if (RenderWidth == 0 || RenderHeight == 0)
+        return Fail("RTXPT NRD dispatch requires a non-zero render size");
+    if (RenderWidth != m_Stats.Width || RenderHeight != m_Stats.Height)
+        return Fail("RTXPT NRD dispatch render size does not match the initialized denoiser");
+
+    const nrd::InstanceDesc* pInstanceDesc = nrd::GetInstanceDesc(*m_Instance);
+    if (pInstanceDesc == nullptr)
+        return Fail("Failed to query NRD instance description");
+
+    nrd::Result Result = nrd::Result::SUCCESS;
+    if (m_Stats.Method == RTXPTNrdMethod::RELAX)
+    {
+        nrd::RelaxSettings Settings = RTXPTMakeRelaxSettings(Attribs.pRealtime->RelaxSettings);
+        Result                      = nrd::SetDenoiserSettings(*m_Instance, m_Identifier, &Settings);
+    }
+    else
+    {
+        nrd::ReblurSettings Settings = RTXPTMakeReblurSettings(Attribs.pRealtime->ReblurSettings);
+        Result                       = nrd::SetDenoiserSettings(*m_Instance, m_Identifier, &Settings);
+    }
+    if (Result != nrd::Result::SUCCESS)
+        return Fail("Failed to set NRD denoiser settings");
+
+    nrd::CommonSettings CommonSettings;
+    PopulateCommonSettings(CommonSettings, Attribs);
+    Result = nrd::SetCommonSettings(*m_Instance, CommonSettings);
+    if (Result != nrd::Result::SUCCESS)
+        return Fail("Failed to set NRD common settings");
+
+    const nrd::DispatchDesc* pDispatchDescs = nullptr;
+    Uint32                   DispatchNum    = 0;
+    Result                                  = nrd::GetComputeDispatches(*m_Instance, &m_Identifier, 1, pDispatchDescs, DispatchNum);
+    if (Result != nrd::Result::SUCCESS)
+        return Fail("Failed to get NRD compute dispatches");
+    if (DispatchNum != 0 && pDispatchDescs == nullptr)
+        return Fail("NRD returned an empty dispatch list");
+
+    auto BindDeviceObject = [&](PipelineState& Pipeline, const std::string& Name, IDeviceObject* pObject, const char* Kind) {
+        IShaderResourceVariable* pVar = Pipeline.SRB->GetVariableByName(SHADER_TYPE_COMPUTE, Name.c_str());
+        if (pVar == nullptr)
+        {
+            std::ostringstream Message;
+            Message << "Missing reflected NRD " << Kind << " variable: " << Name;
+            return Fail(Message.str().c_str());
+        }
+        if (pObject == nullptr)
+        {
+            std::ostringstream Message;
+            Message << "Unavailable NRD " << Kind << " resource: " << Name;
+            return Fail(Message.str().c_str());
+        }
+
+        pVar->Set(pObject);
+        return true;
+    };
+
+    for (Uint32 DispatchIndex = 0; DispatchIndex < DispatchNum; ++DispatchIndex)
+    {
+        const nrd::DispatchDesc& DispatchDesc = pDispatchDescs[DispatchIndex];
+        if (DispatchDesc.pipelineIndex >= m_Pipelines.size() ||
+            DispatchDesc.pipelineIndex >= pInstanceDesc->pipelinesNum)
+        {
+            return Fail("NRD dispatch pipeline index is out of range");
+        }
+
+        PipelineState&           Pipeline     = m_Pipelines[DispatchDesc.pipelineIndex];
+        const nrd::PipelineDesc& PipelineDesc = pInstanceDesc->pipelines[DispatchDesc.pipelineIndex];
+        if (!Pipeline.PSO || !Pipeline.SRB)
+            return Fail("NRD dispatch pipeline is not initialized");
+
+        if (DispatchDesc.constantBufferDataSize != 0)
+        {
+            if (DispatchDesc.constantBufferData == nullptr)
+                return Fail("NRD dispatch constant data is null");
+            if (!m_ConstantBuffer)
+                return Fail("NRD constant buffer is not initialized");
+            if (DispatchDesc.constantBufferDataSize > pInstanceDesc->constantBufferMaxDataSize)
+                return Fail("NRD dispatch constant data exceeds the constant buffer size");
+
+            MapHelper<Uint8> MappedConstants{pContext, m_ConstantBuffer, MAP_WRITE, MAP_FLAG_DISCARD};
+            if (static_cast<Uint8*>(MappedConstants) == nullptr)
+                return Fail("Failed to map NRD constant buffer");
+            std::memcpy(static_cast<Uint8*>(MappedConstants), DispatchDesc.constantBufferData, DispatchDesc.constantBufferDataSize);
+        }
+
+        for (const std::string& ConstantBufferName : Pipeline.ConstantBufferNames)
+        {
+            if (!BindDeviceObject(Pipeline, ConstantBufferName, m_ConstantBuffer, "constant buffer"))
+                return false;
+        }
+
+        auto GetSamplerForReflectedName = [&](const std::string& Name, Uint32 FallbackIndex) -> ISampler* {
+            nrd::Sampler DesiredSampler = nrd::Sampler::MAX_NUM;
+            if (Name == "gNearestClamp")
+                DesiredSampler = nrd::Sampler::NEAREST_CLAMP;
+            else if (Name == "gLinearClamp")
+                DesiredSampler = nrd::Sampler::LINEAR_CLAMP;
+
+            if (DesiredSampler != nrd::Sampler::MAX_NUM)
+            {
+                for (Uint32 SamplerIndex = 0; SamplerIndex < pInstanceDesc->samplersNum && SamplerIndex < m_Samplers.size(); ++SamplerIndex)
+                {
+                    if (pInstanceDesc->samplers[SamplerIndex] == DesiredSampler)
+                        return m_Samplers[SamplerIndex];
+                }
+            }
+
+            return FallbackIndex < m_Samplers.size() ? m_Samplers[FallbackIndex] : nullptr;
+        };
+
+        for (Uint32 SamplerIndex = 0; SamplerIndex < Pipeline.SamplerNames.size(); ++SamplerIndex)
+        {
+            ISampler* pSampler = GetSamplerForReflectedName(Pipeline.SamplerNames[SamplerIndex], SamplerIndex);
+            if (pSampler == nullptr)
+                return Fail("NRD reflected sampler count exceeds created sampler count");
+            if (!BindDeviceObject(Pipeline, Pipeline.SamplerNames[SamplerIndex], pSampler, "sampler"))
+                return false;
+        }
+
+        if (!BindDispatchResources(pContext, DispatchDesc, PipelineDesc, Pipeline, Attribs))
+            return false;
+
+        pContext->SetPipelineState(Pipeline.PSO);
+        pContext->CommitShaderResources(Pipeline.SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        pContext->DispatchCompute(DispatchComputeAttribs{DispatchDesc.gridWidth, DispatchDesc.gridHeight, 1});
+
+        ++m_Stats.DispatchCount;
+        ++m_Stats.LastDispatches;
+    }
+
+    m_Stats.LastDispatchExecuted = m_Stats.LastDispatches != 0;
+    m_Stats.LastPlaneIndex       = Attribs.PlaneIndex;
     return true;
 }
 

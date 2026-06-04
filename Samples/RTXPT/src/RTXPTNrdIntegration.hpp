@@ -60,15 +60,15 @@ struct RTXPTNrdFrameAttribs
 
 struct RTXPTNrdIntegrationStats
 {
-    bool        Ready                = false;
-    bool        LastDispatchExecuted = false;
-    Uint32      DispatchCount        = 0;
-    Uint32      LastPlaneIndex       = 0;
-    Uint32      LastDispatches       = 0;
-    Uint32      Width                = 0;
-    Uint32      Height               = 0;
-    RTXPTNrdMethod Method            = RTXPTNrdMethod::REBLUR;
-    std::string LastFailureReason;
+    bool           Ready                = false;
+    bool           LastDispatchExecuted = false;
+    Uint32         DispatchCount        = 0;
+    Uint32         LastPlaneIndex       = 0;
+    Uint32         LastDispatches       = 0;
+    Uint32         Width                = 0;
+    Uint32         Height               = 0;
+    RTXPTNrdMethod Method               = RTXPTNrdMethod::REBLUR;
+    std::string    LastFailureReason;
 };
 
 class RTXPTNrdIntegration
@@ -102,6 +102,10 @@ private:
     {
         RefCntAutoPtr<IPipelineState>         PSO;
         RefCntAutoPtr<IShaderResourceBinding> SRB;
+        std::vector<std::string>              ConstantBufferNames;
+        std::vector<std::string>              SamplerNames;
+        std::vector<std::string>              TextureSRVNames;
+        std::vector<std::string>              TextureUAVNames;
     };
 
     bool CreateInstance(RTXPTNrdMethod Method);
@@ -110,20 +114,20 @@ private:
     bool CreatePipelines(IRenderDevice* pDevice, IEngineFactory* pEngineFactory);
     bool CreatePoolTextures(IRenderDevice* pDevice, Uint32 Width, Uint32 Height);
     bool BindDispatchResources(IDeviceContext*             pContext,
-                               const nrd::DispatchDesc&   DispatchDesc,
-                               const nrd::PipelineDesc&   PipelineDesc,
-                               PipelineState&             Pipeline,
+                               const nrd::DispatchDesc&    DispatchDesc,
+                               const nrd::PipelineDesc&    PipelineDesc,
+                               PipelineState&              Pipeline,
                                const RTXPTNrdFrameAttribs& Attribs);
     void PopulateCommonSettings(nrd::CommonSettings& Settings, const RTXPTNrdFrameAttribs& Attribs) const;
 
-    nrd::Instance*                        m_Instance   = nullptr;
-    nrd::Identifier                       m_Identifier = 0;
-    RefCntAutoPtr<IRenderDevice>          m_Device;
-    RefCntAutoPtr<IBuffer>                m_ConstantBuffer;
-    std::vector<PipelineState>            m_Pipelines;
-    std::vector<RefCntAutoPtr<ISampler>>  m_Samplers;
-    std::vector<RefCntAutoPtr<ITexture>>  m_PermanentTextures;
-    std::vector<RefCntAutoPtr<ITexture>>  m_TransientTextures;
+    nrd::Instance*                       m_Instance   = nullptr;
+    nrd::Identifier                      m_Identifier = 0;
+    RefCntAutoPtr<IRenderDevice>         m_Device;
+    RefCntAutoPtr<IBuffer>               m_ConstantBuffer;
+    std::vector<PipelineState>           m_Pipelines;
+    std::vector<RefCntAutoPtr<ISampler>> m_Samplers;
+    std::vector<RefCntAutoPtr<ITexture>> m_PermanentTextures;
+    std::vector<RefCntAutoPtr<ITexture>> m_TransientTextures;
 #endif
 
     RTXPTNrdIntegrationStats m_Stats;

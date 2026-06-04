@@ -141,6 +141,7 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
         RenderTargets.GetOutputColorSRV() != nullptr &&
         RenderTargets.GetOutputColorUAV() != nullptr &&
         AccumulationResourcesValid &&
+        RenderTargets.GetAccumulationOutputUAV() != nullptr &&
         RenderTargets.GetDepthUAV() != nullptr &&
         RenderTargets.GetDepthSRV() != nullptr &&
         RenderTargets.GetScreenMotionVectorsUAV() != nullptr &&
@@ -231,6 +232,7 @@ bool RTXPTPostProcessPipeline::RunDenoiserFinalMerge(IDeviceContext*           p
     Attribs.MiniConstants.params.y          = HasValidation ? 1u : 0u;
 
     const bool Executed                 = m_PostProcessPass.RunDenoiserFinalMerge(pContext, Attribs);
+    m_Stats.RealtimeMergeStageReady     = m_PostProcessPass.IsReady();
     m_Stats.LastRealtimeFinalMergeReady = Executed;
     if (!Executed)
         DEV_ERROR("RTXPT denoiser final merge failed");
@@ -241,7 +243,8 @@ bool RTXPTPostProcessPipeline::RunNoDenoiserFinalMerge(IDeviceContext*          
                                                        const RTXPTRenderTargets& RenderTargets)
 {
     RTXPTDenoiserPostProcessAttribs Attribs = MakeRealtimePostProcessAttribs(RenderTargets);
-    const bool Executed = m_PostProcessPass.RunNoDenoiserFinalMerge(pContext, Attribs);
+    const bool Executed                 = m_PostProcessPass.RunNoDenoiserFinalMerge(pContext, Attribs);
+    m_Stats.RealtimeMergeStageReady     = m_PostProcessPass.IsReady();
     m_Stats.LastRealtimeFinalMergeReady = Executed;
     if (!Executed)
         DEV_ERROR("RTXPT no-denoiser final merge failed");

@@ -34,7 +34,6 @@
 
 #    include <algorithm>
 #    include <array>
-#    include <cstdlib>
 #    include <cstddef>
 #    include <sstream>
 #    include <string>
@@ -95,21 +94,6 @@ struct ParsedShaderIdentifier
     std::string                                      FilePath;
     std::vector<std::pair<std::string, std::string>> Macros;
 };
-
-void* NRD_CALL NrdAllocate(void*, size_t Size, size_t)
-{
-    return std::malloc(Size);
-}
-
-void* NRD_CALL NrdReallocate(void*, void* Memory, size_t Size, size_t)
-{
-    return std::realloc(Memory, Size);
-}
-
-void NRD_CALL NrdFree(void*, void* Memory)
-{
-    std::free(Memory);
-}
 
 void AppendShaderSearchDir(std::string& SearchDirs, const char* Path)
 {
@@ -212,13 +196,18 @@ TEXTURE_FORMAT ToDiligentFormat(nrd::Format Format)
             TEX_FORMAT_RGBA32_SINT,
             TEX_FORMAT_RGBA32_FLOAT,
             TEX_FORMAT_RGB10A2_UNORM,
-            TEX_FORMAT_UNKNOWN,
+            TEX_FORMAT_RGB10A2_UINT,
             TEX_FORMAT_R11G11B10_FLOAT,
-            TEX_FORMAT_UNKNOWN,
+            TEX_FORMAT_RGB9E5_SHAREDEXP,
         };
 
     const auto Index = static_cast<std::size_t>(Format);
     return Index < FormatMap.size() ? FormatMap[Index] : TEX_FORMAT_UNKNOWN;
+}
+
+Uint32 DivideUp(Uint32 Value, Uint32 Divisor)
+{
+    return Value / Divisor + (Value % Divisor != 0 ? 1u : 0u);
 }
 
 } // namespace
@@ -265,7 +254,15 @@ bool RTXPTNrdIntegration::Initialize(IRenderDevice*  pDevice,
         !CreateSamplers(pDevice) ||
         !CreatePipelines(pDevice, pEngineFactory) ||
         !CreatePoolTextures(pDevice, Width, Height))
+    {
+        const std::string FailureReason = m_Stats.LastFailureReason;
+        Reset();
+        m_Stats.Method            = Method;
+        m_Stats.Width             = Width;
+        m_Stats.Height            = Height;
+        m_Stats.LastFailureReason = FailureReason;
         return false;
+    }
 
     m_Stats.Ready = true;
     return true;
@@ -278,12 +275,9 @@ bool RTXPTNrdIntegration::CreateInstance(RTXPTNrdMethod Method)
             {m_Identifier, RTXPTToNrdDenoiser(Method)},
         };
 
-    nrd::InstanceCreationDesc Desc      = {};
-    Desc.allocationCallbacks.Allocate   = NrdAllocate;
-    Desc.allocationCallbacks.Reallocate = NrdReallocate;
-    Desc.allocationCallbacks.Free       = NrdFree;
-    Desc.denoisers                      = DenoiserDescs;
-    Desc.denoisersNum                   = 1;
+    nrd::InstanceCreationDesc Desc = {};
+    Desc.denoisers                 = DenoiserDescs;
+    Desc.denoisersNum              = 1;
 
     const nrd::Result Result = nrd::CreateInstance(Desc, m_Instance);
     return Result == nrd::Result::SUCCESS && m_Instance != nullptr ?
@@ -420,13 +414,23 @@ bool RTXPTNrdIntegration::CreatePoolTextures(IRenderDevice* pDevice, Uint32 Widt
         TextureDesc  Desc;
         Desc.Name      = TextureName.c_str();
         Desc.Type      = RESOURCE_DIM_TEX_2D;
-        Desc.Width     = std::max(Width / DownsampleFactor, 1u);
-        Desc.Height    = std::max(Height / DownsampleFactor, 1u);
+        Desc.Width     = std::max(DivideUp(Width, DownsampleFactor), 1u);
+        Desc.Height    = std::max(DivideUp(Height, DownsampleFactor), 1u);
         Desc.Format    = Format;
         Desc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
 
         pDevice->CreateTexture(Desc, nullptr, &Texture);
-        return Texture ? true : Fail("Failed to create NRD pool texture");
+        if (!Texture)
+            return Fail("Failed to create NRD pool texture");
+
+        if (Texture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) == nullptr ||
+            Texture->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS) == nullptr)
+        {
+            Texture.Release();
+            return Fail("Failed to create NRD pool texture views");
+        }
+
+        return true;
     };
 
     m_PermanentTextures.resize(pInstanceDesc->permanentPoolSize);

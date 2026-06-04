@@ -960,6 +960,7 @@ void RTXPTSample::CreatePhase4Passes()
     m_PostProcessPipeline.Initialize(m_pDevice,
                                      m_pEngineFactory,
                                      m_pSwapChain,
+                                     m_FrameConstantsCB,
                                      m_FeatureCaps.ComputeShaders);
     m_DenoisingGuidesBaker.Initialize(m_pDevice,
                                       m_pEngineFactory,
@@ -1340,6 +1341,95 @@ bool RTXPTSample::RunReferencePathTraceAndPostProcess()
     return true;
 }
 
+bool RTXPTSample::RunRealtimeNoDenoiserFinalMerge()
+{
+    if (!m_RenderTargets.HasRealtimeRenderTargets())
+    {
+        RecordRealtimePathTraceStatus("Realtime render targets are missing for final merge");
+        return false;
+    }
+
+    const bool MergeOk =
+        m_PostProcessPipeline.RunNoDenoiserFinalMerge(m_pImmediateContext, m_RenderTargets);
+    m_LastRealtimeFinalMergeReady = MergeOk;
+    if (!MergeOk)
+        RecordRealtimePathTraceStatus("NoDenoiserFinalMerge dispatch failed");
+    return MergeOk;
+}
+
+bool RTXPTSample::PresentRealtimeFinalOutput()
+{
+    const RTXPTSuperResolutionSettings DisabledSuperResolution;
+    const RTXPTSuperResolutionFrameDesc FrameDesc =
+        m_PostProcessPipeline.ResolveSuperResolutionFrameDesc(DisabledSuperResolution,
+                                                              m_RenderTargets.GetDisplayWidth(),
+                                                              m_RenderTargets.GetDisplayHeight(),
+                                                              m_RenderTargets.GetProcessedOutputColorFormat(),
+                                                              HasRealtimeResetFlag(m_CurrentFrameRealtimeReset, RTXPT_REALTIME_RESET_TAA_SR_HISTORY),
+                                                              m_LastElapsedTimeSeconds);
+
+    if (FrameDesc.Enabled)
+    {
+        const bool SROk = m_PostProcessPipeline.RunSuperResolution(m_pImmediateContext,
+                                                                   m_RenderTargets,
+                                                                   FrameDesc,
+                                                                   m_CameraNearPlane,
+                                                                   m_CameraFarPlane,
+                                                                   m_CameraVerticalFov);
+        if (!SROk)
+        {
+            RecordRealtimePathTraceStatus("Realtime super-resolution pass failed");
+            return false;
+        }
+    }
+
+    RTXPTBloomParameters BloomParams;
+    BloomParams.Enabled   = m_ReferenceUI.EnableBloom;
+    BloomParams.Radius    = std::clamp(m_ReferenceUI.BloomRadius, 0.0f, 64.0f);
+    BloomParams.Intensity = std::clamp(m_ReferenceUI.BloomIntensity, 0.0f, 0.1f);
+
+    if (!m_PostProcessPipeline.RunPreToneMapping(m_pImmediateContext, m_RenderTargets, BloomParams))
+    {
+        RecordRealtimePathTraceStatus("Realtime pre-tone post-process failed");
+        return false;
+    }
+
+    if (!m_PostProcessPipeline.RunToneMapping(m_pImmediateContext,
+                                             m_RenderTargets,
+                                             m_ReferenceUI.ToneMapping,
+                                             m_ReferenceUI.EnableToneMapping))
+    {
+        RecordRealtimePathTraceStatus("Realtime tone mapping failed");
+        return false;
+    }
+
+    ITextureView* pPresentationSRV = m_RenderTargets.GetPresentationSRV();
+    if (!m_BlitPass.Render(m_pImmediateContext, m_pSwapChain, pPresentationSRV))
+    {
+        RecordRealtimePathTraceStatus("Realtime presentation blit failed");
+        return false;
+    }
+
+    return true;
+}
+
+bool RTXPTSample::RunRealtimePostProcess()
+{
+    // G8 replaces this branch with prepare -> NRD -> final merge when standalone NRD is available.
+    const bool UseStandaloneDenoiser = false;
+
+    if (UseStandaloneDenoiser)
+    {
+        RecordRealtimePathTraceStatus("Standalone NRD final merge is deferred to G8");
+        return false;
+    }
+
+    if (!RunRealtimeNoDenoiserFinalMerge())
+        return false;
+
+    return PresentRealtimeFinalOutput();
+}
+
 bool RTXPTSample::RunRealtimePathTraceOnly()
 {
     if (!m_RenderTargets.HasRealtimeRenderTargets())
@@ -1359,9 +1449,12 @@ bool RTXPTSample::RunRealtimePathTraceOnly()
     if (PresentRealtimeGuideDebug())
         return true;
 
-    // FILL_STABLE_PLANES writes stable-plane radiance storage, not final OutputColor.
-    // G7/G9 will replace this fallback with NoDenoiserFinalMerge or NRD final merge.
-    ClearFallback(float4{0.08f, 0.08f, 0.10f, 1.0f});
+    if (!RunRealtimePostProcess())
+    {
+        ClearFallback(float4{0.08f, 0.08f, 0.10f, 1.0f});
+        return false;
+    }
+
     return true;
 }
 
@@ -2243,7 +2336,7 @@ void RTXPTSample::UpdateUI()
         if (m_RealtimeUI.RealtimeMode)
         {
             ImGui::Text("Realtime PathTrace: %s", m_LastRealtimePathTraceExecuted ? "BUILD/FILL dispatched" : "not dispatched");
-            ImGui::Text("Realtime final merge: pending G7/G9");
+            ImGui::Text("Realtime final merge: %s", m_LastRealtimeFinalMergeReady ? "ready" : "not dispatched");
             if (!m_RealtimePathTraceStatus.empty())
                 ImGui::TextWrapped("Realtime PathTrace status: %s", m_RealtimePathTraceStatus.c_str());
         }

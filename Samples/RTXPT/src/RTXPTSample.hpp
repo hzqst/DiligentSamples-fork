@@ -130,6 +130,9 @@ private:
     void BeginRealtimeFrameResetScope();
     void InvalidatePreviousFrameConstants();
     bool RunReferencePathTraceAndPostProcess();
+    bool RunRealtimePostProcess();
+    bool RunRealtimeNoDenoiserFinalMerge();
+    bool PresentRealtimeFinalOutput();
     bool RunRealtimePathTraceOnly();
     bool PathTrace();
     bool BakeDenoisingGuides();

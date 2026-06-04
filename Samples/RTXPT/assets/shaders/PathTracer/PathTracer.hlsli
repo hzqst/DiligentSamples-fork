@@ -102,7 +102,6 @@ namespace PathTracer
 #endif
     }
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
     float3 MakeVisibilityOrigin(float3 hitPos, float3 faceNormal, float3 shadingNormal, float3 dir)
     {
         const float side = dot(shadingNormal, dir) >= 0.0 ? 1.0 : -1.0;
@@ -229,6 +228,7 @@ namespace PathTracer
         return result;
     }
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
     float ComputeBSDFEnvMISWeight(bool didEnvNEE, float prevBsdfPdf, float3 rayDir)
     {
         if (!didEnvNEE || prevBsdfPdf <= 0.0)
@@ -314,6 +314,64 @@ namespace PathTracer
     inline bool ShouldCollectGISecondaryRadiance(const PathState path)
     {
         return false;
+    }
+
+    inline NEEResult HandleNEE(const PathState preScatterPath,
+                               const SurfaceData surfaceData,
+                               inout SampleGenerator sgDirect,
+                               inout SampleGenerator sgEnv,
+                               const WorkingContext workingContext)
+    {
+        NEEResult result = NEEResult::empty();
+
+        const uint maxBounces    = max(workingContext.PtConsts.bounceCount, 1u);
+        const uint maxNEEBounces = min(workingContext.PtConsts.maxNEEBounceCount, maxBounces);
+        const bool enableNEE     = workingContext.PtConsts.NEEEnabled != 0u;
+        const bool useNEE        = enableNEE && preScatterPath.getVertexIndex() <= maxNEEBounces;
+        const uint fullSamples   = min(32u, workingContext.PtConsts.NEEFullSamples);
+        if (!useNEE || fullSamples == 0u)
+            return result;
+
+        result.BSDFMISInfo.LightSamplingEnabled = true;
+        result.BSDFMISInfo.LightSamplingIsSSC   = false;
+        result.BSDFMISInfo.CandidateSamples     = min(NEEBSDFMISInfo::SampleCountLimit(), max(1u, workingContext.PtConsts.NEECandidateSamples));
+        result.BSDFMISInfo.FullSamples          = min(NEEBSDFMISInfo::SampleCountLimit(), fullSamples);
+
+        const float3 wo = surfaceData.shadingData.V;
+        bool sampledEmissive = false;
+        float3 directRadiance = SampleDirectLightNEE(surfaceData.bsdf.standardData,
+                                                     surfaceData.shadingData.posW,
+                                                     surfaceData.shadingData.faceNCorrected,
+                                                     surfaceData.shadingData.vertexN,
+                                                     surfaceData.shadingData.shadowNoLFadeout,
+                                                     wo,
+                                                     preScatterPath.GetPixelPos(),
+                                                     sgDirect,
+                                                     preScatterPath.GetFireflyFilterK(),
+                                                     sampledEmissive);
+        directRadiance *= preScatterPath.GetThp();
+
+        const bool enableEnvNEE = (workingContext.PtConsts.environmentNEEEnabled & 1u) != 0u;
+        if (enableEnvNEE)
+        {
+            float3 envRadiance = SampleEnvironmentNEE(surfaceData.bsdf.standardData,
+                                                      surfaceData.shadingData.posW,
+                                                      surfaceData.shadingData.faceNCorrected,
+                                                      surfaceData.shadingData.vertexN,
+                                                      surfaceData.shadingData.shadowNoLFadeout,
+                                                      wo,
+                                                      sgEnv,
+                                                      preScatterPath.GetFireflyFilterK());
+            directRadiance += preScatterPath.GetThp() * envRadiance;
+        }
+
+        if (any(directRadiance > 0.0))
+        {
+            const float specAvg = preScatterPath.hasFlag(PathFlags::stablePlaneBaseScatterDiff) ? 0.0 : Average(directRadiance);
+            result.AccumulateRadiance(directRadiance, specAvg);
+        }
+
+        return result;
     }
 
     inline void AccumulatePathRadiance(const WorkingContext workingContext,

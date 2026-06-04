@@ -504,10 +504,10 @@ Parity notes:
 - Stable-plane material and BSDF handling is a Diligent-native shim/translation
   toward RTXPT-fork naming and data flow. It should not be read as full NRD,
   RTXDI final-shading, or final merge parity.
-- Task 8 ports realtime PathTrace orchestration through `BuildStablePlanes` and
-  `FillStablePlanes` dispatch. The final merge remains pending for G7/G9, so
-  the dark realtime fallback is deliberate until the later merge/denoise path
-  lands.
+- G4/G5 ports realtime PathTrace orchestration through `BuildStablePlanes` and
+  `FillStablePlanes` dispatch. G7 adds the post-process prepare/final-merge
+  mapping documented below; full NRD denoise orchestration remains in later
+  phases.
 
 ### Phase 6 Resource Contract
 
@@ -543,7 +543,20 @@ Parity notes:
 | `ProcessingPasses/DenoisingGuidesBaker.hlsl` | `assets/shaders/PathTracer/DenoisingGuidesBaker.hlsl` | Shader algorithms use Diligent resource names and existing `StablePlanesContext`. |
 | `Sample.cpp::PathTrace` guide bake call point | `src/RTXPTSample.cpp::PathTrace` | Runs after FILL stable-plane loop and before later final merge/NRD work. |
 
-G6 intentionally does not port `ShaderDebug`, `StablePlanesDebugViz`, NRD prepare/final merge, or no-denoiser final merge. Those remain owned by later realtime denoise phases.
+G6 intentionally does not port `ShaderDebug`, `StablePlanesDebugViz`, NRD prepare/final merge, or no-denoiser final merge. G7 adds stable-plane debug plus prepare/final-merge mapping below while full NRD integration remains owned by later realtime denoise phases.
+
+## Realtime G7 PostProcess Denoiser Prepare and Final Merge
+
+| RTXPT-fork source | Diligent port | Notes |
+|---|---|---|
+| `ProcessingPasses/PostProcess.h::ComputePassType` | `src/RTXPTPostProcessPass.hpp::RTXPTPostProcessPassId` | Diligent enum mirrors stable-plane debug, RELAX/REBLUR prepare, RELAX/REBLUR final merge, and no-denoiser final merge. |
+| `ProcessingPasses/PostProcess.cpp::PostProcess` | `src/RTXPTPostProcessPass.cpp::Initialize` | Creates one Diligent compute PSO/SRB per G7 mode using `RTXPT_POST_PROCESS_MODE`. |
+| `ProcessingPasses/PostProcess.cpp::Apply` | `src/RTXPTPostProcessPass.cpp::DispatchPass` | Binds `SampleConstants`, `SampleMiniConstants`, stable-plane resources, denoiser input/output textures, validation SRV, and merge work UAV. |
+| `ProcessingPasses/PostProcess.hlsl::DENOISER_PREPARE_INPUTS` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` prepare modes | Writes NRD input resources and initializes merge work output from `StableRadiance` on the first processed plane. |
+| `ProcessingPasses/PostProcess.hlsl::DENOISER_FINAL_MERGE` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` final merge modes | Reads per-plane NRD outputs, remodulates with stable-plane BSDF estimates, and adds radiance into the merge work target. |
+| `ProcessingPasses/PostProcess.hlsl::NO_DENOISER_FINAL_MERGE` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` no-denoiser mode | Combines stable radiance plus noisy stable-plane radiance into the same downstream merge target. |
+| `ProcessingPasses/PostProcess.hlsl::STABLE_PLANES_DEBUG_VIZ` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` stable-plane debug mode | Provides lightweight stable-plane debug output without porting RTXPT-fork `ShaderDebug`. |
+| `NRD/DenoiserNRD.hlsli` | `assets/shaders/PostProcessing/RTXPTDenoiserNRD.hlsli` | Wrapper compiles before G8 and can forward to NRD headers after the NRD dependency gate exists. |
 
 ## Skinned glTF Current Geometry
 

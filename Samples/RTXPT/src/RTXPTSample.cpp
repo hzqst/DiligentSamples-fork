@@ -77,6 +77,19 @@ const char* GetStandaloneNrdDisabledReason()
     return RTXPTGetNrdUnavailableReason();
 }
 
+const char* GetStandaloneNrdControlsDisabledReason(const RTXPTRealtimeSettings& RealtimeUI)
+{
+    if (!RealtimeUI.RealtimeMode)
+        return "Not available in reference mode.";
+    if (RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR)
+        return "Standalone NRD is disabled for DLSS-RR; TODO(RTXPT-Realtime-DLSS-RR).";
+    if (!IsStandaloneNrdAvailable())
+        return GetStandaloneNrdDisabledReason();
+    if (!RealtimeUI.ActualUseStandaloneDenoiser())
+        return "Enable standalone denoiser (NRD) to edit these controls.";
+    return "";
+}
+
 const char* GetRealtimeAAModeName(RTXPTRealtimeAAMode Mode)
 {
     switch (Mode)
@@ -2224,7 +2237,7 @@ void RTXPTSample::UpdateUI()
 
         ImGui::EndDisabled();
         if (DisableNrdControls && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", GetStandaloneNrdDisabledReason());
+            ImGui::SetTooltip("%s", GetStandaloneNrdControlsDisabledReason(m_RealtimeUI));
 
         ImGui::Unindent(Indent);
     }

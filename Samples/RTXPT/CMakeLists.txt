@@ -18,6 +18,7 @@ set(SOURCE
     src/RTXPTRenderTargets.cpp
     src/RTXPTPostProcessPipeline.cpp
     src/RTXPTRayTracingPass.cpp
+    src/RTXPTDenoisingGuidesBaker.cpp
     src/RTXPTEmissiveTrianglePass.cpp
     src/RTXPTComputePass.cpp
     src/RTXPTAccumulationPass.cpp
@@ -46,6 +47,7 @@ set(INCLUDE
     src/RTXPTRenderTargets.hpp
     src/RTXPTPostProcessPipeline.hpp
     src/RTXPTRayTracingPass.hpp
+    src/RTXPTDenoisingGuidesBaker.hpp
     src/RTXPTEmissiveTrianglePass.hpp
     src/RTXPTComputePass.hpp
     src/RTXPTAccumulationPass.hpp
@@ -68,6 +70,7 @@ set(SHADERS
     assets/shaders/PathTracer/PathTracerTypes.hlsli
     assets/shaders/PathTracer/StablePlanes.hlsli
     assets/shaders/PathTracer/PathTracerStablePlanes.hlsli
+    assets/shaders/PathTracer/DenoisingGuidesBaker.hlsl
     assets/shaders/PathTracer/PathTracerNestedDielectrics.hlsli
     assets/shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli
     assets/shaders/PathTracer/Rendering/Materials/LobeType.hlsli

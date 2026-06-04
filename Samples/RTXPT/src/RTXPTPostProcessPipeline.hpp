@@ -32,6 +32,7 @@
 #include "RenderDevice.h"
 #include "RTXPTAccumulationPass.hpp"
 #include "RTXPTBloomPass.hpp"
+#include "RTXPTPostProcessPass.hpp"
 #include "RTXPTRenderTargets.hpp"
 #include "RTXPTSuperResolutionPass.hpp"
 #include "RTXPTToneMappingPass.hpp"
@@ -47,10 +48,12 @@ struct RTXPTPostProcessPipelineStats
     bool AccumulationStageReady    = false;
     bool SuperResolutionStageReady = false;
     bool LastSuperResolutionActive = false;
-    bool HdrStageReady             = false;
-    bool BloomStageReady           = false;
-    bool ToneMappingStageReady     = false;
-    bool LdrStageReady             = false;
+    bool HdrStageReady               = false;
+    bool RealtimeMergeStageReady     = false;
+    bool LastRealtimeFinalMergeReady = false;
+    bool BloomStageReady             = false;
+    bool ToneMappingStageReady       = false;
+    bool LdrStageReady               = false;
 };
 
 class RTXPTPostProcessPipeline
@@ -61,6 +64,7 @@ public:
     bool Initialize(IRenderDevice*  pDevice,
                     IEngineFactory* pEngineFactory,
                     ISwapChain*     pSwapChain,
+                    IBuffer*        pFrameConstants,
                     bool            ComputeSupported);
 
     bool ValidateRenderTargets(const RTXPTRenderTargets& RenderTargets);
@@ -69,6 +73,21 @@ public:
                          const RTXPTRenderTargets& RenderTargets,
                          Uint32                    SampleIndex,
                          bool                      ResetAccumulation);
+
+    bool RunDenoiserPrepare(IDeviceContext*           pContext,
+                            const RTXPTRenderTargets& RenderTargets,
+                            RTXPTNrdMethod            Method,
+                            Uint32                    PlaneIndex,
+                            bool                      InitOutput);
+
+    bool RunDenoiserFinalMerge(IDeviceContext*           pContext,
+                               const RTXPTRenderTargets& RenderTargets,
+                               RTXPTNrdMethod            Method,
+                               Uint32                    PlaneIndex,
+                               bool                      HasValidation);
+
+    bool RunNoDenoiserFinalMerge(IDeviceContext*           pContext,
+                                 const RTXPTRenderTargets& RenderTargets);
 
     RTXPTSuperResolutionFrameDesc ResolveSuperResolutionFrameDesc(const RTXPTSuperResolutionSettings& Settings,
                                                                   Uint32                              DisplayWidth,
@@ -103,6 +122,7 @@ private:
     RTXPTPostProcessPipelineStats m_Stats;
     RefCntAutoPtr<IRenderDevice>  m_Device;
     RTXPTAccumulationPass         m_AccumulationPass;
+    RTXPTPostProcessPass          m_PostProcessPass;
     RTXPTSuperResolutionPass      m_SuperResolutionPass;
     RTXPTBloomPass                m_BloomPass;
     RTXPTToneMappingPass          m_ToneMappingPass;

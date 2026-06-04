@@ -33,9 +33,23 @@
 namespace Diligent
 {
 
+namespace
+{
+
+RTXPTDenoiserPostProcessAttribs MakeRealtimePostProcessAttribs(const RTXPTRenderTargets& RenderTargets)
+{
+    RTXPTDenoiserPostProcessAttribs Attribs;
+    Attribs.pRenderTargets  = &RenderTargets;
+    Attribs.pMergeOutputUAV = RenderTargets.GetAccumulationOutputUAV();
+    return Attribs;
+}
+
+} // namespace
+
 void RTXPTPostProcessPipeline::Reset()
 {
     m_AccumulationPass.Reset();
+    m_PostProcessPass.Reset();
     m_SuperResolutionPass.Reset();
     m_BloomPass.Reset();
     m_ToneMappingPass.Reset();
@@ -46,13 +60,14 @@ void RTXPTPostProcessPipeline::Reset()
 bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
                                           IEngineFactory* pEngineFactory,
                                           ISwapChain*     pSwapChain,
+                                          IBuffer*        pFrameConstants,
                                           bool            ComputeSupported)
 {
     Reset();
 
-    if (pDevice == nullptr || pEngineFactory == nullptr || pSwapChain == nullptr)
+    if (pDevice == nullptr || pEngineFactory == nullptr || pSwapChain == nullptr || pFrameConstants == nullptr)
     {
-        DEV_ERROR("RTXPT post-process pipeline requires a device, engine factory, and swap chain");
+        DEV_ERROR("RTXPT post-process pipeline requires a device, engine factory, swap chain, and frame constants buffer");
         return false;
     }
 
@@ -75,6 +90,14 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     if (!m_Stats.AccumulationStageReady)
     {
         DEV_ERROR("RTXPT accumulation pass failed to initialize");
+        return false;
+    }
+
+    m_Stats.RealtimeMergeStageReady =
+        m_PostProcessPass.Initialize(pDevice, pEngineFactory, pFrameConstants, ComputeSupported);
+    if (!m_Stats.RealtimeMergeStageReady)
+    {
+        DEV_ERROR("RTXPT realtime post-process pass failed to initialize");
         return false;
     }
 
@@ -108,17 +131,22 @@ bool RTXPTPostProcessPipeline::ValidateRenderTargets(const RTXPTRenderTargets& R
          RenderTargets.GetTemporalFeedback1UAV() != nullptr &&
          RenderTargets.GetTemporalFeedback2UAV() != nullptr &&
          RenderTargets.GetCombinedHistoryClampRelaxUAV() != nullptr);
+    const bool RealtimeResourcesValid =
+        !RenderTargets.AreRealtimeRenderTargetsRequested() ||
+        (RenderTargets.HasRealtimeRenderTargets() &&
+         RenderTargets.GetCombinedHistoryClampRelaxUAV() != nullptr &&
+         RenderTargets.GetAccumulationOutputUAV() != nullptr);
 
     m_Stats.ResourcesValid =
         RenderTargets.GetOutputColorSRV() != nullptr &&
         RenderTargets.GetOutputColorUAV() != nullptr &&
         AccumulationResourcesValid &&
-        RenderTargets.GetAccumulationOutputUAV() != nullptr &&
         RenderTargets.GetDepthUAV() != nullptr &&
         RenderTargets.GetDepthSRV() != nullptr &&
         RenderTargets.GetScreenMotionVectorsUAV() != nullptr &&
         RenderTargets.GetScreenMotionVectorsSRV() != nullptr &&
         SuperResolutionResourcesValid &&
+        RealtimeResourcesValid &&
         RenderTargets.GetProcessedOutputColorSRV() != nullptr &&
         RenderTargets.GetProcessedOutputColorUAV() != nullptr &&
         RenderTargets.GetProcessedOutputColorRTV() != nullptr &&
@@ -171,6 +199,52 @@ bool RTXPTPostProcessPipeline::RunAccumulation(IDeviceContext*           pContex
 
     const bool Executed            = m_AccumulationPass.Render(pContext, Dispatch);
     m_Stats.AccumulationStageReady = m_AccumulationPass.IsReady();
+    return Executed;
+}
+
+bool RTXPTPostProcessPipeline::RunDenoiserPrepare(IDeviceContext*           pContext,
+                                                  const RTXPTRenderTargets& RenderTargets,
+                                                  RTXPTNrdMethod            Method,
+                                                  Uint32                    PlaneIndex,
+                                                  bool                      InitOutput)
+{
+    RTXPTDenoiserPostProcessAttribs Attribs = MakeRealtimePostProcessAttribs(RenderTargets);
+    Attribs.Method                          = Method;
+    Attribs.PlaneIndex                      = PlaneIndex;
+    Attribs.InitOutput                      = InitOutput;
+    Attribs.MiniConstants.params.x          = PlaneIndex;
+    Attribs.MiniConstants.params.y          = InitOutput ? 1u : 0u;
+    return m_PostProcessPass.RunDenoiserPrepare(pContext, Attribs);
+}
+
+bool RTXPTPostProcessPipeline::RunDenoiserFinalMerge(IDeviceContext*           pContext,
+                                                     const RTXPTRenderTargets& RenderTargets,
+                                                     RTXPTNrdMethod            Method,
+                                                     Uint32                    PlaneIndex,
+                                                     bool                      HasValidation)
+{
+    RTXPTDenoiserPostProcessAttribs Attribs = MakeRealtimePostProcessAttribs(RenderTargets);
+    Attribs.Method                          = Method;
+    Attribs.PlaneIndex                      = PlaneIndex;
+    Attribs.HasValidation                   = HasValidation;
+    Attribs.MiniConstants.params.x          = PlaneIndex;
+    Attribs.MiniConstants.params.y          = HasValidation ? 1u : 0u;
+
+    const bool Executed                 = m_PostProcessPass.RunDenoiserFinalMerge(pContext, Attribs);
+    m_Stats.LastRealtimeFinalMergeReady = Executed;
+    if (!Executed)
+        DEV_ERROR("RTXPT denoiser final merge failed");
+    return Executed;
+}
+
+bool RTXPTPostProcessPipeline::RunNoDenoiserFinalMerge(IDeviceContext*           pContext,
+                                                       const RTXPTRenderTargets& RenderTargets)
+{
+    RTXPTDenoiserPostProcessAttribs Attribs = MakeRealtimePostProcessAttribs(RenderTargets);
+    const bool Executed = m_PostProcessPass.RunNoDenoiserFinalMerge(pContext, Attribs);
+    m_Stats.LastRealtimeFinalMergeReady = Executed;
+    if (!Executed)
+        DEV_ERROR("RTXPT no-denoiser final merge failed");
     return Executed;
 }
 

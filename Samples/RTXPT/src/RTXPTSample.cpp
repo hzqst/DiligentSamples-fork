@@ -457,7 +457,6 @@ void RTXPTSample::ResetSceneDependentResources()
     m_AccelerationStructures.Reset();
     m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
-    m_VBufferExportPass.Reset();
     m_EmissiveTrianglePass.Reset();
     m_PostProcessPipeline.Reset();
 
@@ -555,7 +554,6 @@ bool RTXPTSample::RebuildSceneDependentResources()
     else
     {
         m_RayTracingPass.Reset();
-        m_VBufferExportPass.Reset();
         m_EmissiveTrianglePass.Reset();
     }
     return ResourcesReady;
@@ -1034,10 +1032,6 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_FeatureCaps.StandaloneRayTracingShaders);
     }
 
-    m_VBufferExportPass.Initialize(m_pDevice,
-                                   m_pEngineFactory,
-                                   m_FrameConstantsCB,
-                                   m_RayTracingPass.GetMiniConstantsBuffer());
 }
 
 bool RTXPTSample::BuildEmissiveTriangles()
@@ -1130,16 +1124,6 @@ bool RTXPTSample::DispatchPathTracePrePass(const RTXPTRayTracingDispatch& BaseDi
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetScreenMotionVectorsUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetThroughputUAV());
 
-    const bool VBufferOk =
-        m_VBufferExportPass.Dispatch(m_pImmediateContext,
-                                     m_RenderTargets.GetRenderWidth(),
-                                     m_RenderTargets.GetRenderHeight());
-    if (!VBufferOk)
-    {
-        RecordRealtimePathTraceStatus("VBufferExport dispatch failed");
-        return false;
-    }
-
     return true;
 }
 
@@ -1153,7 +1137,7 @@ bool RTXPTSample::PathTrace()
     const RTXPTRayTracingDispatch BaseDispatch = MakePathTraceDispatch(m_RenderTargets, MiniConstants);
     const bool UseStablePlanes = m_RealtimeUI.RealtimeMode;
 
-    // PathTracePrePass dispatches BuildStablePlanes, then VBufferExport.
+    // PathTracePrePass dispatches BuildStablePlanes and synchronizes exported realtime state.
     if (UseStablePlanes && !DispatchPathTracePrePass(BaseDispatch))
         return false;
 
@@ -1439,7 +1423,6 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
                 if (!LightsResourcesReady)
                     m_LightsBakerSettingsDirty = true;
                 m_RayTracingPass.Reset();
-                m_VBufferExportPass.Reset();
                 m_EmissiveTrianglePass.Reset();
             }
         }

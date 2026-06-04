@@ -49,7 +49,6 @@
 #include "SampleBase.hpp"
 #include "RTXPTScene.hpp"
 #include "RTXPTSkinnedGeometry.hpp"
-#include "RTXPTVBufferExportPass.hpp"
 
 namespace Diligent
 {
@@ -151,7 +150,6 @@ private:
     RTXPTSkinnedSceneGeometry      m_SkinnedGeometry;
     RTXPTRenderTargets             m_RenderTargets;
     RTXPTRayTracingPass            m_RayTracingPass;
-    RTXPTVBufferExportPass         m_VBufferExportPass;
     bool                           m_LastRealtimePathTraceExecuted = false;
     bool                           m_LastRealtimeFinalMergeReady    = false;
     std::string                    m_RealtimePathTraceStatus;

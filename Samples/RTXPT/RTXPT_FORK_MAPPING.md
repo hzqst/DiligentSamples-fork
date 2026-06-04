@@ -488,7 +488,6 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 |---|---|---|
 | `AdvancedSample.cpp::CreateRTPipelines` REF/BUILD/FILL variants | `src/RTXPTRayTracingPass.{hpp,cpp}` `RTXPTPathTraceVariant` | Diligent RT PSO/SRB/SBT variants with `PATH_TRACER_MODE` macros. |
 | `Sample.cpp::PathTrace` BUILD pre-pass | `src/RTXPTSample.cpp::DispatchPathTracePrePass` | Realtime-only dispatch to `BuildStablePlanes`, then UAV barriers. |
-| `Sample.cpp::PathTrace` `VBufferExport` marker | `src/RTXPTVBufferExportPass.{hpp,cpp}`, `assets/shaders/PathTracer/ExportVisibilityBuffer.csh` | Debug/timing anchor only; primary export stays in BUILD pass as in current RTXPT-fork. |
 | `Sample.cpp::PathTrace` `LightsBaker.UpdateEnd(... Depth, MotionVectors)` | `src/RTXPTLightsBaker::UpdateEnd(... pDepthSRV, pMotionVectorsSRV)` | Call-order and data contract preserved; current Diligent feedback implementation accepts but does not yet consume the views. |
 | `Sample.cpp::PathTrace` FILL/REFERENCE sub-sample loop | `src/RTXPTSample.cpp::DispatchPathTraceLoop` | Uses `SampleMiniConstants.params.x` for sub-sample index. |
 | `Shaders/PathTracer/PathPayload.hlsli` | `assets/shaders/PathTracer/PathPayload.hlsli` | Packed path-state payload for realtime variants. |

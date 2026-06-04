@@ -8,14 +8,13 @@
 #endif
 
 #if RTXPT_HAS_NRD_HEADERS
-#define NRD_HEADER_ONLY
-#include <NRDEncoding.hlsli>
-#if NRD_NORMAL_ENCODING != 2
+#if !defined(NRD_NORMAL_ENCODING) || NRD_NORMAL_ENCODING != 2
 #error NRD_NORMAL_ENCODING must be 2
 #endif
-#if NRD_ROUGHNESS_ENCODING != 1
+#if !defined(NRD_ROUGHNESS_ENCODING) || NRD_ROUGHNESS_ENCODING != 1
 #error NRD_ROUGHNESS_ENCODING must be 1
 #endif
+#define NRD_HEADER_ONLY
 #include <NRD.hlsli>
 #endif
 

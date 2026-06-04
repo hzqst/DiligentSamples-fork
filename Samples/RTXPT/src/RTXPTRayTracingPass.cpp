@@ -461,12 +461,15 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             return Ok;
         };
 
-        const bool RealtimeVariant = Variant != RTXPTPathTraceVariant::Reference;
+        const bool ReferenceVariant = Variant == RTXPTPathTraceVariant::Reference;
         const bool FrameConstantsBound =
             ScreenPatternDiagnostic || SetStaticForStages(ConstStages, "g_Const", pFrameConstants, "frame constants");
+        // BUILD uses the current sub-sample to spawn primary camera rays. FILL starts from the
+        // stable-plane state, so DXC may strip g_MiniConst until real scatter sampling is wired.
+        const bool MiniConstantsRequired = Variant == RTXPTPathTraceVariant::BuildStablePlanes;
         const bool MiniConstantsBound =
             ScreenPatternDiagnostic ||
-            SetStaticForStages(ConstStages | HitStages, "g_MiniConst", m_MiniConstantsCB, "mini constants", RealtimeVariant);
+            SetStaticForStages(ConstStages | HitStages, "g_MiniConst", m_MiniConstantsCB, "mini constants", MiniConstantsRequired);
         const bool TLASBound =
             ScreenPatternDiagnostic || SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS, "TLAS");
 
@@ -477,14 +480,18 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         {
             const bool MaterialBridgeBound = SetStaticForStages(MaterialStages, "t_PTMaterialData", pMaterialsView, "material buffer");
             const bool SubInstanceBound    = SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
-            const bool LightBridgeBound    = SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer");
+            // Stable-plane BUILD/FILL variants currently do not run direct-light NEE, so DXC strips
+            // the light/feedback/emissive resources from those variants. Keep them mandatory for the
+            // reference path and bind them opportunistically when a realtime variant actually reflects them.
+            const bool LightBridgeBound =
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer", ReferenceVariant);
             const bool LightsBakerBridgeBound =
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightingControl", pLightingControlView, "LightsBaker control buffer") &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters") &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies") &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer") &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight") &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates");
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", ReferenceVariant) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", ReferenceVariant) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", ReferenceVariant) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", ReferenceVariant) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", ReferenceVariant) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", ReferenceVariant);
             bool       EnvironmentMapFound               = false;
             bool       EnvironmentImportanceMapFound     = false;
             bool       EnvironmentRadianceMapFound       = false;
@@ -501,7 +508,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                 EnvironmentSamplerFound || EnvironmentImportanceSamplerFound;
             EnvironmentBridgeReflectedAny = EnvironmentBridgeReflectedAny || EnvironmentBridgeReflected;
             const bool EmissiveLightBridgeBound =
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer");
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", ReferenceVariant);
             const bool VertexBufferBound = SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
             const bool SkinnedVertexBufferBound =
                 SetStaticForStages(HitStages, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
@@ -621,18 +628,28 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
     }
     if (pContext == nullptr)
         return false;
+    const bool ReferenceVariant         = Variant == RTXPTPathTraceVariant::Reference;
+    const bool BuildStablePlanesVariant = Variant == RTXPTPathTraceVariant::BuildStablePlanes;
+    const bool RealtimeVariant          = !ReferenceVariant;
+    const bool FinalOutputRequired      = ReferenceVariant;
+    const bool SurfaceExportsRequired   = ReferenceVariant || BuildStablePlanesVariant;
+    const bool ThroughputRequired       = BuildStablePlanesVariant;
+    const bool SpecularHitTRequired     = RealtimeVariant;
+    const bool StableRadianceRequired   = BuildStablePlanesVariant;
+    const bool StablePlanesRequired     = RealtimeVariant;
+
     if (DispatchInfo.Width == 0 || DispatchInfo.Height == 0)
         return false;
-    if (DispatchInfo.pOutputColorUAV == nullptr ||
-        DispatchInfo.pDepthUAV == nullptr ||
-        DispatchInfo.pMotionVectorsUAV == nullptr)
-        return false;
-    if (Variant != RTXPTPathTraceVariant::Reference &&
-        (DispatchInfo.pThroughputUAV == nullptr ||
-         DispatchInfo.pSpecularHitTUAV == nullptr ||
-         DispatchInfo.pStableRadianceUAV == nullptr ||
-         DispatchInfo.pStablePlanesHeaderUAV == nullptr ||
-         DispatchInfo.pStablePlanesBufferUAV == nullptr))
+    if ((FinalOutputRequired && DispatchInfo.pOutputColorUAV == nullptr) ||
+        (SurfaceExportsRequired &&
+         (DispatchInfo.pDepthUAV == nullptr ||
+          DispatchInfo.pMotionVectorsUAV == nullptr)) ||
+        (ThroughputRequired && DispatchInfo.pThroughputUAV == nullptr) ||
+        (SpecularHitTRequired && DispatchInfo.pSpecularHitTUAV == nullptr) ||
+        (StableRadianceRequired && DispatchInfo.pStableRadianceUAV == nullptr) ||
+        (StablePlanesRequired &&
+         (DispatchInfo.pStablePlanesHeaderUAV == nullptr ||
+          DispatchInfo.pStablePlanesBufferUAV == nullptr)))
         return false;
 
     auto SetDynamicForStages = [&](const char* Name, IDeviceObject* pObject, bool Required, bool* pFoundAny = nullptr) {
@@ -671,14 +688,14 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
     };
 
     // Compatibility bridge: Reference currently reflects legacy output names, while realtime variants use source-compatible names.
-    auto SetDynamicForNamePair = [&](const char* SourceName, const char* LegacyName, IDeviceObject* pObject) {
+    auto SetDynamicForNamePair = [&](const char* SourceName, const char* LegacyName, IDeviceObject* pObject, bool Required) {
         bool SourceFound = false;
         bool LegacyFound = false;
         const bool SourceOk = SetDynamicForStages(SourceName, pObject, false, &SourceFound);
         const bool LegacyOk = SetDynamicForStages(LegacyName, pObject, false, &LegacyFound);
         if (!SourceOk || !LegacyOk)
             return false;
-        if (!SourceFound && !LegacyFound)
+        if (!SourceFound && !LegacyFound && Required)
         {
             UNEXPECTED("RTXPT dynamic shader variable is missing: ",
                        SourceName, " or ", LegacyName,
@@ -688,15 +705,14 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
         return true;
     };
 
-    const bool RealtimeVariant = Variant != RTXPTPathTraceVariant::Reference;
-    if (!SetDynamicForNamePair("u_OutputColor", "u_Output", DispatchInfo.pOutputColorUAV) ||
-        !SetDynamicForStages("u_Depth", DispatchInfo.pDepthUAV, true) ||
-        !SetDynamicForNamePair("u_MotionVectors", "u_ScreenMotionVectors", DispatchInfo.pMotionVectorsUAV) ||
-        !SetDynamicForStages("u_Throughput", DispatchInfo.pThroughputUAV, RealtimeVariant) ||
-        !SetDynamicForStages("u_SpecularHitT", DispatchInfo.pSpecularHitTUAV, RealtimeVariant) ||
-        !SetDynamicForStages("u_StableRadiance", DispatchInfo.pStableRadianceUAV, RealtimeVariant) ||
-        !SetDynamicForStages("u_StablePlanesHeader", DispatchInfo.pStablePlanesHeaderUAV, RealtimeVariant) ||
-        !SetDynamicForStages("u_StablePlanesBuffer", DispatchInfo.pStablePlanesBufferUAV, RealtimeVariant))
+    if (!SetDynamicForNamePair("u_OutputColor", "u_Output", DispatchInfo.pOutputColorUAV, FinalOutputRequired) ||
+        !SetDynamicForStages("u_Depth", DispatchInfo.pDepthUAV, SurfaceExportsRequired) ||
+        !SetDynamicForNamePair("u_MotionVectors", "u_ScreenMotionVectors", DispatchInfo.pMotionVectorsUAV, SurfaceExportsRequired) ||
+        !SetDynamicForStages("u_Throughput", DispatchInfo.pThroughputUAV, ThroughputRequired) ||
+        !SetDynamicForStages("u_SpecularHitT", DispatchInfo.pSpecularHitTUAV, SpecularHitTRequired) ||
+        !SetDynamicForStages("u_StableRadiance", DispatchInfo.pStableRadianceUAV, StableRadianceRequired) ||
+        !SetDynamicForStages("u_StablePlanesHeader", DispatchInfo.pStablePlanesHeaderUAV, StablePlanesRequired) ||
+        !SetDynamicForStages("u_StablePlanesBuffer", DispatchInfo.pStablePlanesBufferUAV, StablePlanesRequired))
     {
         return false;
     }

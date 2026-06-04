@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <array>
+
 #include "Buffer.h"
 #include "DeviceContext.h"
 #include "EngineFactory.h"
@@ -36,6 +38,10 @@
 #include "ShaderResourceBinding.h"
 #include "Texture.h"
 #include "TextureView.h"
+
+#include "RTXPTFrameConstants.hpp"
+#include "RTXPTRealtimeSettings.hpp"
+#include "RTXPTRenderTargets.hpp"
 
 namespace Diligent
 {
@@ -59,42 +65,82 @@ struct RTXPTPostProcessRenderAttribs
     RTXPTPostProcessParameters Params;
 };
 
+enum class RTXPTPostProcessPassId : Uint32
+{
+    HdrTest = 0,
+    EdgeDetection,
+    StablePlanesDebugViz,
+    RelaxDenoiserPrepareInputs,
+    ReblurDenoiserPrepareInputs,
+    RelaxDenoiserFinalMerge,
+    ReblurDenoiserFinalMerge,
+    NoDenoiserFinalMerge,
+    Count
+};
+
+struct RTXPTDenoiserPostProcessAttribs
+{
+    ITextureView*             pMergeOutputUAV = nullptr;
+    const RTXPTRenderTargets* pRenderTargets  = nullptr;
+    SampleMiniConstants       MiniConstants   = {};
+    RTXPTNrdMethod            Method          = RTXPTNrdMethod::REBLUR;
+    Uint32                    PlaneIndex      = 0;
+    bool                      InitOutput      = false;
+    bool                      HasValidation   = false;
+};
+
 struct RTXPTPostProcessPassStats
 {
-    bool   Ready                      = false;
-    bool   LastHdrTestExecuted        = false;
-    bool   LastEdgeDetectionExecuted  = false;
-    Uint32 HdrTestDispatchCount       = 0;
-    Uint32 EdgeDetectionDispatchCount = 0;
+    bool   Ready                           = false;
+    bool   LastHdrTestExecuted             = false;
+    bool   LastEdgeDetectionExecuted       = false;
+    bool   LastStablePlanesDebugExecuted   = false;
+    bool   LastDenoiserPrepareExecuted     = false;
+    bool   LastDenoiserFinalMergeExecuted  = false;
+    bool   LastNoDenoiserMergeExecuted     = false;
+    Uint32 HdrTestDispatchCount            = 0;
+    Uint32 EdgeDetectionDispatchCount      = 0;
+    Uint32 StablePlanesDebugDispatchCount  = 0;
+    Uint32 DenoiserPrepareDispatchCount    = 0;
+    Uint32 DenoiserFinalMergeDispatchCount = 0;
+    Uint32 NoDenoiserMergeDispatchCount    = 0;
 };
 
 class RTXPTPostProcessPass
 {
 public:
     void Reset();
-    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, bool ComputeSupported);
+    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IBuffer* pFrameConstants, bool ComputeSupported);
     bool RunHdrTest(IDeviceContext* pContext, const RTXPTPostProcessRenderAttribs& Attribs);
     bool RunEdgeDetection(IDeviceContext* pContext, const RTXPTPostProcessRenderAttribs& Attribs);
+    bool RunStablePlanesDebugViz(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
+    bool RunDenoiserPrepare(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
+    bool RunDenoiserFinalMerge(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
+    bool RunNoDenoiserFinalMerge(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
 
     bool                             IsReady() const { return m_Stats.Ready; }
     const RTXPTPostProcessPassStats& GetStats() const { return m_Stats; }
 
 private:
-    bool CreatePostProcessPSO(IRenderDevice*                         pDevice,
-                              const ShaderCreateInfo&                BaseShaderCI,
-                              const char*                            ShaderName,
-                              const char*                            PSOName,
-                              const char*                            ModeMacro,
-                              RefCntAutoPtr<IPipelineState>&         PSO,
-                              RefCntAutoPtr<IShaderResourceBinding>& SRB);
+    struct PassState
+    {
+        RefCntAutoPtr<IPipelineState>         PSO;
+        RefCntAutoPtr<IShaderResourceBinding> SRB;
+    };
+
+    bool CreatePostProcessPSO(IRenderDevice*          pDevice,
+                              const ShaderCreateInfo& BaseShaderCI,
+                              RTXPTPostProcessPassId  Pass);
+    bool DispatchPass(IDeviceContext*                        pContext,
+                      RTXPTPostProcessPassId                 Pass,
+                      const RTXPTDenoiserPostProcessAttribs& Attribs);
     bool UpdateConstants(IDeviceContext* pContext, Uint32 Width, Uint32 Height, float EdgeThreshold);
 
-    RefCntAutoPtr<IPipelineState>         m_HdrTestPSO;
-    RefCntAutoPtr<IPipelineState>         m_EdgeDetectionPSO;
-    RefCntAutoPtr<IShaderResourceBinding> m_HdrTestSRB;
-    RefCntAutoPtr<IShaderResourceBinding> m_EdgeDetectionSRB;
-    RefCntAutoPtr<IBuffer>                m_Constants;
-    RTXPTPostProcessPassStats             m_Stats;
+    std::array<PassState, static_cast<std::size_t>(RTXPTPostProcessPassId::Count)> m_Passes;
+    RefCntAutoPtr<IBuffer>                                                         m_FrameConstants;
+    RefCntAutoPtr<IBuffer>                                                         m_MiniConstants;
+    RefCntAutoPtr<IBuffer>                                                         m_Constants;
+    RTXPTPostProcessPassStats                                                      m_Stats;
 };
 
 } // namespace Diligent

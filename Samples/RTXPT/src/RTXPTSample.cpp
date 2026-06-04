@@ -111,6 +111,23 @@ void DrawDisabledTooltip(const char* Text)
         ImGui::SetTooltip("%s", Text);
 }
 
+void InsertDenoiserPrepareOutputBarriers(IDeviceContext* pContext, const RTXPTRenderTargets& RenderTargets)
+{
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetAccumulationOutputUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetCombinedHistoryClampRelaxUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetDenoiserViewspaceZUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetDenoiserMotionVectorsUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetDenoiserNormalRoughnessUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetDenoiserDiffRadianceHitDistUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetDenoiserSpecRadianceHitDistUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetDenoiserDisocclusionThresholdMixUAV());
+}
+
+void InsertDenoiserFinalMergeOutputBarrier(IDeviceContext* pContext, const RTXPTRenderTargets& RenderTargets)
+{
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetAccumulationOutputUAV());
+}
+
 Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 EmissiveTriangleCount)
 {
     const Uint32 ClampedCount = std::min(EmissiveTriangleCount, kMaxPackedEmissiveTriangleCount);
@@ -1437,6 +1454,8 @@ bool RTXPTSample::RunRealtimePostProcess()
                 return false;
             }
 
+            InsertDenoiserPrepareOutputBarriers(m_pImmediateContext, m_RenderTargets);
+
             // G8 inserts RTXPTNrdIntegration::Dispatch() here for this stable plane.
 
             const bool HasValidation = m_RenderTargets.GetDenoiserOutValidationSRV() != nullptr;
@@ -1449,6 +1468,8 @@ bool RTXPTSample::RunRealtimePostProcess()
                 RecordRealtimePathTraceStatus("Denoiser final merge dispatch failed");
                 return false;
             }
+
+            InsertDenoiserFinalMergeOutputBarrier(m_pImmediateContext, m_RenderTargets);
         }
 
         return PresentRealtimeFinalOutput();

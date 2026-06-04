@@ -1675,6 +1675,7 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     const RTXPTRenderTargetCreateInfo CreateInfo =
         MakeRenderTargetCreateInfo(m_CurrentTargetDimensions, m_RealtimeUI, m_FeatureCaps.RayTracing);
     const bool Ok             = m_RenderTargets.Resize(m_pDevice, CreateInfo);
+    ResetNrdIntegrations();
     const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
     m_AccumulationActive =
         Ok && ResourcesValid &&

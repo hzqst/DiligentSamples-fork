@@ -32,6 +32,7 @@
 #    include "GraphicsTypesX.hpp"
 #    include "MapHelper.hpp"
 #    include "Shader.h"
+#    include "Graphics/GraphicsEngineD3DBase/interface/ShaderD3D.h"
 #    include "ShaderMacroHelper.hpp"
 
 #    include <algorithm>
@@ -153,6 +154,16 @@ void AddNrdRequiredMacros(ShaderMacroHelper& Macros, const nrd::InstanceDesc& In
     Macros.Add("NRD_RESOURCES_BASE_REGISTER_INDEX", static_cast<int>(InstanceDesc.resourcesBaseRegisterIndex));
     Macros.Add("NRD_CONSTANT_BUFFER_AND_SAMPLERS_SPACE_INDEX", static_cast<int>(InstanceDesc.constantBufferAndSamplersSpaceIndex));
     Macros.Add("NRD_RESOURCES_SPACE_INDEX", static_cast<int>(InstanceDesc.resourcesSpaceIndex));
+}
+
+void SortReflectedResources(std::vector<std::pair<Uint32, std::string>>& Resources)
+{
+    std::sort(Resources.begin(), Resources.end(),
+              [](const auto& Lhs, const auto& Rhs) {
+                  if (Lhs.first != Rhs.first)
+                      return Lhs.first < Rhs.first;
+                  return Lhs.second < Rhs.second;
+              });
 }
 
 TEXTURE_FORMAT ToDiligentFormat(nrd::Format Format)
@@ -438,6 +449,7 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
             return Fail("Failed to create NRD compute shader");
 
         PipelineState& Pipeline = m_Pipelines[PipelineIndex];
+        RefCntAutoPtr<IShaderD3D> pShaderD3D{pCS, IID_ShaderD3D};
         for (Uint32 ResourceIndex = 0; ResourceIndex < pCS->GetResourceCount(); ++ResourceIndex)
         {
             ShaderResourceDesc ResourceDesc;
@@ -445,24 +457,35 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
             if (ResourceDesc.Name == nullptr || ResourceDesc.Name[0] == '\0')
                 return Fail("NRD shader reflected an unnamed resource");
 
+            Uint32 SortKey = ResourceIndex;
+            if (pShaderD3D)
+            {
+                HLSLShaderResourceDesc HLSLDesc;
+                pShaderD3D->GetHLSLResource(ResourceIndex, HLSLDesc);
+                SortKey = HLSLDesc.ShaderRegister;
+            }
+
             switch (ResourceDesc.Type)
             {
                 case SHADER_RESOURCE_TYPE_CONSTANT_BUFFER:
                     Pipeline.ConstantBufferNames.emplace_back(ResourceDesc.Name);
                     break;
                 case SHADER_RESOURCE_TYPE_SAMPLER:
-                    Pipeline.SamplerNames.emplace_back(ResourceDesc.Name);
+                    Pipeline.SamplerNames.emplace_back(SortKey, ResourceDesc.Name);
                     break;
                 case SHADER_RESOURCE_TYPE_TEXTURE_SRV:
-                    Pipeline.TextureSRVNames.emplace_back(ResourceDesc.Name);
+                    Pipeline.TextureSRVNames.emplace_back(SortKey, ResourceDesc.Name);
                     break;
                 case SHADER_RESOURCE_TYPE_TEXTURE_UAV:
-                    Pipeline.TextureUAVNames.emplace_back(ResourceDesc.Name);
+                    Pipeline.TextureUAVNames.emplace_back(SortKey, ResourceDesc.Name);
                     break;
                 default:
                     break;
             }
         }
+        SortReflectedResources(Pipeline.SamplerNames);
+        SortReflectedResources(Pipeline.TextureSRVNames);
+        SortReflectedResources(Pipeline.TextureUAVNames);
 
         ComputePipelineStateCreateInfo PSOCreateInfo;
         PSOCreateInfo.PSODesc.Name         = ShaderInfo.FilePath.c_str();
@@ -668,8 +691,9 @@ bool RTXPTNrdIntegration::BindDispatchResources(IDeviceContext*,
             return Fail("Unsupported NRD dispatch descriptor type");
         }
 
-        std::vector<std::string>& Names     = Range.descriptorType == nrd::DescriptorType::TEXTURE ? Pipeline.TextureSRVNames : Pipeline.TextureUAVNames;
-        Uint32&                   NameIndex = Range.descriptorType == nrd::DescriptorType::TEXTURE ? SRVNameIndex : UAVNameIndex;
+        std::vector<std::pair<Uint32, std::string>>& Names =
+            Range.descriptorType == nrd::DescriptorType::TEXTURE ? Pipeline.TextureSRVNames : Pipeline.TextureUAVNames;
+        Uint32& NameIndex = Range.descriptorType == nrd::DescriptorType::TEXTURE ? SRVNameIndex : UAVNameIndex;
 
         for (Uint32 DescriptorIndex = 0; DescriptorIndex < Range.descriptorsNum; ++DescriptorIndex)
         {
@@ -681,7 +705,7 @@ bool RTXPTNrdIntegration::BindDispatchResources(IDeviceContext*,
             const nrd::ResourceDesc& Resource = DispatchDesc.resources[ResourceIndex];
             ITextureView*            pView    = nullptr;
             if (!ResolveResourceView(Resource, Range.descriptorType, pView) ||
-                !BindTexture(Names[NameIndex], pView))
+                !BindTexture(Names[NameIndex].second, pView))
             {
                 return false;
             }
@@ -873,10 +897,11 @@ bool RTXPTNrdIntegration::Dispatch(IDeviceContext* pContext, const RTXPTNrdFrame
 
         for (Uint32 SamplerIndex = 0; SamplerIndex < Pipeline.SamplerNames.size(); ++SamplerIndex)
         {
-            ISampler* pSampler = GetSamplerForReflectedName(Pipeline.SamplerNames[SamplerIndex], SamplerIndex);
+            const std::string& SamplerName = Pipeline.SamplerNames[SamplerIndex].second;
+            ISampler*          pSampler    = GetSamplerForReflectedName(SamplerName, SamplerIndex);
             if (pSampler == nullptr)
                 return Fail("NRD reflected sampler count exceeds created sampler count");
-            if (!BindDeviceObject(Pipeline, Pipeline.SamplerNames[SamplerIndex], pSampler, "sampler"))
+            if (!BindDeviceObject(Pipeline, SamplerName, pSampler, "sampler"))
                 return false;
         }
 

@@ -41,6 +41,7 @@
 #include "RTXPTRenderTargets.hpp"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Diligent
@@ -103,9 +104,9 @@ private:
         RefCntAutoPtr<IPipelineState>         PSO;
         RefCntAutoPtr<IShaderResourceBinding> SRB;
         std::vector<std::string>              ConstantBufferNames;
-        std::vector<std::string>              SamplerNames;
-        std::vector<std::string>              TextureSRVNames;
-        std::vector<std::string>              TextureUAVNames;
+        std::vector<std::pair<Uint32, std::string>> SamplerNames;
+        std::vector<std::pair<Uint32, std::string>> TextureSRVNames;
+        std::vector<std::pair<Uint32, std::string>> TextureUAVNames;
     };
 
     bool CreateInstance(RTXPTNrdMethod Method);

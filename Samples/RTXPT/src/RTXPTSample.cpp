@@ -2504,7 +2504,8 @@ void RTXPTSample::UpdateUI()
         }
         ImGui::Text("Realtime samples per pixel: %u", m_RealtimeUI.ActualSamplesPerPixel());
         ImGui::Text("Realtime AA/SR: %s", GetRealtimeAAModeName(m_RealtimeUI.RealtimeAA));
-        ImGui::Text("Standalone NRD requested: %s", m_RealtimeUI.ActualUseStandaloneDenoiser() ? "yes" : "no");
+        ImGui::Text("Standalone NRD requested: %s", m_RealtimeUI.StandaloneDenoiser ? "yes" : "no");
+        ImGui::Text("Standalone NRD active: %s", ShouldRunStandaloneNrd(m_RealtimeUI) ? "yes" : "no");
         ImGui::Text("NRD availability: %s", IsStandaloneNrdAvailable() ? "available" : GetStandaloneNrdDisabledReason());
         ImGui::Text("NRD method: %s", GetNrdMethodName(m_RealtimeUI.NRDMethod));
         ImGui::Text("Stable planes active: %d / %u", m_RealtimeUI.StablePlanesActiveCount, kRTXPTStablePlaneCount);

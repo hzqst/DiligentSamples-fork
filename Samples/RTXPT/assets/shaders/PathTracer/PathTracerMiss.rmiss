@@ -68,16 +68,4 @@ void main(inout ActiveRayPayload Payload)
 #endif
 }
 
-[shader("miss")]
-void visibilityMain(inout ActiveRayPayload Payload)
-{
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-    Payload.hitFlag = 0u;
-#else
-    PathState path = PathPayload::unpack(Payload);
-    path.terminate();
-    Payload = PathPayload::pack(path);
-#endif
-}
-
 #endif

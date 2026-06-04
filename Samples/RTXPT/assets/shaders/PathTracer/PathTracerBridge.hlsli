@@ -10,6 +10,7 @@
 #endif
 
 // Global shader resources used by the scene bridge. C++ binds these as static SRVs/UAVs.
+RaytracingAccelerationStructure     t_SceneBVH;
 ConstantBuffer<SampleConstants>        g_Const;
 ConstantBuffer<SampleMiniConstants>    g_MiniConst;
 StructuredBuffer<SubInstanceData>      t_SubInstanceData;

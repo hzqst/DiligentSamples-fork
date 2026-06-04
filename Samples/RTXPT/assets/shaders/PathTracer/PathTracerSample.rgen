@@ -163,8 +163,6 @@ void main()
 
 #else
 
-RaytracingAccelerationStructure                t_SceneBVH;
-
 #ifndef RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF
 #    define RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF 1
 #endif

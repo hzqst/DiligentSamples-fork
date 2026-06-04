@@ -96,6 +96,7 @@ set(SHADERS
     assets/shaders/PathTracer/Rendering/Materials/BxDF.hlsli
     assets/shaders/PathTracer/PathTracerSample.rgen
     assets/shaders/PathTracer/PathTracerMiss.rmiss
+    assets/shaders/PathTracer/PathTracerVisibilityMiss.rmiss
     assets/shaders/PathTracer/PathTracerClosestHit.rchit
     assets/shaders/PathTracer/EmissiveTriangleBuild.hlsl
     assets/shaders/PathTracer/PathTracerAnyHit.rahit

@@ -24,6 +24,10 @@ namespace PathTracer
 {
     static const float kSpecularRoughnessThreshold = 0.25;
 
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE
+    inline PathState EmptyPathInitialize(uint2 pixelPos, float pixelConeSpreadAngle);
+#endif
+
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
     RTXPTMaterialHitPayload MakeEmptyPayload(uint hitFlag)
     {
@@ -60,7 +64,9 @@ namespace PathTracer
         PathState visibilityPath = EmptyPathInitialize(pixelPos, 0.0);
         visibilityPath.setActive();
         visibilityPath.clearHit();
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_BUILD_STABLE_PLANES
         visibilityPath.SetL(float4(0.0, 0.0, 0.0, 0.0));
+#endif
         visibilityPath.SetThp(float3(0.0, 0.0, 0.0));
         return PathPayload::pack(visibilityPath);
     }
@@ -115,6 +121,7 @@ namespace PathTracer
             1.0;
     }
 
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_BUILD_STABLE_PLANES
     float ComputeLightVsBSDFMISForLightSample(DirectLightSample sample, uint fullSamples)
     {
         if (!sample.sampleableByBSDF || sample.bsdfPdf <= 0.0 || sample.proposalPdf <= 0.0)
@@ -227,6 +234,7 @@ namespace PathTracer
 
         return result;
     }
+#endif
 
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
     float ComputeBSDFEnvMISWeight(bool didEnvNEE, float prevBsdfPdf, float3 rayDir)
@@ -311,6 +319,12 @@ namespace PathTracer
         path.SetThp(path.GetThp() * weight);
     }
 
+    inline bool ShouldCollectGISecondaryRadiance(const PathState path)
+    {
+        return false;
+    }
+
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES || defined(__INTELLISENSE__)
     inline BSDFSample MakeBSDFSample(uint lobe, float pdf, float lobeP, float3 weight, float3 wi)
     {
         BSDFSample bs;
@@ -321,11 +335,6 @@ namespace PathTracer
         bs.weight         = weight;
         bs.wi             = wi;
         return bs;
-    }
-
-    inline bool ShouldCollectGISecondaryRadiance(const PathState path)
-    {
-        return false;
     }
 
     inline NEEResult HandleNEE(const PathState preScatterPath,
@@ -435,9 +444,37 @@ namespace PathTracer
             path.incrementCounter(PackedCounters::DiffuseBounces);
 
         bs = MakeBSDFSample(lobe, pdf, lobeP, weight, wi);
+
+        const bool onDominantDenoisingLayer = path.hasFlag(PathFlags::stablePlaneOnDominantBranch);
+        const bool isDiffuseForSpecHitT =
+            ((lobe & (kBSDFLobeDiffuseReflection | kBSDFLobeDiffuseTransmission)) != 0u) ||
+            surfaceData.bsdf.standardData.roughness > 0.35;
+        if (onDominantDenoisingLayer && !isDiffuseForSpecHitT)
+        {
+            if (!surfaceData.shadingData.mtl.isPSDBlockMotionVectorsAtSurface())
+            {
+                path.setFlag(PathFlags::exportSpecHitTQueued, true);
+                Bridge::ExportSpecHitTStart(path);
+            }
+        }
+        else if (path.hasFlag(PathFlags::exportSpecHitTQueued))
+        {
+            const bool hasNonDeltaLobes =
+                (surfaceData.bsdf.standardData.diffuseTransmission > 0.0) ||
+                any(surfaceData.bsdf.standardData.diffuse > 0.0) ||
+                surfaceData.bsdf.standardData.roughness > 0.0;
+            const int maxHitTSpecBounces = 4;
+            if (hasNonDeltaLobes || path.getCounter(PackedCounters::BouncesFromStablePlane) > maxHitTSpecBounces)
+            {
+                Bridge::ExportSpecHitTStop(path);
+                path.setFlag(PathFlags::exportSpecHitTQueued, false);
+            }
+        }
+
         StablePlanesOnScatter(path, bs, workingContext);
         return true;
     }
+#endif
 
     inline void AccumulatePathRadiance(const WorkingContext workingContext,
                                        inout PathState path,
@@ -494,6 +531,14 @@ namespace PathTracer
                            const WorkingContext workingContext)
     {
         UpdatePathTravelled(path, rayOrigin, rayDir, rayTCurrent, workingContext);
+
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
+        if (path.hasFlag(PathFlags::exportSpecHitTQueued))
+        {
+            Bridge::ExportSpecHitTStop(path);
+            path.setFlag(PathFlags::exportSpecHitTQueued, false);
+        }
+#endif
 
         EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
         float3 environmentEmission = envSampler.Eval(rayDir, 0.0);
@@ -553,6 +598,13 @@ namespace PathTracer
 
         if (pathStopping || !path.isActive())
         {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
+            if (path.hasFlag(PathFlags::exportSpecHitTQueued))
+            {
+                Bridge::ExportSpecHitTStop(path);
+                path.setFlag(PathFlags::exportSpecHitTQueued, false);
+            }
+#endif
             path.terminate();
             return;
         }
@@ -597,6 +649,13 @@ namespace PathTracer
 
         if (!scatterValid)
         {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
+            if (path.hasFlag(PathFlags::exportSpecHitTQueued))
+            {
+                Bridge::ExportSpecHitTStop(path);
+                path.setFlag(PathFlags::exportSpecHitTQueued, false);
+            }
+#endif
             path.terminate();
             return;
         }

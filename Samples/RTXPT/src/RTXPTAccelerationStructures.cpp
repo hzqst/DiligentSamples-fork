@@ -44,6 +44,7 @@ namespace
 
 constexpr Uint32 MaxTLASCustomID         = (1u << 24) - 1u;
 constexpr Uint32 MaxSubInstanceDataCount = MaxTLASCustomID + 1u;
+constexpr Uint32 kRTXPTHitGroupStride    = 2; // Keep in sync with RTXPT_HIT_GROUP_STRIDE in PathTracer/Config.h.
 
 struct PositionLayout
 {
@@ -540,7 +541,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
     TLASAttribs.InstanceCount                = static_cast<Uint32>(m_TLASInstances.size());
     TLASAttribs.pInstanceBuffer              = m_InstanceBuffer;
     TLASAttribs.InstanceBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-    TLASAttribs.HitGroupStride               = 1;
+    TLASAttribs.HitGroupStride               = kRTXPTHitGroupStride;
     TLASAttribs.BindingMode                  = HIT_GROUP_BINDING_MODE_PER_GEOMETRY;
     TLASAttribs.pScratchBuffer               = m_TLASScratch;
     TLASAttribs.ScratchBufferTransitionMode  = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
@@ -672,7 +673,7 @@ bool RTXPTAccelerationStructures::UpdateTLAS(IDeviceContext* pContext, const RTX
     TLASAttribs.InstanceCount                = static_cast<Uint32>(m_TLASInstances.size());
     TLASAttribs.pInstanceBuffer              = m_InstanceBuffer;
     TLASAttribs.InstanceBufferTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-    TLASAttribs.HitGroupStride               = 1;
+    TLASAttribs.HitGroupStride               = kRTXPTHitGroupStride;
     TLASAttribs.BindingMode                  = HIT_GROUP_BINDING_MODE_PER_GEOMETRY;
     TLASAttribs.pScratchBuffer               = m_TLASScratch;
     TLASAttribs.ScratchBufferTransitionMode  = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;

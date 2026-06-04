@@ -196,10 +196,11 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     const SHADER_TYPE HitStages = UseAnyHit ?
         (SHADER_TYPE_RAY_CLOSEST_HIT | SHADER_TYPE_RAY_ANY_HIT) :
         SHADER_TYPE_RAY_CLOSEST_HIT;
-    const SHADER_TYPE MaterialStages = HitStages | SHADER_TYPE_RAY_GEN;
-    const SHADER_TYPE EnvStages      = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS;
-    const SHADER_TYPE ConstStages    = EnvStages | HitStages;
-    const SHADER_TYPE DynamicStages  = ScreenPatternDiagnostic ?
+    const SHADER_TYPE MaterialStages    = HitStages | SHADER_TYPE_RAY_GEN;
+    const SHADER_TYPE EnvStages         = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS | HitStages;
+    const SHADER_TYPE ConstStages       = EnvStages | HitStages;
+    const SHADER_TYPE DirectLightStages = ConstStages;
+    const SHADER_TYPE DynamicStages     = ScreenPatternDiagnostic ?
         SHADER_TYPE_RAY_GEN :
         (SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS | HitStages);
 
@@ -327,8 +328,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         {
             ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
             ShaderCI.Desc.Name       = "RTXPT path trace visibility miss";
-            ShaderCI.FilePath        = "PathTracer/PathTracerMiss.rmiss";
-            ShaderCI.EntryPoint      = "visibilityMain";
+            ShaderCI.FilePath        = "PathTracer/PathTracerVisibilityMiss.rmiss";
+            ShaderCI.EntryPoint      = "main";
             pDevice->CreateShader(ShaderCI, &pVisibilityMiss);
         }
 
@@ -373,7 +374,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             else
                 PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
         }
-        PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth = 1;
+        PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth =
+            Variant == RTXPTPathTraceVariant::FillStablePlanes ? 2 : 1;
         PSOCreateInfo.RayTracingPipeline.ShaderRecordSize  = 0;
         PSOCreateInfo.MaxAttributeSize                     = static_cast<Uint32>(sizeof(float) * 2);
         PSOCreateInfo.MaxPayloadSize                       = static_cast<Uint32>(sizeof(float) * 40);
@@ -397,7 +399,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             ResourceLayout
                 .AddVariable(ConstStages, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
                 .AddVariable(ConstStages, "g_MiniConst", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
+                .AddVariable(ConstStages, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
         }
 
         if (FullPathTracer)
@@ -408,19 +410,19 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                 .AddVariable(HitStages, "t_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
                 .AddVariable(HitStages, "t_SkinnedVertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
                 .AddVariable(HitStages, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "t_LightingControl", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "t_LightProxyCounters", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "t_LightSamplingProxies", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+                .AddVariable(DirectLightStages, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+                .AddVariable(DirectLightStages, "t_LightingControl", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+                .AddVariable(DirectLightStages, "t_LightProxyCounters", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+                .AddVariable(DirectLightStages, "t_LightSamplingProxies", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+                .AddVariable(DirectLightStages, "t_LocalSamplingBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+                .AddVariable(DirectLightStages, "u_FeedbackTotalWeight", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+                .AddVariable(DirectLightStages, "u_FeedbackCandidates", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
                 .AddVariable(EnvStages, "t_EnvironmentMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
                 .AddVariable(EnvStages, "t_EnvironmentImportanceMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
                 .AddVariable(EnvStages, "t_EnvironmentRadianceMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
                 .AddVariable(EnvStages, "s_EnvironmentMapSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
                 .AddVariable(EnvStages, "s_EnvironmentImportanceSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
+                .AddVariable(DirectLightStages, "t_EmissiveTriangles", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
         }
 
         if (!ScreenPatternDiagnostic && UseTextures)
@@ -486,7 +488,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             ScreenPatternDiagnostic ||
             SetStaticForStages(ConstStages | HitStages, "g_MiniConst", m_MiniConstantsCB, "mini constants", MiniConstantsRequired);
         const bool TLASBound =
-            ScreenPatternDiagnostic || SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_SceneBVH", m_TLAS, "TLAS");
+            ScreenPatternDiagnostic || SetStaticForStages(ConstStages, "t_SceneBVH", m_TLAS, "TLAS");
 
         if (!FrameConstantsBound || !MiniConstantsBound || !TLASBound)
             return false;
@@ -496,14 +498,14 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             const bool MaterialBridgeBound = SetStaticForStages(MaterialStages, "t_PTMaterialData", pMaterialsView, "material buffer");
             const bool SubInstanceBound    = SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
             const bool LightBridgeBound =
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer", DirectLightResourcesRequired);
+                SetStaticForStages(DirectLightStages, "t_Lights", pLightsView, "light buffer", DirectLightResourcesRequired);
             const bool LightsBakerBridgeBound =
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", DirectLightResourcesRequired) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", DirectLightResourcesRequired) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", DirectLightResourcesRequired) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", DirectLightResourcesRequired) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", DirectLightResourcesRequired) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", DirectLightResourcesRequired);
+                SetStaticForStages(DirectLightStages, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", DirectLightResourcesRequired) &&
+                SetStaticForStages(DirectLightStages, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", DirectLightResourcesRequired) &&
+                SetStaticForStages(DirectLightStages, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", DirectLightResourcesRequired) &&
+                SetStaticForStages(DirectLightStages, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", DirectLightResourcesRequired) &&
+                SetStaticForStages(DirectLightStages, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", DirectLightResourcesRequired) &&
+                SetStaticForStages(DirectLightStages, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", DirectLightResourcesRequired);
             bool       EnvironmentMapFound               = false;
             bool       EnvironmentImportanceMapFound     = false;
             bool       EnvironmentRadianceMapFound       = false;
@@ -520,7 +522,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                 EnvironmentSamplerFound || EnvironmentImportanceSamplerFound;
             EnvironmentBridgeReflectedAny = EnvironmentBridgeReflectedAny || EnvironmentBridgeReflected;
             const bool EmissiveLightBridgeBound =
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", DirectLightResourcesRequired);
+                SetStaticForStages(DirectLightStages, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", DirectLightResourcesRequired);
             const bool VertexBufferBound = SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
             const bool SkinnedVertexBufferBound =
                 SetStaticForStages(HitStages, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");

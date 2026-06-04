@@ -183,15 +183,22 @@ bool BindDispatchResources(IShaderResourceBinding*                pSRB,
         Pass == RTXPTPostProcessPassId::StablePlanesDebugViz ||
         Pass == RTXPTPostProcessPassId::NoDenoiserFinalMerge;
     const bool StableBufferRequired = StablePlanesRequired || FinalMergePass;
-    const bool ValidationRequired   = FinalMergePass && Attribs.HasValidation;
+
+    ITextureView* pDenoiserOutDiffRadianceHitDistSRV = RenderTargets.GetDenoiserOutDiffRadianceHitDistSRV(Attribs.PlaneIndex);
+    ITextureView* pDenoiserOutValidationSRV          = RenderTargets.GetDenoiserOutValidationSRV();
+    if (FinalMergePass && !Attribs.HasValidation && pDenoiserOutValidationSRV == nullptr)
+    {
+        // The shader reflects t_DenoiserOutValidation even when validation is disabled at runtime.
+        pDenoiserOutValidationSRV = pDenoiserOutDiffRadianceHitDistSRV;
+    }
 
     return SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_LdrColorScratch", nullptr, false, Pass, "LDR color scratch SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_Depth", RenderTargets.GetDepthSRV(), false, Pass, "depth SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_MotionVectors", RenderTargets.GetScreenMotionVectorsSRV(), false, Pass, "motion vectors SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_SpecularHitT", RenderTargets.GetSpecularHitTSRV(), PreparePass, Pass, "specular hit T SRV") &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutDiffRadianceHitDist", RenderTargets.GetDenoiserOutDiffRadianceHitDistSRV(Attribs.PlaneIndex), FinalMergePass, Pass, "denoiser output diffuse radiance hit distance SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutDiffRadianceHitDist", pDenoiserOutDiffRadianceHitDistSRV, FinalMergePass, Pass, "denoiser output diffuse radiance hit distance SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutSpecRadianceHitDist", RenderTargets.GetDenoiserOutSpecRadianceHitDistSRV(Attribs.PlaneIndex), FinalMergePass, Pass, "denoiser output specular radiance hit distance SRV") &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutValidation", RenderTargets.GetDenoiserOutValidationSRV(), ValidationRequired, Pass, "denoiser validation SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutValidation", pDenoiserOutValidationSRV, FinalMergePass, Pass, "denoiser validation SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserViewspaceZ", RenderTargets.GetDenoiserViewspaceZSRV(), FinalMergePass, Pass, "denoiser viewspace Z SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserDisocclusionThresholdMix", RenderTargets.GetDenoiserDisocclusionThresholdMixSRV(), false, Pass, "denoiser disocclusion threshold mix SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_OutputColor", Attribs.pMergeOutputUAV, true, Pass, "merge output UAV") &&

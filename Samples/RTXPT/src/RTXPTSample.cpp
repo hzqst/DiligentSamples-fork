@@ -60,14 +60,22 @@ constexpr int         kExposureModeMax                = static_cast<int>(RTXPTEx
 static_assert(kToneMapOperatorMin == 0 && kToneMapOperatorMax == 5, "Tone-map UI assumes contiguous operator values");
 static_assert(kExposureModeMin == 0 && kExposureModeMax == 1, "Tone-map UI assumes contiguous exposure mode values");
 
-constexpr bool        kRTXPTStandaloneNrdAvailable = false;
 constexpr bool        kRTXPTRealtimeTaaAvailable   = false;
 constexpr bool        kRTXPTRealtimeSrAvailable    = false;
 constexpr bool        kRTXPTDlssRrAvailable        = false;
 constexpr const char* kRTXPTRealtimeRoutePendingReason =
     "Standalone denoise/NRD remains deferred to G8; no-denoiser final merge and presentation are active.";
-constexpr const char* kRTXPTNrdDisabledReason      = "Standalone denoiser disabled: NRD integration starts in G8.";
 constexpr Uint32      kRTXPTRealtimeNoisePeriod    = 8192u;
+
+bool IsStandaloneNrdAvailable()
+{
+    return RTXPTIsNrdAvailable();
+}
+
+const char* GetStandaloneNrdDisabledReason()
+{
+    return RTXPTGetNrdUnavailableReason();
+}
 
 const char* GetRealtimeAAModeName(RTXPTRealtimeAAMode Mode)
 {
@@ -1121,6 +1129,7 @@ bool RTXPTSample::EnsureRenderTargets()
                                  RTXPT_REALTIME_RESET_NRD_HISTORY |
                                  RTXPT_REALTIME_RESET_TAA_SR_HISTORY,
                              "Render targets (re)created");
+        ResetNrdIntegrations();
         InvalidatePreviousFrameConstants();
     }
     return Ok && ResourcesValid;
@@ -1429,6 +1438,47 @@ bool RTXPTSample::PresentRealtimeFinalOutput()
     {
         RecordRealtimePathTraceStatus("Realtime presentation blit failed");
         return false;
+    }
+
+    return true;
+}
+
+void RTXPTSample::ResetNrdIntegrations()
+{
+    for (RTXPTNrdIntegration& Integration : m_NrdIntegrations)
+        Integration.Reset();
+}
+
+bool RTXPTSample::EnsureNrdIntegrations()
+{
+    if (!IsStandaloneNrdAvailable())
+    {
+        RecordRealtimePathTraceStatus(GetStandaloneNrdDisabledReason());
+        return false;
+    }
+
+    const Uint32 Width  = m_RenderTargets.GetRenderWidth();
+    const Uint32 Height = m_RenderTargets.GetRenderHeight();
+    for (RTXPTNrdIntegration& Integration : m_NrdIntegrations)
+    {
+        const bool NeedsRecreate =
+            !Integration.IsReady() ||
+            Integration.GetMethod() != m_RealtimeUI.NRDMethod ||
+            Integration.GetWidth() != Width ||
+            Integration.GetHeight() != Height;
+
+        if (NeedsRecreate &&
+            !Integration.Initialize(m_pDevice,
+                                    m_pEngineFactory,
+                                    m_RealtimeUI.NRDMethod,
+                                    Width,
+                                    Height,
+                                    m_FeatureCaps.ComputeShaders))
+        {
+            RecordRealtimePathTraceStatus(Integration.GetLastFailureReason());
+            ResetNrdIntegrations();
+            return false;
+        }
     }
 
     return true;
@@ -1846,7 +1896,7 @@ void RTXPTSample::UpdateUI()
 
                 const bool DenoiserDisabled =
                     m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR ||
-                    !kRTXPTStandaloneNrdAvailable;
+                    !IsStandaloneNrdAvailable();
                 ImGui::BeginDisabled(DenoiserDisabled);
                 if (ResetRealtimeOnChange(ImGui::Checkbox("Use standalone denoiser (NRD)", &m_RealtimeUI.StandaloneDenoiser),
                                           "Standalone denoiser toggled"))
@@ -1857,7 +1907,7 @@ void RTXPTSample::UpdateUI()
                 if (DenoiserDisabled)
                     DrawDisabledTooltip(m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR ?
                                             "Standalone NRD is disabled for DLSS-RR; TODO(RTXPT-Realtime-DLSS-RR)." :
-                                            kRTXPTNrdDisabledReason);
+                                            GetStandaloneNrdDisabledReason());
 
                 const char* GuideDebugItems[] = {
                     "Disabled",
@@ -2062,13 +2112,13 @@ void RTXPTSample::UpdateUI()
 
         if (!m_RealtimeUI.RealtimeMode)
             ImGui::TextWrapped("Not available in reference mode.");
-        if (m_RealtimeUI.RealtimeMode && !kRTXPTStandaloneNrdAvailable)
-            ImGui::TextWrapped("%s", kRTXPTNrdDisabledReason);
+        if (m_RealtimeUI.RealtimeMode && !IsStandaloneNrdAvailable())
+            ImGui::TextWrapped("%s", GetStandaloneNrdDisabledReason());
 
         const bool DisableNrdControls =
             !m_RealtimeUI.RealtimeMode ||
             !m_RealtimeUI.ActualUseStandaloneDenoiser() ||
-            !kRTXPTStandaloneNrdAvailable;
+            !IsStandaloneNrdAvailable();
 
         ImGui::BeginDisabled(DisableNrdControls);
 
@@ -2099,6 +2149,7 @@ void RTXPTSample::UpdateUI()
         {
             m_RealtimeUI.NRDMethod = static_cast<RTXPTNrdMethod>(std::clamp(NrdMethod, 0, 1));
             RequestRealtimeReset(RTXPT_REALTIME_RESET_NRD_HISTORY, "NRD mode changed");
+            ResetNrdIntegrations();
         }
 
         if (ImGui::CollapsingHeader("Advanced Settings"))
@@ -2173,7 +2224,7 @@ void RTXPTSample::UpdateUI()
 
         ImGui::EndDisabled();
         if (DisableNrdControls && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", kRTXPTNrdDisabledReason);
+            ImGui::SetTooltip("%s", GetStandaloneNrdDisabledReason());
 
         ImGui::Unindent(Indent);
     }
@@ -2394,7 +2445,7 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Realtime samples per pixel: %u", m_RealtimeUI.ActualSamplesPerPixel());
         ImGui::Text("Realtime AA/SR: %s", GetRealtimeAAModeName(m_RealtimeUI.RealtimeAA));
         ImGui::Text("Standalone NRD requested: %s", m_RealtimeUI.ActualUseStandaloneDenoiser() ? "yes" : "no");
-        ImGui::Text("NRD availability: %s", kRTXPTStandaloneNrdAvailable ? "available" : kRTXPTNrdDisabledReason);
+        ImGui::Text("NRD availability: %s", IsStandaloneNrdAvailable() ? "available" : GetStandaloneNrdDisabledReason());
         ImGui::Text("NRD method: %s", GetNrdMethodName(m_RealtimeUI.NRDMethod));
         ImGui::Text("Stable planes active: %d / %u", m_RealtimeUI.StablePlanesActiveCount, kRTXPTStablePlaneCount);
         ImGui::Text("Current realtime reset flags: 0x%08x", static_cast<Uint32>(m_CurrentFrameRealtimeReset));

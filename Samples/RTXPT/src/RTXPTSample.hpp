@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,7 @@
 #include "RTXPTMaterials.hpp"
 #include "RTXPTRayTracingPass.hpp"
 #include "RTXPTDenoisingGuidesBaker.hpp"
+#include "RTXPTNrdIntegration.hpp"
 #include "RTXPTRenderTargets.hpp"
 #include "RTXPTToneMappingPass.hpp"
 #include "RTXPTPostProcessPipeline.hpp"
@@ -130,6 +132,9 @@ private:
     void BeginRealtimeFrameResetScope();
     void InvalidatePreviousFrameConstants();
     bool RunReferencePathTraceAndPostProcess();
+    bool Denoise();
+    bool EnsureNrdIntegrations();
+    void ResetNrdIntegrations();
     bool RunRealtimePostProcess();
     bool RunRealtimeNoDenoiserFinalMerge();
     bool PresentRealtimeFinalOutput();
@@ -157,6 +162,7 @@ private:
     RTXPTRenderTargets             m_RenderTargets;
     RTXPTRayTracingPass            m_RayTracingPass;
     RTXPTDenoisingGuidesBaker      m_DenoisingGuidesBaker;
+    std::array<RTXPTNrdIntegration, kRTXPTStablePlaneCount> m_NrdIntegrations;
     bool                           m_LastRealtimePathTraceExecuted = false;
     bool                           m_LastRealtimeFinalMergeReady    = false;
     std::string                    m_RealtimePathTraceStatus;

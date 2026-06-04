@@ -90,6 +90,20 @@ const char* GetNrdMethodName(RTXPTNrdMethod Method)
     }
 }
 
+const char* GetDenoisingGuideDebugViewName(RTXPTDenoisingGuideDebugView View)
+{
+    switch (View)
+    {
+        case RTXPTDenoisingGuideDebugView::Disabled: return "Disabled";
+        case RTXPTDenoisingGuideDebugView::Depth: return "Depth";
+        case RTXPTDenoisingGuideDebugView::MotionVectors: return "Motion Vectors";
+        case RTXPTDenoisingGuideDebugView::SpecularHitT: return "Specular Hit T";
+        case RTXPTDenoisingGuideDebugView::AvgLayerRadiance: return "Average Layer Radiance";
+        case RTXPTDenoisingGuideDebugView::PrimaryLayer: return "Primary Layer";
+        default: return "Unknown";
+    }
+}
+
 void DrawDisabledTooltip(const char* Text)
 {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -1633,6 +1647,23 @@ void RTXPTSample::UpdateUI()
                     DrawDisabledTooltip(m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR ?
                                             "Standalone NRD is disabled for DLSS-RR; TODO(RTXPT-Realtime-DLSS-RR)." :
                                             kRTXPTNrdDisabledReason);
+
+                const char* GuideDebugItems[] = {
+                    "Disabled",
+                    "Depth",
+                    "Motion Vectors",
+                    "Specular Hit T",
+                    "Average Layer Radiance",
+                    "Primary Layer"};
+                int GuideDebugView = static_cast<int>(m_RealtimeUI.DenoisingGuideDebugView);
+                if (ImGui::Combo("Denoising guide debug", &GuideDebugView, GuideDebugItems, _countof(GuideDebugItems)))
+                {
+                    m_RealtimeUI.DenoisingGuideDebugView =
+                        static_cast<RTXPTDenoisingGuideDebugView>(std::clamp(GuideDebugView, 0, static_cast<int>(_countof(GuideDebugItems) - 1)));
+                    RequestRealtimeReset(RTXPT_REALTIME_RESET_TAA_SR_HISTORY, "Denoising guide debug view changed");
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Displays guide debug output from the G6 denoising-guides pass when realtime mode is active.");
             }
 
             if (ImGui::CollapsingHeader("Bloom"))

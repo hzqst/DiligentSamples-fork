@@ -52,6 +52,16 @@ enum class RTXPTNrdMethod : Uint32
     RELAX  = 1
 };
 
+enum class RTXPTDenoisingGuideDebugView : Uint32
+{
+    Disabled         = 0,
+    Depth            = 1,
+    MotionVectors    = 2,
+    SpecularHitT     = 3,
+    AvgLayerRadiance = 4,
+    PrimaryLayer     = 5
+};
+
 enum class RTXPTNrdHitDistanceReconstructionMode : Uint32
 {
     Off     = 0,
@@ -143,6 +153,8 @@ struct RTXPTRealtimeSettings
 
     float DenoiserRadianceClampK = 8.0f;
 
+    RTXPTDenoisingGuideDebugView DenoisingGuideDebugView = RTXPTDenoisingGuideDebugView::Disabled;
+
     RTXPTNrdMethod           NRDMethod                               = RTXPTNrdMethod::REBLUR;
     float                    NRDDisocclusionThreshold                = 0.03f;
     bool                     NRDUseAlternateDisocclusionThresholdMix = true;
@@ -175,6 +187,11 @@ inline void SanitizeRealtimeSettings(RTXPTRealtimeSettings& Settings)
                                      static_cast<Uint32>(RTXPTRealtimeAAMode::Disabled),
                                      static_cast<Uint32>(RTXPTRealtimeAAMode::DLSSRR));
     Settings.RealtimeAA = static_cast<RTXPTRealtimeAAMode>(AAMode);
+
+    const Uint32 GuideDebugView = std::clamp(static_cast<Uint32>(Settings.DenoisingGuideDebugView),
+                                             static_cast<Uint32>(RTXPTDenoisingGuideDebugView::Disabled),
+                                             static_cast<Uint32>(RTXPTDenoisingGuideDebugView::PrimaryLayer));
+    Settings.DenoisingGuideDebugView = static_cast<RTXPTDenoisingGuideDebugView>(GuideDebugView);
 
     Settings.RealtimeFireflyFilterThreshold = std::clamp(Settings.RealtimeFireflyFilterThreshold, 0.00001f, 1000.0f);
     Settings.StablePlanesActiveCount =

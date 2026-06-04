@@ -43,6 +43,7 @@
 #include "RTXPTLightsBaker.hpp"
 #include "RTXPTMaterials.hpp"
 #include "RTXPTRayTracingPass.hpp"
+#include "RTXPTDenoisingGuidesBaker.hpp"
 #include "RTXPTRenderTargets.hpp"
 #include "RTXPTToneMappingPass.hpp"
 #include "RTXPTPostProcessPipeline.hpp"
@@ -131,6 +132,8 @@ private:
     bool RunReferencePathTraceAndPostProcess();
     bool RunRealtimePathTraceOnly();
     bool PathTrace();
+    bool BakeDenoisingGuides();
+    bool PresentRealtimeGuideDebug();
     bool DispatchPathTracePrePass(const RTXPTRayTracingDispatch& BaseDispatch);
     bool DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTracingDispatch& BaseDispatch);
     void RecordRealtimePathTraceStatus(const char* Status);
@@ -150,6 +153,7 @@ private:
     RTXPTSkinnedSceneGeometry      m_SkinnedGeometry;
     RTXPTRenderTargets             m_RenderTargets;
     RTXPTRayTracingPass            m_RayTracingPass;
+    RTXPTDenoisingGuidesBaker      m_DenoisingGuidesBaker;
     bool                           m_LastRealtimePathTraceExecuted = false;
     bool                           m_LastRealtimeFinalMergeReady    = false;
     std::string                    m_RealtimePathTraceStatus;

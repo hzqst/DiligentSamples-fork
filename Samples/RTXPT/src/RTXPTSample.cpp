@@ -471,6 +471,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_AccelerationStructures.Reset();
     m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
+    m_DenoisingGuidesBaker.Reset();
     m_EmissiveTrianglePass.Reset();
     m_PostProcessPipeline.Reset();
 
@@ -960,6 +961,10 @@ void RTXPTSample::CreatePhase4Passes()
                                      m_pEngineFactory,
                                      m_pSwapChain,
                                      m_FeatureCaps.ComputeShaders);
+    m_DenoisingGuidesBaker.Initialize(m_pDevice,
+                                      m_pEngineFactory,
+                                      m_FrameConstantsCB,
+                                      m_FeatureCaps.ComputeShaders);
 
     // Material-texture sampling needs descriptor indexing. Gate it on bindless support; if the textured
     // pipeline fails to build, fall back to the Phase 5.2 factor-only path so the sample still renders.
@@ -1169,9 +1174,12 @@ bool RTXPTSample::PathTrace()
 
     if (UseStablePlanes)
     {
-        // RTXDI/ReSTIR final shading, denoising-guide bake, and final merge are future port hooks.
+        if (!BakeDenoisingGuides())
+            return false;
+
+        // RTXDI/ReSTIR final shading and final merge are future port hooks.
         m_LastRealtimePathTraceExecuted = true;
-        RecordRealtimePathTraceStatus("Realtime PathTrace dispatched; RTXDI/ReSTIR and DenoisingGuides hooks disabled");
+        RecordRealtimePathTraceStatus("Realtime PathTrace and denoising guides dispatched; RTXDI/ReSTIR and final merge disabled");
     }
 
     return true;
@@ -1211,6 +1219,62 @@ bool RTXPTSample::DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTrac
 
     if (UseStablePlanes)
         RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStablePlanesBuffer());
+
+    return true;
+}
+
+bool RTXPTSample::BakeDenoisingGuides()
+{
+    if (!m_RenderTargets.HasRealtimeRenderTargets())
+    {
+        RecordRealtimePathTraceStatus("Realtime render targets are not allocated for denoising guides");
+        return false;
+    }
+
+    if (!m_DenoisingGuidesBaker.IsReady())
+    {
+        RecordRealtimePathTraceStatus("DenoisingGuidesBaker is not ready");
+        return false;
+    }
+
+    const bool GuidesOk =
+        m_DenoisingGuidesBaker.Bake(m_pImmediateContext,
+                                    m_RenderTargets,
+                                    m_RealtimeUI.DenoisingGuideDebugView);
+    if (!GuidesOk)
+    {
+        RecordRealtimePathTraceStatus("DenoisingGuidesBaker dispatch failed");
+        return false;
+    }
+
+    return true;
+}
+
+bool RTXPTSample::PresentRealtimeGuideDebug()
+{
+    if (m_RealtimeUI.DenoisingGuideDebugView == RTXPTDenoisingGuideDebugView::Disabled ||
+        !m_DenoisingGuidesBaker.GetStats().LastDebugVizExecuted)
+    {
+        return false;
+    }
+
+    const bool ToneMappingExecuted =
+        m_PostProcessPipeline.RunToneMapping(m_pImmediateContext,
+                                             m_RenderTargets,
+                                             m_ReferenceUI.ToneMapping,
+                                             m_ReferenceUI.EnableToneMapping);
+    if (!ToneMappingExecuted)
+    {
+        ClearFallback(float4{0.9f, 0.2f, 0.6f, 1.0f});
+        return true;
+    }
+
+    ITextureView* pPresentationSRV = m_RenderTargets.GetPresentationSRV();
+    if (!m_BlitPass.Render(m_pImmediateContext, m_pSwapChain, pPresentationSRV))
+    {
+        ClearFallback(float4{0.0f, 1.0f, 1.0f, 1.0f});
+        return true;
+    }
 
     return true;
 }
@@ -1291,6 +1355,9 @@ bool RTXPTSample::RunRealtimePathTraceOnly()
         ClearFallback(float4{0.9f, 0.15f, 0.05f, 1.0f});
         return false;
     }
+
+    if (PresentRealtimeGuideDebug())
+        return true;
 
     // FILL_STABLE_PLANES writes stable-plane radiance storage, not final OutputColor.
     // G7/G9 will replace this fallback with NoDenoiserFinalMerge or NRD final merge.
@@ -2246,6 +2313,16 @@ void RTXPTSample::UpdateUI()
                             "created" :
                             "missing");
         }
+        const RTXPTDenoisingGuidesBakerStats& GuideStats = m_DenoisingGuidesBaker.GetStats();
+        ImGui::Text("DenoisingGuidesBaker: %s", GuideStats.Ready ? "ready" : "not ready");
+        ImGui::Text("DenoiseSpecHitT: %s (%u)",
+                    GuideStats.LastDenoiseSpecHitTExecuted ? "dispatched" : "not dispatched",
+                    GuideStats.DenoiseSpecHitTDispatchCount);
+        ImGui::Text("Avg layer radiance: %s (%u)",
+                    GuideStats.LastAvgLayerRadianceExecuted ? "dispatched" : "not dispatched",
+                    GuideStats.AvgLayerRadianceDispatchCount);
+        ImGui::Text("Guide debug view: %s",
+                    GetDenoisingGuideDebugViewName(m_RealtimeUI.DenoisingGuideDebugView));
         if (m_RenderTargets.GetLastFailureReason()[0] != '\0')
             ImGui::TextWrapped("Render target error: %s", m_RenderTargets.GetLastFailureReason());
         ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");

@@ -30,10 +30,15 @@ struct DeltaLobe
 
 struct BSDFSample
 {
-    uint lobe;
-    uint deltaLobeIndex;
+    uint   lobe;
+    uint   deltaLobeIndex;
+    float  pdf;
+    float  lobeP;
+    float3 weight;
+    float3 wi;
 
     uint getDeltaLobeIndex() { return deltaLobeIndex; }
+    bool isLobe(uint testLobe) { return (lobe & testLobe) != 0u; }
 };
 
 namespace PathTracer
@@ -63,6 +68,10 @@ namespace PathTracer
         uint   materialID;
         bool   frontFacing;
         StablePlaneMaterialState mtl;
+        float3 faceNCorrected;
+        float3 vertexN;
+        float  shadowNoLFadeout;
+        float3 emission;
 
         float3 computeNewRayOrigin(bool viewSide)
         {
@@ -78,10 +87,8 @@ namespace PathTracer
 
     struct ActiveBSDF
     {
-        // transitional Task 3 shim: Diligent reference materials do not yet expose
-        // source ActiveBSDF delta-lobe and denoiser-estimate APIs. These quiet
-        // fallbacks keep shader state portable until BUILD/FILL uses real material plumbing.
         StablePlaneBSDFData data;
+        StandardBSDFData    standardData;
 
         void evalDeltaLobes(StablePlaneShadingData shadingData,
                             out DeltaLobe deltaLobes[cMaxDeltaLobes],
@@ -96,8 +103,8 @@ namespace PathTracer
 
         void estimateSpecDiffBSDF(out float3 diffBSDFEstimate, out float3 specBSDFEstimate, float3 normal, float3 view)
         {
-            diffBSDFEstimate = 0.04.xxx;
-            specBSDFEstimate = 0.04.xxx;
+            diffBSDFEstimate = max(standardData.diffuse, 0.04.xxx);
+            specBSDFEstimate = max(standardData.specular, 0.04.xxx);
         }
     };
 

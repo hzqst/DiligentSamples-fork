@@ -86,6 +86,13 @@ namespace PathTracer
         float3 tangent      = MakeFallbackTangent(normalize(worldNormal));
         float  tangentSign  = 1.0;
         float  roughness    = 1.0;
+        float3 baseColor    = float3(1.0, 1.0, 1.0);
+        float  metallic     = 0.0;
+        float  transmissionFactor        = 0.0;
+        float  diffuseTransmissionFactor = 0.0;
+        bool   thinSurface               = true;
+        float  shadowNoLFadeout          = 0.0;
+        float3 vertexNormal              = worldNormal;
         uint   materialID   = 0u;
         bool   frontFacing  = true;
         float  ior          = 1.5;
@@ -137,11 +144,19 @@ namespace PathTracer
             tangentSign               = worldTangent.w;
 
             const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
-            roughness               = metalRough.y;
-            surfaceEmission         = Bridge::getEmission(material, texCoord);
-            ior                     = Bridge::loadIoR(materialID);
-            materialFlags           = material.flags;
-            nestedPriority          = min(material.nestedPriority, 14u);
+            metallic                  = metalRough.x;
+            roughness                  = metalRough.y;
+            const float4 baseColorWithAlpha = Bridge::getBaseColor(material, texCoord);
+            baseColor                  = baseColorWithAlpha.rgb;
+            transmissionFactor         = Bridge::getTransmission(material, texCoord);
+            diffuseTransmissionFactor  = Bridge::getDiffuseTransmission(material, texCoord);
+            thinSurface                = Bridge::isThinSurface(material);
+            shadowNoLFadeout           = Bridge::loadShadowNoLFadeout(materialID);
+            vertexNormal               = worldNormal;
+            surfaceEmission            = Bridge::getEmission(material, texCoord);
+            ior                        = Bridge::loadIoR(materialID);
+            materialFlags              = material.flags;
+            nestedPriority             = min(material.nestedPriority, 14u);
         }
 
         worldNormal = normalize(worldNormal);
@@ -161,9 +176,23 @@ namespace PathTracer
         shadingData.materialID  = materialID;
         shadingData.frontFacing = frontFacing;
         shadingData.mtl         = mtl;
+        shadingData.faceNCorrected    = faceNormal;
+        shadingData.vertexN           = vertexNormal;
+        shadingData.shadowNoLFadeout  = shadowNoLFadeout;
+        shadingData.emission          = surfaceEmission;
 
         ActiveBSDF bsdf;
         bsdf.data.roughness = roughness;
+        bsdf.standardData = MakeStandardBSDFData(worldNormal,
+                                                 baseColor,
+                                                 metallic,
+                                                 roughness,
+                                                 ior,
+                                                 1.0,
+                                                 transmissionFactor,
+                                                 diffuseTransmissionFactor,
+                                                 thinSurface,
+                                                 frontFacing);
 
         return SurfaceData::make(shadingData,
                                  bsdf,

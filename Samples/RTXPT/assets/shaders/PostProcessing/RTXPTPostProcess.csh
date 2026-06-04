@@ -17,6 +17,14 @@
 
 #define NUM_COMPUTE_THREADS_PER_DIM 8
 
+#ifndef USE_RELAX
+#    if RTXPT_POST_PROCESS_MODE == RTXPT_POST_PROCESS_RELAX_PREPARE_INPUTS || RTXPT_POST_PROCESS_MODE == RTXPT_POST_PROCESS_RELAX_FINAL_MERGE
+#        define USE_RELAX 1
+#    else
+#        define USE_RELAX 0
+#    endif
+#endif
+
 #include "../PathTracer/PathTracerShared.h"
 #include "../PathTracer/PathTracerHelpers.hlsli"
 #include "../PathTracer/StablePlanes.hlsli"
@@ -61,11 +69,11 @@ Texture2D<float>        t_DenoiserDisocclusionThresholdMix;
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>      u_OutputColor;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>      u_StableRadiance;
-RWTexture2DArray<uint>                              u_StablePlanesHeader;
+VK_IMAGE_FORMAT("r32ui")  RWTexture2DArray<uint>    u_StablePlanesHeader;
 RWStructuredBuffer<StablePlane>                     u_StablePlanesBuffer;
 VK_IMAGE_FORMAT("r32f")   RWTexture2D<float>        u_DenoiserViewspaceZ;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>      u_DenoiserMotionVectors;
-VK_IMAGE_FORMAT("rgba8")   RWTexture2D<float4>      u_DenoiserNormalRoughness;
+VK_IMAGE_FORMAT("rgb10_a2") RWTexture2D<float4>     u_DenoiserNormalRoughness;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>      u_DenoiserDiffRadianceHitDist;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>      u_DenoiserSpecRadianceHitDist;
 VK_IMAGE_FORMAT("r8")      RWTexture2D<float>       u_DenoiserDisocclusionThresholdMix;
@@ -162,6 +170,9 @@ void main(uint3 DispatchThreadID : SV_DispatchThreadID)
 #if RTXPT_POST_PROCESS_MODE == RTXPT_POST_PROCESS_RELAX_PREPARE_INPUTS || RTXPT_POST_PROCESS_MODE == RTXPT_POST_PROCESS_REBLUR_PREPARE_INPUTS
     const uint StablePlaneIndex       = g_Mini.params.x;
     const bool InitWithStableRadiance = g_Mini.params.y != 0;
+    const uint ActiveStablePlaneCount = min(g_Frame.ptConsts.GetActiveStablePlaneCount(), cStablePlaneCount);
+    if (StablePlaneIndex >= ActiveStablePlaneCount)
+        return;
 
     StablePlanesContext StablePlanes = StablePlanesContext::make(
         u_StablePlanesHeader, u_StablePlanesBuffer, u_StableRadiance, g_Frame.ptConsts);
@@ -192,7 +203,8 @@ void main(uint3 DispatchThreadID : SV_DispatchThreadID)
             float3 MotionVectors;
             UnpackTwoFp32ToFp16(SP.PackedThpAndMVs, Throughput, MotionVectors);
 
-            const float3 VirtualWorldPos = SP.RayOrigin + SP.RayDir * SP.SceneLength;
+            CameraRay    PrimaryCameraRay = ComputeRayThinlens(g_Frame.ptConsts.camera, PixelPos, g_Frame.ptConsts.camera.Jitter, 0.5.xx);
+            const float3 VirtualWorldPos  = PrimaryCameraRay.origin + PrimaryCameraRay.dir * SP.SceneLength;
             const float4 ViewPos         = mul(float4(VirtualWorldPos, 1.0), g_Frame.view.MatWorldToView);
             const float  VirtualViewZ    = ViewPos.z;
 
@@ -249,6 +261,9 @@ void main(uint3 DispatchThreadID : SV_DispatchThreadID)
 #if RTXPT_POST_PROCESS_MODE == RTXPT_POST_PROCESS_RELAX_FINAL_MERGE || RTXPT_POST_PROCESS_MODE == RTXPT_POST_PROCESS_REBLUR_FINAL_MERGE
     const uint StablePlaneIndex = g_Mini.params.x;
     const bool HasValidation    = g_Mini.params.y != 0;
+    const uint ActiveStablePlaneCount = min(g_Frame.ptConsts.GetActiveStablePlaneCount(), cStablePlaneCount);
+    if (StablePlaneIndex >= ActiveStablePlaneCount)
+        return;
 
     const bool HasSurface = t_DenoiserViewspaceZ[PixelPos] != RTXPT_VIEWZ_SKY_MARKER;
     const uint SPAddress  = GenericTSPixelToAddress(PixelPos,

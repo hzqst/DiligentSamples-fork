@@ -248,19 +248,29 @@ bool RTXPTNrdIntegration::Initialize(IRenderDevice*  pDevice,
     if (Width == 0 || Height == 0)
         return Fail("RTXPT NRD requires a non-zero render size");
 
-    m_Device = pDevice;
+    m_Device                    = pDevice;
+    const auto ReleaseResources = [this]() {
+        if (m_Instance != nullptr)
+        {
+            nrd::DestroyInstance(*m_Instance);
+            m_Instance = nullptr;
+        }
+
+        m_Device.Release();
+        m_ConstantBuffer.Release();
+        m_Pipelines.clear();
+        m_Samplers.clear();
+        m_PermanentTextures.clear();
+        m_TransientTextures.clear();
+    };
+
     if (!CreateInstance(Method) ||
         !CreateConstantBuffer(pDevice) ||
         !CreateSamplers(pDevice) ||
         !CreatePipelines(pDevice, pEngineFactory) ||
         !CreatePoolTextures(pDevice, Width, Height))
     {
-        const std::string FailureReason = m_Stats.LastFailureReason;
-        Reset();
-        m_Stats.Method            = Method;
-        m_Stats.Width             = Width;
-        m_Stats.Height            = Height;
-        m_Stats.LastFailureReason = FailureReason;
+        ReleaseResources();
         return false;
     }
 

@@ -64,7 +64,7 @@ constexpr bool        kRTXPTRealtimeTaaAvailable   = false;
 constexpr bool        kRTXPTRealtimeSrAvailable    = false;
 constexpr bool        kRTXPTDlssRrAvailable        = false;
 constexpr const char* kRTXPTRealtimeRoutePendingReason =
-    "Standalone denoise/NRD remains deferred to G8; no-denoiser final merge and presentation are active.";
+    "Realtime mode uses standalone NRD when available; otherwise it uses no-denoiser final merge and presentation.";
 constexpr Uint32      kRTXPTRealtimeNoisePeriod    = 8192u;
 
 bool IsStandaloneNrdAvailable()
@@ -1497,44 +1497,86 @@ bool RTXPTSample::EnsureNrdIntegrations()
     return true;
 }
 
-bool RTXPTSample::RunRealtimePostProcess()
+bool RTXPTSample::Denoise()
 {
-    // G8 enables this branch by inserting standalone NRD between prepare and final merge for each stable plane.
-    const bool UseStandaloneDenoiser = false;
+    if (!m_RealtimeUI.ActualUseStandaloneDenoiser())
+        return true;
 
-    if (UseStandaloneDenoiser)
+    if (m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR)
     {
-        for (Uint32 PlaneIndex = 0; PlaneIndex < static_cast<Uint32>(m_RealtimeUI.StablePlanesActiveCount); ++PlaneIndex)
+        RecordRealtimePathTraceStatus("Standalone NRD is disabled for DLSS-RR");
+        return false;
+    }
+
+    if (!EnsureNrdIntegrations())
+        return false;
+
+    const bool ResetHistory =
+        HasRealtimeResetFlag(m_CurrentFrameRealtimeReset, RTXPT_REALTIME_RESET_NRD_HISTORY) ||
+        HasRealtimeResetFlag(m_CurrentFrameRealtimeReset, RTXPT_REALTIME_RESET_REALTIME_CACHES);
+    const bool EnableValidation = m_RenderTargets.GetDenoiserOutValidationUAV() != nullptr;
+
+    Int32 MaxPassCount = std::min(m_RealtimeUI.StablePlanesActiveCount, static_cast<Int32>(kRTXPTStablePlaneCount));
+    MaxPassCount       = std::max(MaxPassCount, Int32{1});
+
+    bool InitWithStableRadiance = true;
+    for (Int32 Pass = MaxPassCount - 1; Pass >= 0; --Pass)
+    {
+        const Uint32 PlaneIndex = static_cast<Uint32>(Pass);
+        if (!m_PostProcessPipeline.RunDenoiserPrepare(m_pImmediateContext,
+                                                      m_RenderTargets,
+                                                      m_RealtimeUI.NRDMethod,
+                                                      PlaneIndex,
+                                                      InitWithStableRadiance))
         {
-            const bool InitOutput = PlaneIndex == 0;
-            if (!m_PostProcessPipeline.RunDenoiserPrepare(m_pImmediateContext,
-                                                          m_RenderTargets,
-                                                          m_RealtimeUI.NRDMethod,
-                                                          PlaneIndex,
-                                                          InitOutput))
-            {
-                RecordRealtimePathTraceStatus("Denoiser prepare dispatch failed");
-                return false;
-            }
-
-            InsertDenoiserPrepareOutputBarriers(m_pImmediateContext, m_RenderTargets);
-
-            // G8 inserts RTXPTNrdIntegration::Dispatch() here for this stable plane.
-
-            const bool HasValidation = m_RenderTargets.GetDenoiserOutValidationSRV() != nullptr;
-            if (!m_PostProcessPipeline.RunDenoiserFinalMerge(m_pImmediateContext,
-                                                             m_RenderTargets,
-                                                             m_RealtimeUI.NRDMethod,
-                                                             PlaneIndex,
-                                                             HasValidation))
-            {
-                RecordRealtimePathTraceStatus("Denoiser final merge dispatch failed");
-                return false;
-            }
-
-            InsertDenoiserFinalMergeOutputBarrier(m_pImmediateContext, m_RenderTargets);
+            RecordRealtimePathTraceStatus("Denoiser prepare dispatch failed");
+            return false;
         }
 
+        InitWithStableRadiance = false;
+        InsertDenoiserPrepareOutputBarriers(m_pImmediateContext, m_RenderTargets);
+
+        RTXPTNrdFrameAttribs Attribs;
+        Attribs.pRenderTargets   = &m_RenderTargets;
+        Attribs.pFrameConstants  = &m_LastFrameConstants;
+        Attribs.pRealtime        = &m_RealtimeUI;
+        Attribs.PlaneIndex       = PlaneIndex;
+        Attribs.FrameIndex       = m_FrameIndex;
+        Attribs.TimeDeltaSeconds = m_LastElapsedTimeSeconds > 0.0f ? m_LastElapsedTimeSeconds : -1.0f;
+        Attribs.ResetHistory     = ResetHistory;
+        Attribs.EnableValidation = EnableValidation;
+
+        if (!m_NrdIntegrations[PlaneIndex].Dispatch(m_pImmediateContext, Attribs))
+        {
+            RecordRealtimePathTraceStatus(m_NrdIntegrations[PlaneIndex].GetLastFailureReason());
+            return false;
+        }
+
+        const bool HasValidation = m_RenderTargets.GetDenoiserOutValidationSRV() != nullptr;
+        if (!m_PostProcessPipeline.RunDenoiserFinalMerge(m_pImmediateContext,
+                                                         m_RenderTargets,
+                                                         m_RealtimeUI.NRDMethod,
+                                                         PlaneIndex,
+                                                         HasValidation))
+        {
+            RecordRealtimePathTraceStatus("Denoiser final merge dispatch failed");
+            return false;
+        }
+
+        InsertDenoiserFinalMergeOutputBarrier(m_pImmediateContext, m_RenderTargets);
+    }
+
+    m_LastRealtimeFinalMergeReady = true;
+    RecordRealtimePathTraceStatus("Realtime PathTrace, NRD denoise, and final merge dispatched");
+    return true;
+}
+
+bool RTXPTSample::RunRealtimePostProcess()
+{
+    if (m_RealtimeUI.ActualUseStandaloneDenoiser())
+    {
+        if (!Denoise())
+            return false;
         return PresentRealtimeFinalOutput();
     }
 

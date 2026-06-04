@@ -256,11 +256,17 @@ bool RTXPTPostProcessPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
 
     std::string ShaderSearchPaths = "shaders;shaders\\PostProcessing;shaders\\PathTracer";
 #if RTXPT_HAS_NRD
-    if (RTXPT_NRD_SHADER_INCLUDE_DIR[0] != '\0')
-    {
+    const auto AppendShaderSearchPath = [&ShaderSearchPaths](const char* Path) {
+        if (Path == nullptr || Path[0] == '\0')
+            return;
+
         ShaderSearchPaths += ";";
-        ShaderSearchPaths += RTXPT_NRD_SHADER_INCLUDE_DIR;
-    }
+        ShaderSearchPaths += Path;
+    };
+
+    AppendShaderSearchPath(RTXPT_NRD_SHADER_INCLUDE_DIR);
+    AppendShaderSearchPath(RTXPT_NRD_SHADER_CONFIG_DIR);
+    AppendShaderSearchPath(RTXPT_NRD_MATHLIB_INCLUDE_DIR);
 #endif
 
     RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;

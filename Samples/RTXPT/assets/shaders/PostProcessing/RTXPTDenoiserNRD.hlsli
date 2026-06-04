@@ -9,7 +9,6 @@
 
 #if RTXPT_HAS_NRD_HEADERS
 #define NRD_HEADER_ONLY
-#include <NRDEncoding.hlsli>
 #include <NRD.hlsli>
 #endif
 

@@ -311,6 +311,18 @@ namespace PathTracer
         path.SetThp(path.GetThp() * weight);
     }
 
+    inline BSDFSample MakeBSDFSample(uint lobe, float pdf, float lobeP, float3 weight, float3 wi)
+    {
+        BSDFSample bs;
+        bs.lobe           = lobe;
+        bs.deltaLobeIndex = (lobe & kBSDFLobeSpecularTransmission) != 0u ? 1u : 0u;
+        bs.pdf            = pdf;
+        bs.lobeP          = lobeP;
+        bs.weight         = weight;
+        bs.wi             = wi;
+        return bs;
+    }
+
     inline bool ShouldCollectGISecondaryRadiance(const PathState path)
     {
         return false;
@@ -372,6 +384,59 @@ namespace PathTracer
         }
 
         return result;
+    }
+
+    inline bool GenerateScatterRay(const SurfaceData surfaceData,
+                                   inout PathState path,
+                                   const WorkingContext workingContext,
+                                   out BSDFSample bs)
+    {
+        bs = MakeBSDFSample(0u, 0.0, 0.0, 0.xxx, 0.xxx);
+
+        const float3 wo = surfaceData.shadingData.V;
+        const SampleGeneratorVertexBase sgBase = SampleGeneratorVertexBase::make(path.GetPixelPos(), path.getVertexIndex(), Bridge::getSampleIndex());
+        const uint diffuseBounces = path.getCounter(PackedCounters::DiffuseBounces);
+        float3 preGeneratedSamples;
+
+#if RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF
+        [branch]
+        if (diffuseBounces < workingContext.PtConsts.diffuseBounceCount)
+            preGeneratedSamples = SampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
+        else
+#endif
+            preGeneratedSamples = UniformSampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
+
+        float3 wi;
+        float3 weight;
+        float  pdf;
+        uint   lobe;
+        float  lobeP;
+        if (!SampleBSDF(surfaceData.bsdf.standardData, wo, preGeneratedSamples, wi, weight, pdf, lobe, lobeP))
+            return false;
+
+        const bool isTransmission = (lobe & kBSDFLobeTransmission) != 0u;
+        const float3 scatterOrigin = ComputeRayOrigin(surfaceData.shadingData.posW,
+                                                      isTransmission ? -surfaceData.shadingData.faceNCorrected : surfaceData.shadingData.faceNCorrected);
+
+        path.clearScatterEventFlags();
+        path.SetOrigin(scatterOrigin);
+        path.SetDir(wi);
+        path.SetThp(path.GetThp() * weight);
+        path.SetFireflyFilterK_BsdfScatterPdf(ComputeNewScatterFireflyFilterK(path.GetFireflyFilterK(), pdf, lobeP), pdf);
+        path.setScatterTransmission(isTransmission);
+        path.setScatterSpecular((lobe & (kBSDFLobeSpecularReflection | kBSDFLobeSpecularTransmission | kBSDFLobeDeltaReflection | kBSDFLobeDeltaTransmission)) != 0u);
+        path.setScatterDelta((lobe & kBSDFLobeDelta) != 0u);
+        path.setDeltaOnlyPath(path.isDeltaOnlyPath() && ((lobe & kBSDFLobeDelta) != 0u));
+
+        const bool isDiffuseBounce =
+            ((lobe & kBSDFLobeDiffuseReflection) != 0u) ||
+            (((lobe & kBSDFLobeTransmission) == 0u) && surfaceData.bsdf.standardData.roughness > kSpecularRoughnessThreshold);
+        if (isDiffuseBounce)
+            path.incrementCounter(PackedCounters::DiffuseBounces);
+
+        bs = MakeBSDFSample(lobe, pdf, lobeP, weight, wi);
+        StablePlanesOnScatter(path, bs, workingContext);
+        return true;
     }
 
     inline void AccumulatePathRadiance(const WorkingContext workingContext,
@@ -486,24 +551,61 @@ namespace PathTracer
                               surfaceEmission,
                               pathStopping);
 
-        if (pathStopping)
+        if (pathStopping || !path.isActive())
         {
             path.terminate();
             return;
         }
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
-        if (path.hasFlag(PathFlags::stablePlaneOnDominantBranch))
-        {
-            // Placeholder until real scatter/delta-lobe plumbing records dominant-layer specular travel distance.
-            Bridge::ExportSpecHitTStart(path);
-            Bridge::ExportSpecHitTStop(path);
-        }
-#endif
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
+        return;
+#else
+        const PathState preScatterPath = path;
+        BSDFSample bs;
+        const bool scatterValid = GenerateScatterRay(surfaceData, path, workingContext, bs);
 
-        // Conservative Task 4 stopgap: material-plumbing must replace this termination with
-        // real scatter/delta-lobe continuation when ActiveBSDF sampling is wired.
-        path.terminate();
+        SampleGenerator sgDirect = SampleGenerator_makeStateless(preScatterPath.GetPixelPos(),
+                                                                 preScatterPath.getVertexIndex(),
+                                                                 Bridge::getSampleIndex(),
+                                                                 kSampleEffect_NEELightSampler);
+        SampleGenerator sgEnv = SampleGenerator_makeStateless(preScatterPath.GetPixelPos(),
+                                                              preScatterPath.getVertexIndex(),
+                                                              Bridge::getSampleIndex(),
+                                                              kSampleEffect_NextEventEstimation);
+        NEEResult neeResult = HandleNEE(preScatterPath, surfaceData, sgDirect, sgEnv, workingContext);
+        path.SetPackedMISInfo_ThpRuRuCorrection(neeResult.BSDFMISInfo.Pack16bit(), path.GetThpRuRuCorrection());
+
+        float4 neeRadianceAndSpecAvg = neeResult.GetRadianceAndSpecAvg();
+        if (any(neeRadianceAndSpecAvg > 0.0))
+        {
+            const int bouncesFromStablePlane = preScatterPath.getCounter(PackedCounters::BouncesFromStablePlane) + 1;
+            float specRadianceAvg = 0.0;
+            if (!preScatterPath.hasFlag(PathFlags::stablePlaneBaseScatterDiff))
+            {
+                const bool pathIsDeltaOnlyPath = preScatterPath.isDeltaOnlyPath();
+                const bool specialCondition = (bouncesFromStablePlane == 1) || (pathIsDeltaOnlyPath && bouncesFromStablePlane <= 3);
+                specRadianceAvg = specialCondition ? neeRadianceAndSpecAvg.w : Average(neeRadianceAndSpecAvg.rgb);
+            }
+
+            AccumulatePathRadiance(workingContext,
+                                   path,
+                                   neeRadianceAndSpecAvg.rgb,
+                                   specRadianceAvg,
+                                   false,
+                                   ShouldCollectGISecondaryRadiance(preScatterPath));
+        }
+
+        if (!scatterValid)
+        {
+            path.terminate();
+            return;
+        }
+
+        const bool shouldTerminate = HasFinishedSurfaceBounces(path.getVertexIndex() + 1,
+                                                               path.getCounter(PackedCounters::DiffuseBounces));
+        if (shouldTerminate)
+            path.setTerminateAtNextBounce();
+#endif
     }
 #endif
 } // namespace PathTracer

@@ -2523,6 +2523,12 @@ void RTXPTSample::UpdateUI()
         ImGui::Separator();
         ImGui::Text("OutputColor: %s", m_RenderTargets.GetOutputColorSRV() != nullptr ? "created" : "missing");
         ImGui::Text("TraceRays pass: %s", m_RayTracingPass.IsReady() ? "ready" : "not ready");
+        const RTXPTRayTracingVariantStats& ReferenceStats = m_RayTracingPass.GetVariantStats(RTXPTPathTraceVariant::Reference);
+        const RTXPTRayTracingVariantStats& BuildStats     = m_RayTracingPass.GetVariantStats(RTXPTPathTraceVariant::BuildStablePlanes);
+        const RTXPTRayTracingVariantStats& FillStats      = m_RayTracingPass.GetVariantStats(RTXPTPathTraceVariant::FillStablePlanes);
+        ImGui::Text("Reference variant: %s, dispatches=%u", ReferenceStats.Ready ? "ready" : "missing", ReferenceStats.TraceCount);
+        ImGui::Text("BuildStablePlanes variant: %s, dispatches=%u", BuildStats.Ready ? "ready" : "missing", BuildStats.TraceCount);
+        ImGui::Text("FillStablePlanes variant: %s, dispatches=%u", FillStats.Ready ? "ready" : "missing", FillStats.TraceCount);
         ImGui::Text("Material bridge: %s", RTPassStats.MaterialBridgeBound ? "bound" : "fallback");
         ImGui::Text("Sub-instance bridge: %s", RTPassStats.SubInstanceBound ? "bound" : "fallback");
         ImGui::Text("Light bridge: %s", RTPassStats.LightBridgeBound ? "bound" : "fallback");
@@ -2538,6 +2544,13 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("LightsBaker feedback: %s", BakerStats.FeedbackReady ? "ready" : "missing");
         ImGui::Text("LightsBaker update: %u", BakerStats.UpdateCounter);
         ImGui::Text("LightsBaker bridge: %s", RTPassStats.LightsBakerBridgeBound ? "bound" : "missing");
+        if (m_RealtimeUI.RealtimeMode)
+        {
+            ImGui::Text("Realtime fill light resources: %s",
+                        RTPassStats.LightBridgeBound && RTPassStats.LightsBakerBridgeBound && RTPassStats.EmissiveLightBridgeBound ?
+                            "bound" :
+                            "missing");
+        }
         m_EnvMapBaker.DebugGUI(Indent);
         ImGui::Text("Emissive triangle pass: %s", m_EmissiveTrianglePass.IsReady() ? "ready" : "not ready");
         ImGui::Text("Emissive triangle dispatch count: %u", m_EmissiveTrianglePass.GetStats().DispatchCount);

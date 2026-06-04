@@ -72,6 +72,11 @@ bool IsStandaloneNrdAvailable()
     return RTXPTIsNrdAvailable();
 }
 
+bool ShouldRunStandaloneNrd(const RTXPTRealtimeSettings& RealtimeUI)
+{
+    return RealtimeUI.ActualUseStandaloneDenoiser() && IsStandaloneNrdAvailable();
+}
+
 const char* GetStandaloneNrdDisabledReason()
 {
     return RTXPTGetNrdUnavailableReason();
@@ -1573,7 +1578,7 @@ bool RTXPTSample::Denoise()
 
 bool RTXPTSample::RunRealtimePostProcess()
 {
-    if (m_RealtimeUI.ActualUseStandaloneDenoiser())
+    if (ShouldRunStandaloneNrd(m_RealtimeUI))
     {
         if (!Denoise())
             return false;

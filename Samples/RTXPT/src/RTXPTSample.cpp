@@ -1140,6 +1140,7 @@ bool RTXPTSample::DispatchPathTracePrePass(const RTXPTRayTracingDispatch& BaseDi
 
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStablePlanesBuffer());
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStablePlanesHeaderUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetStableRadianceUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetDepthUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetScreenMotionVectorsUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetThroughputUAV());
@@ -1178,9 +1179,9 @@ bool RTXPTSample::PathTrace()
         if (!BakeDenoisingGuides())
             return false;
 
-        // RTXDI/ReSTIR final shading and final merge are future port hooks.
+        // RTXDI/ReSTIR final shading and standalone NRD final merge are future port hooks.
         m_LastRealtimePathTraceExecuted = true;
-        RecordRealtimePathTraceStatus("Realtime PathTrace and denoising guides dispatched; RTXDI/ReSTIR and final merge disabled");
+        RecordRealtimePathTraceStatus("Realtime PathTrace and denoising guides dispatched; final merge pending");
     }
 
     return true;
@@ -1354,6 +1355,8 @@ bool RTXPTSample::RunRealtimeNoDenoiserFinalMerge()
     m_LastRealtimeFinalMergeReady = MergeOk;
     if (!MergeOk)
         RecordRealtimePathTraceStatus("NoDenoiserFinalMerge dispatch failed");
+    else
+        RecordRealtimePathTraceStatus("Realtime PathTrace, denoising guides, and final merge dispatched");
     return MergeOk;
 }
 

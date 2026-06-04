@@ -123,30 +123,47 @@ set(RTXPT_NRD_SHADER_INCLUDE_DIR "")
 set(RTXPT_NRD_SHADER_SOURCE_DIR "")
 set(RTXPT_NRI_ROOT_NORMALIZED "")
 set(RTXPT_NRI_AVAILABLE OFF)
+set(RTXPT_NRD_CMAKE_DEPS_AVAILABLE OFF)
 set(NRD_NRI OFF CACHE BOOL "Build NRD NRI integration")
 
 if(RTXPT_NRD_ROOT)
     file(TO_CMAKE_PATH "${RTXPT_NRD_ROOT}" RTXPT_NRD_ROOT_NORMALIZED)
-    if(RTXPT_NRI_ROOT)
+    if(NRD_NRI AND RTXPT_NRI_ROOT)
         file(TO_CMAKE_PATH "${RTXPT_NRI_ROOT}" RTXPT_NRI_ROOT_NORMALIZED)
-        if(EXISTS "${RTXPT_NRI_ROOT_NORMALIZED}/CMakeLists.txt")
-            set(FETCHCONTENT_SOURCE_DIR_NRI "${RTXPT_NRI_ROOT_NORMALIZED}" CACHE PATH "Use RTXPT's local NRI submodule when NRD_NRI is enabled" FORCE)
+        if(EXISTS "${RTXPT_NRI_ROOT_NORMALIZED}/CMakeLists.txt" AND EXISTS "${RTXPT_NRI_ROOT_NORMALIZED}/Include/NRI.h")
+            if(NOT FETCHCONTENT_SOURCE_DIR_NRI)
+                set(FETCHCONTENT_SOURCE_DIR_NRI "${RTXPT_NRI_ROOT_NORMALIZED}" CACHE PATH "Use RTXPT's local NRI submodule when NRD_NRI is enabled")
+            endif()
             set(RTXPT_NRI_AVAILABLE ON)
-        elseif(NRD_NRI)
+        else()
             message(WARNING "NRD_NRI is ON, but RTXPT_NRI_ROOT does not contain a valid NRI checkout.")
         endif()
     endif()
 
     set(RTXPT_NRD_INCLUDE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Include")
-    set(RTXPT_NRD_SHADER_INCLUDE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders/Include")
-    set(RTXPT_NRD_SHADER_SOURCE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders/Source")
+    if(EXISTS "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders/Include/NRD.hlsli" AND
+       EXISTS "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders/Source")
+        set(RTXPT_NRD_SHADER_INCLUDE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders/Include")
+        set(RTXPT_NRD_SHADER_SOURCE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders/Source")
+    else()
+        set(RTXPT_NRD_SHADER_INCLUDE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders")
+        set(RTXPT_NRD_SHADER_SOURCE_DIR "${RTXPT_NRD_ROOT_NORMALIZED}/Shaders")
+    endif()
+
+    if(TARGET MathLib AND TARGET ShaderMakeBlob AND TARGET ShaderMake)
+        set(RTXPT_NRD_CMAKE_DEPS_AVAILABLE ON)
+    elseif(FETCHCONTENT_SOURCE_DIR_MATHLIB AND FETCHCONTENT_SOURCE_DIR_SHADERMAKE)
+        set(RTXPT_NRD_CMAKE_DEPS_AVAILABLE ON)
+    endif()
 
     if(EXISTS "${RTXPT_NRD_ROOT_NORMALIZED}/CMakeLists.txt" AND
        EXISTS "${RTXPT_NRD_INCLUDE_DIR}/NRD.h" AND
        EXISTS "${RTXPT_NRD_INCLUDE_DIR}/NRDSettings.h" AND
        EXISTS "${RTXPT_NRD_INCLUDE_DIR}/NRDDescs.h" AND
        EXISTS "${RTXPT_NRD_SHADER_INCLUDE_DIR}/NRD.hlsli" AND
-       EXISTS "${RTXPT_NRD_SHADER_SOURCE_DIR}/REBLUR_DiffuseSpecular_TemporalAccumulation.cs.hlsl" AND
+       (EXISTS "${RTXPT_NRD_SHADER_SOURCE_DIR}/REBLUR_DiffuseSpecular_TemporalAccumulation.cs.hlsl" OR
+        EXISTS "${RTXPT_NRD_SHADER_SOURCE_DIR}/REBLUR_TemporalAccumulation.cs.hlsl") AND
+       RTXPT_NRD_CMAKE_DEPS_AVAILABLE AND
        (NOT NRD_NRI OR RTXPT_NRI_AVAILABLE))
         set(NRD_STATIC_LIBRARY ON CACHE BOOL "Build NRD as a static library" FORCE)
         set(NRD_EMBEDS_DXIL_SHADERS OFF CACHE BOOL "RTXPT compiles NRD HLSL through Diligent DXC" FORCE)
@@ -155,7 +172,7 @@ if(RTXPT_NRD_ROOT)
         add_subdirectory("${RTXPT_NRD_ROOT_NORMALIZED}" "${CMAKE_CURRENT_BINARY_DIR}/NRD")
         set(RTXPT_HAS_NRD ON)
     else()
-        message(WARNING "RTXPT_NRD_ROOT is set, but required NRD files were not found, or NRD_NRI is ON without a valid RTXPT_NRI_ROOT. RTXPT standalone NRD will be disabled.")
+        message(STATUS "RTXPT standalone NRD is disabled: required NRD files, local ShaderMake/MathLib CMake targets, or optional NRI checkout were not found.")
     endif()
 endif()
 

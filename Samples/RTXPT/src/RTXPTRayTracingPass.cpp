@@ -475,12 +475,13 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             return Ok;
         };
 
-        const bool ReferenceVariant = Variant == RTXPTPathTraceVariant::Reference;
+        const bool ReferenceVariant             = Variant == RTXPTPathTraceVariant::Reference;
+        const bool BuildStablePlanesVariant     = Variant == RTXPTPathTraceVariant::BuildStablePlanes;
+        const bool FillStablePlanesVariant      = Variant == RTXPTPathTraceVariant::FillStablePlanes;
+        const bool DirectLightResourcesRequired = ReferenceVariant || FillStablePlanesVariant;
         const bool FrameConstantsBound =
             ScreenPatternDiagnostic || SetStaticForStages(ConstStages, "g_Const", pFrameConstants, "frame constants");
-        // BUILD uses the current sub-sample to spawn primary camera rays. FILL starts from the
-        // stable-plane state, so DXC may strip g_MiniConst until real scatter sampling is wired.
-        const bool MiniConstantsRequired = Variant == RTXPTPathTraceVariant::BuildStablePlanes;
+        const bool MiniConstantsRequired = BuildStablePlanesVariant || FillStablePlanesVariant;
         const bool MiniConstantsBound =
             ScreenPatternDiagnostic ||
             SetStaticForStages(ConstStages | HitStages, "g_MiniConst", m_MiniConstantsCB, "mini constants", MiniConstantsRequired);
@@ -494,18 +495,15 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         {
             const bool MaterialBridgeBound = SetStaticForStages(MaterialStages, "t_PTMaterialData", pMaterialsView, "material buffer");
             const bool SubInstanceBound    = SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
-            // Stable-plane BUILD/FILL variants currently do not run direct-light NEE, so DXC strips
-            // the light/feedback/emissive resources from those variants. Keep them mandatory for the
-            // reference path and bind them opportunistically when a realtime variant actually reflects them.
             const bool LightBridgeBound =
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer", ReferenceVariant);
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_Lights", pLightsView, "light buffer", DirectLightResourcesRequired);
             const bool LightsBakerBridgeBound =
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", ReferenceVariant) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", ReferenceVariant) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", ReferenceVariant) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", ReferenceVariant) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", ReferenceVariant) &&
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", ReferenceVariant);
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", DirectLightResourcesRequired) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", DirectLightResourcesRequired) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", DirectLightResourcesRequired) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", DirectLightResourcesRequired) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", DirectLightResourcesRequired) &&
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", DirectLightResourcesRequired);
             bool       EnvironmentMapFound               = false;
             bool       EnvironmentImportanceMapFound     = false;
             bool       EnvironmentRadianceMapFound       = false;
@@ -522,7 +520,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                 EnvironmentSamplerFound || EnvironmentImportanceSamplerFound;
             EnvironmentBridgeReflectedAny = EnvironmentBridgeReflectedAny || EnvironmentBridgeReflected;
             const bool EmissiveLightBridgeBound =
-                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", ReferenceVariant);
+                SetStaticForStages(SHADER_TYPE_RAY_GEN, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", DirectLightResourcesRequired);
             const bool VertexBufferBound = SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
             const bool SkinnedVertexBufferBound =
                 SetStaticForStages(HitStages, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");

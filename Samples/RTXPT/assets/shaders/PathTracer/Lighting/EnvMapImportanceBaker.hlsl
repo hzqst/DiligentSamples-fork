@@ -6,10 +6,6 @@
 
 #include "../Config.h"
 
-#ifndef VK_IMAGE_FORMAT
-#    define VK_IMAGE_FORMAT(format)
-#endif
-
 #define RTXPT_ENVMAP_IMPORTANCE_THREADS 16
 
 static const float kEnvMapImportancePi = 3.14159265358979323846;

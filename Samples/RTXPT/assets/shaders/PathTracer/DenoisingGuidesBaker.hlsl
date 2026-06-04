@@ -24,10 +24,6 @@ struct DenoisingGuidesBakerConstants
 #include "PathTracerHelpers.hlsli"
 #include "StablePlanes.hlsli"
 
-#ifndef VK_IMAGE_FORMAT
-#    define VK_IMAGE_FORMAT(format)
-#endif
-
 ConstantBuffer<SampleConstants>               g_Const;
 ConstantBuffer<DenoisingGuidesBakerConstants> g_DenoisingGuidesBakerConstants;
 

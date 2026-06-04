@@ -1,7 +1,3 @@
-#ifndef VK_IMAGE_FORMAT
-#    define VK_IMAGE_FORMAT(format)
-#endif
-
 struct RTXPTAccumulationConstants
 {
     float2 OutputSize;

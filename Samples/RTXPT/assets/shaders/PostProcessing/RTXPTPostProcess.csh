@@ -1,9 +1,5 @@
 #pragma pack_matrix(row_major)
 
-#ifndef VK_IMAGE_FORMAT
-#    define VK_IMAGE_FORMAT(format)
-#endif
-
 #ifndef RTXPT_POST_PROCESS_MODE
 #define RTXPT_POST_PROCESS_MODE 0
 #endif

@@ -301,12 +301,23 @@ bool RTXPTDenoisingGuidesBaker::DispatchPass(IDeviceContext*               pCont
         *Mapped = Constants;
     }
 
-    auto SetVariable = [&State](const char* Name, IDeviceObject* pObject, bool Required) {
+    auto SetVariable = [&State, Pass](const char* Name, IDeviceObject* pObject, bool Required) {
         IShaderResourceVariable* pVar = State.SRB->GetVariableByName(SHADER_TYPE_COMPUTE, Name);
         if (pVar == nullptr)
+        {
+            if (Required)
+                UNEXPECTED("RTXPT denoising guides dynamic shader variable is missing: ", Name, " for pass: ", GetPassName(Pass));
             return !Required;
+        }
         if (pObject == nullptr)
-            return false;
+        {
+            if (Required)
+            {
+                DEV_ERROR("RTXPT denoising guides dynamic resource object is null: ", Name, " for pass: ", GetPassName(Pass));
+                return false;
+            }
+            return true;
+        }
         pVar->Set(pObject);
         return true;
     };
@@ -320,7 +331,9 @@ bool RTXPTDenoisingGuidesBaker::DispatchPass(IDeviceContext*               pCont
         SetVariable("t_MotionVectors", RenderTargets.GetScreenMotionVectorsSRV(), NeedsAvgLayer || NeedsDebugViz) &&
         SetVariable("u_SpecularHitT", RenderTargets.GetSpecularHitTUAV(), NeedsDenoiseSpecHitT || NeedsDebugViz) &&
         SetVariable("u_ScratchFloat1", RenderTargets.GetScratchFloat1UAV(), NeedsDenoiseSpecHitT) &&
-        SetVariable("u_StableRadiance", RenderTargets.GetStableRadianceUAV(), NeedsAvgLayer) &&
+        // Stable radiance is carried by StablePlanesContext, but this baker does not read it.
+        // Some shader compilers optimize the UAV out of reflection for these entry points.
+        SetVariable("u_StableRadiance", RenderTargets.GetStableRadianceUAV(), false) &&
         SetVariable("u_StablePlanesHeader", RenderTargets.GetStablePlanesHeaderUAV(), NeedsAvgLayer) &&
         SetVariable("u_StablePlanesBuffer", RenderTargets.GetStablePlanesBufferUAV(), NeedsAvgLayer) &&
         SetVariable("u_DenoiserAvgLayerRadianceHalfRes", RenderTargets.GetDenoiserAvgLayerRadianceHalfResUAV(), NeedsAvgLayer || NeedsDebugViz) &&

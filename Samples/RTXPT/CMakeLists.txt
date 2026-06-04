@@ -17,6 +17,7 @@ set(SOURCE
     src/RTXPTSkinnedGeometry.cpp
     src/RTXPTRenderTargets.cpp
     src/RTXPTPostProcessPipeline.cpp
+    src/RTXPTPostProcessPass.cpp
     src/RTXPTRayTracingPass.cpp
     src/RTXPTDenoisingGuidesBaker.cpp
     src/RTXPTEmissiveTrianglePass.cpp
@@ -46,6 +47,7 @@ set(INCLUDE
     src/RTXPTSkinnedGeometry.hpp
     src/RTXPTRenderTargets.hpp
     src/RTXPTPostProcessPipeline.hpp
+    src/RTXPTPostProcessPass.hpp
     src/RTXPTRayTracingPass.hpp
     src/RTXPTDenoisingGuidesBaker.hpp
     src/RTXPTEmissiveTrianglePass.hpp
@@ -96,6 +98,8 @@ set(SHADERS
     assets/shaders/PathTracer/SkinnedVertexBuild.csh
     assets/shaders/PostProcessing/RTXPTFullscreen.vsh
     assets/shaders/PostProcessing/RTXPTAccumulation.csh
+    assets/shaders/PostProcessing/RTXPTPostProcess.csh
+    assets/shaders/PostProcessing/RTXPTDenoiserNRD.hlsli
     assets/shaders/PostProcessing/RTXPTBloomShared.h
     assets/shaders/PostProcessing/RTXPTBloomCopy.psh
     assets/shaders/PostProcessing/RTXPTBloomBlur.psh

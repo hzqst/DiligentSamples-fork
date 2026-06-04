@@ -237,6 +237,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
         return FailResize("RTXPT render target dimensions are invalid");
 
     const bool RequiresSuperResolutionTargets = Dimensions.SuperResolutionActive;
+    const bool RequiresHistoryClampRelax      = RequiresSuperResolutionTargets || CreateRealtimeResources;
     const bool HasCorePostProcessTargets =
         m_OutputColor != nullptr &&
         m_ProcessedOutputColor != nullptr &&
@@ -248,8 +249,8 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
         HasCorePostProcessTargets &&
         (!RequiresSuperResolutionTargets ||
          (m_TemporalFeedback1 != nullptr &&
-          m_TemporalFeedback2 != nullptr &&
-          m_CombinedHistoryClampRelax != nullptr));
+          m_TemporalFeedback2 != nullptr)) &&
+        (!RequiresHistoryClampRelax || m_CombinedHistoryClampRelax != nullptr);
     const bool HasRealtimeTargets =
         !CreateRealtimeResources || HasRealtimeRenderTargets();
     const bool HasRequestedTargets =
@@ -297,7 +298,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
     if (RequiresSuperResolutionTargets && !SupportsBindFlags(pDevice, Formats.TemporalFeedback, UavFlags))
         return FailResize("RGBA16_SNORM UAV TemporalFeedback is not supported; RTXPT post-processing resource graph is unavailable");
 
-    if (RequiresSuperResolutionTargets && !SupportsBindFlags(pDevice, Formats.CombinedHistoryClampRelax, UavFlags))
+    if (RequiresHistoryClampRelax && !SupportsBindFlags(pDevice, Formats.CombinedHistoryClampRelax, UavFlags))
         return FailResize("R8 UAV CombinedHistoryClampRelax is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (CreateComputeOutput && !SupportsBindFlags(pDevice, Formats.ComputeColor, UavFlags))
@@ -401,7 +402,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
         !CreateTarget(pDevice, "RTXPT TemporalFeedback2", DisplayWidth, DisplayHeight, Formats.TemporalFeedback, UavFlags, TemporalFeedback2))
         return FailResize("Failed to create RTXPT TemporalFeedback2");
 
-    if (RequiresSuperResolutionTargets &&
+    if (RequiresHistoryClampRelax &&
         !CreateTarget(pDevice, "RTXPT CombinedHistoryClampRelax", DisplayWidth, DisplayHeight, Formats.CombinedHistoryClampRelax, UavFlags, CombinedHistoryClampRelax))
         return FailResize("Failed to create RTXPT CombinedHistoryClampRelax");
 

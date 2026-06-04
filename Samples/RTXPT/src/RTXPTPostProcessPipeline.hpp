@@ -43,11 +43,11 @@ namespace Diligent
 
 struct RTXPTPostProcessPipelineStats
 {
-    bool Ready                     = false;
-    bool ResourcesValid            = false;
-    bool AccumulationStageReady    = false;
-    bool SuperResolutionStageReady = false;
-    bool LastSuperResolutionActive = false;
+    bool Ready                       = false;
+    bool ResourcesValid              = false;
+    bool AccumulationStageReady      = false;
+    bool SuperResolutionStageReady   = false;
+    bool LastSuperResolutionActive   = false;
     bool HdrStageReady               = false;
     bool RealtimeMergeStageReady     = false;
     bool LastRealtimeFinalMergeReady = false;

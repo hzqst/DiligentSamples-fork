@@ -4,3 +4,15 @@
 [submodule "ThirdParty/Nuklear"]
 	path = ThirdParty/Nuklear
 	url = https://github.com/DiligentGraphics/NuklearUI
+[submodule "ThirdParty/NRI"]
+	path = ThirdParty/NRI
+	url = https://github.com/NVIDIA-RTX/NRI
+[submodule "ThirdParty/NRD"]
+	path = ThirdParty/NRD
+	url = https://github.com/NVIDIA-RTX/NRD
+[submodule "ThirdParty/ShaderMake"]
+	path = ThirdParty/ShaderMake
+	url = https://github.com/NVIDIA-RTX/ShaderMake
+[submodule "ThirdParty/MathLib"]
+	path = ThirdParty/MathLib
+	url = https://github.com/NVIDIA-RTX/MathLib

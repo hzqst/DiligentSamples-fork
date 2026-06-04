@@ -36,7 +36,7 @@ const char* RTXPTGetNrdUnavailableReason()
 #if RTXPT_HAS_NRD
     return "Standalone NRD is available.";
 #else
-    return "Standalone denoiser disabled: NRD/NRI submodules are missing or RTXPT_NRD_ROOT was cleared.";
+    return "Standalone denoiser disabled: NRD/NRI/ShaderMake/MathLib submodules are missing or DILIGENT_*_DIR variables were cleared.";
 #endif
 }
 

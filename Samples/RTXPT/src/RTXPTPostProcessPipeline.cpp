@@ -242,10 +242,10 @@ bool RTXPTPostProcessPipeline::RunDenoiserFinalMerge(IDeviceContext*           p
 bool RTXPTPostProcessPipeline::RunNoDenoiserFinalMerge(IDeviceContext*           pContext,
                                                        const RTXPTRenderTargets& RenderTargets)
 {
-    RTXPTDenoiserPostProcessAttribs Attribs = MakeRealtimePostProcessAttribs(RenderTargets);
-    const bool Executed                 = m_PostProcessPass.RunNoDenoiserFinalMerge(pContext, Attribs);
-    m_Stats.RealtimeMergeStageReady     = m_PostProcessPass.IsReady();
-    m_Stats.LastRealtimeFinalMergeReady = Executed;
+    RTXPTDenoiserPostProcessAttribs Attribs  = MakeRealtimePostProcessAttribs(RenderTargets);
+    const bool                      Executed = m_PostProcessPass.RunNoDenoiserFinalMerge(pContext, Attribs);
+    m_Stats.RealtimeMergeStageReady          = m_PostProcessPass.IsReady();
+    m_Stats.LastRealtimeFinalMergeReady      = Executed;
     if (!Executed)
         DEV_ERROR("RTXPT no-denoiser final merge failed");
     return Executed;

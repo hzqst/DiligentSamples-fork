@@ -54,10 +54,10 @@ const char* GetVariantName(RTXPTPathTraceVariant Variant)
 {
     switch (Variant)
     {
-        case RTXPTPathTraceVariant::Reference:         return "Reference";
+        case RTXPTPathTraceVariant::Reference: return "Reference";
         case RTXPTPathTraceVariant::BuildStablePlanes: return "BuildStablePlanes";
-        case RTXPTPathTraceVariant::FillStablePlanes:  return "FillStablePlanes";
-        default:                                      return "Unknown";
+        case RTXPTPathTraceVariant::FillStablePlanes: return "FillStablePlanes";
+        default: return "Unknown";
     }
 }
 
@@ -65,10 +65,10 @@ int GetVariantModeMacro(RTXPTPathTraceVariant Variant)
 {
     switch (Variant)
     {
-        case RTXPTPathTraceVariant::Reference:         return 0;
+        case RTXPTPathTraceVariant::Reference: return 0;
         case RTXPTPathTraceVariant::BuildStablePlanes: return 1;
-        case RTXPTPathTraceVariant::FillStablePlanes:  return 2;
-        default:                                      return 0;
+        case RTXPTPathTraceVariant::FillStablePlanes: return 2;
+        default: return 0;
     }
 }
 
@@ -195,8 +195,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         SHADER_TYPE_RAY_CLOSEST_HIT;
     const SHADER_TYPE MaterialStages = HitStages | SHADER_TYPE_RAY_GEN;
     const SHADER_TYPE EnvStages      = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS;
-    const SHADER_TYPE ConstStages   = EnvStages | HitStages;
-    const SHADER_TYPE DynamicStages = ScreenPatternDiagnostic ?
+    const SHADER_TYPE ConstStages    = EnvStages | HitStages;
+    const SHADER_TYPE DynamicStages  = ScreenPatternDiagnostic ?
         SHADER_TYPE_RAY_GEN :
         (SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS | HitStages);
 
@@ -580,11 +580,11 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     };
 
     const RTXPTPathTraceVariant Variants[] =
-    {
-        RTXPTPathTraceVariant::Reference,
-        RTXPTPathTraceVariant::BuildStablePlanes,
-        RTXPTPathTraceVariant::FillStablePlanes,
-    };
+        {
+            RTXPTPathTraceVariant::Reference,
+            RTXPTPathTraceVariant::BuildStablePlanes,
+            RTXPTPathTraceVariant::FillStablePlanes,
+        };
     for (RTXPTPathTraceVariant Variant : Variants)
     {
         if (!CreateVariant(Variant))
@@ -618,7 +618,7 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
         return false;
     }
 
-    VariantState& State = m_Variants[VariantIdx];
+    VariantState& State           = m_Variants[VariantIdx];
     State.Stats.LastTraceExecuted = false;
 
     if (!IsReady(Variant))
@@ -689,10 +689,10 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
 
     // Compatibility bridge: Reference currently reflects legacy output names, while realtime variants use source-compatible names.
     auto SetDynamicForNamePair = [&](const char* SourceName, const char* LegacyName, IDeviceObject* pObject, bool Required) {
-        bool SourceFound = false;
-        bool LegacyFound = false;
-        const bool SourceOk = SetDynamicForStages(SourceName, pObject, false, &SourceFound);
-        const bool LegacyOk = SetDynamicForStages(LegacyName, pObject, false, &LegacyFound);
+        bool       SourceFound = false;
+        bool       LegacyFound = false;
+        const bool SourceOk    = SetDynamicForStages(SourceName, pObject, false, &SourceFound);
+        const bool LegacyOk    = SetDynamicForStages(LegacyName, pObject, false, &LegacyFound);
         if (!SourceOk || !LegacyOk)
             return false;
         if (!SourceFound && !LegacyFound && Required)

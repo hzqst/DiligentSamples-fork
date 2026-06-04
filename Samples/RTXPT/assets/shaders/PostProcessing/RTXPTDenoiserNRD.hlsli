@@ -15,7 +15,7 @@
 #error NRD_ROUGHNESS_ENCODING must be 1
 #endif
 #define NRD_HEADER_ONLY
-#include <NRD.hlsli>
+#include "NRD.hlsli"
 #endif
 
 #ifndef RTXPT_VIEWZ_SKY_MARKER

@@ -230,7 +230,7 @@ bool RTXPTDenoisingGuidesBaker::CreatePass(IRenderDevice*                   pDev
     return State.SRB != nullptr;
 }
 
-bool RTXPTDenoisingGuidesBaker::Bake(IDeviceContext*               pContext,
+bool RTXPTDenoisingGuidesBaker::Bake(IDeviceContext*              pContext,
                                      const RTXPTRenderTargets&    RenderTargets,
                                      RTXPTDenoisingGuideDebugView DebugView)
 {
@@ -272,7 +272,7 @@ bool RTXPTDenoisingGuidesBaker::Bake(IDeviceContext*               pContext,
     return true;
 }
 
-bool RTXPTDenoisingGuidesBaker::DispatchPass(IDeviceContext*               pContext,
+bool RTXPTDenoisingGuidesBaker::DispatchPass(IDeviceContext*              pContext,
                                              const RTXPTRenderTargets&    RenderTargets,
                                              PassId                       Pass,
                                              RTXPTDenoisingGuideDebugView DebugView,

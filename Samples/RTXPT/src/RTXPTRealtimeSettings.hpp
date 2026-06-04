@@ -188,7 +188,7 @@ inline void SanitizeRealtimeSettings(RTXPTRealtimeSettings& Settings)
                                      static_cast<Uint32>(RTXPTRealtimeAAMode::DLSSRR));
     Settings.RealtimeAA = static_cast<RTXPTRealtimeAAMode>(AAMode);
 
-    const Uint32 GuideDebugView = std::clamp(static_cast<Uint32>(Settings.DenoisingGuideDebugView),
+    const Uint32 GuideDebugView      = std::clamp(static_cast<Uint32>(Settings.DenoisingGuideDebugView),
                                              static_cast<Uint32>(RTXPTDenoisingGuideDebugView::Disabled),
                                              static_cast<Uint32>(RTXPTDenoisingGuideDebugView::PrimaryLayer));
     Settings.DenoisingGuideDebugView = static_cast<RTXPTDenoisingGuideDebugView>(GuideDebugView);

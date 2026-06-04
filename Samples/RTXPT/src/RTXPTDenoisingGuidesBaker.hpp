@@ -43,11 +43,11 @@ namespace Diligent
 
 struct RTXPTDenoisingGuidesBakerStats
 {
-    bool   Ready                        = false;
-    bool   LastBakeExecuted             = false;
-    bool   LastDenoiseSpecHitTExecuted  = false;
-    bool   LastAvgLayerRadianceExecuted = false;
-    bool   LastDebugVizExecuted         = false;
+    bool   Ready                         = false;
+    bool   LastBakeExecuted              = false;
+    bool   LastDenoiseSpecHitTExecuted   = false;
+    bool   LastAvgLayerRadianceExecuted  = false;
+    bool   LastDebugVizExecuted          = false;
     Uint32 DenoiseSpecHitTDispatchCount  = 0;
     Uint32 AvgLayerRadianceDispatchCount = 0;
     Uint32 DebugVizDispatchCount         = 0;
@@ -71,11 +71,11 @@ public:
                     IBuffer*        pFrameConstants,
                     bool            ComputeSupported);
 
-    bool Bake(IDeviceContext*               pContext,
+    bool Bake(IDeviceContext*              pContext,
               const RTXPTRenderTargets&    RenderTargets,
               RTXPTDenoisingGuideDebugView DebugView);
 
-    bool IsReady() const { return m_Stats.Ready; }
+    bool                                  IsReady() const { return m_Stats.Ready; }
     const RTXPTDenoisingGuidesBakerStats& GetStats() const { return m_Stats; }
 
 private:
@@ -88,7 +88,7 @@ private:
     bool CreatePass(IRenderDevice*                   pDevice,
                     IShaderSourceInputStreamFactory* pShaderSourceFactory,
                     PassId                           Pass);
-    bool DispatchPass(IDeviceContext*               pContext,
+    bool DispatchPass(IDeviceContext*              pContext,
                       const RTXPTRenderTargets&    RenderTargets,
                       PassId                       Pass,
                       RTXPTDenoisingGuideDebugView DebugView,

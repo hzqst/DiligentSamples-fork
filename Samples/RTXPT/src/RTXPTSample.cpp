@@ -60,12 +60,12 @@ constexpr int         kExposureModeMax                = static_cast<int>(RTXPTEx
 static_assert(kToneMapOperatorMin == 0 && kToneMapOperatorMax == 5, "Tone-map UI assumes contiguous operator values");
 static_assert(kExposureModeMin == 0 && kExposureModeMax == 1, "Tone-map UI assumes contiguous exposure mode values");
 
-constexpr bool        kRTXPTRealtimeTaaAvailable   = false;
-constexpr bool        kRTXPTRealtimeSrAvailable    = false;
-constexpr bool        kRTXPTDlssRrAvailable        = false;
+constexpr bool        kRTXPTRealtimeTaaAvailable = false;
+constexpr bool        kRTXPTRealtimeSrAvailable  = false;
+constexpr bool        kRTXPTDlssRrAvailable      = false;
 constexpr const char* kRTXPTRealtimeRoutePendingReason =
     "Realtime mode uses standalone NRD when available; otherwise it uses no-denoiser final merge and presentation.";
-constexpr Uint32      kRTXPTRealtimeNoisePeriod    = 8192u;
+constexpr Uint32 kRTXPTRealtimeNoisePeriod = 8192u;
 
 bool IsStandaloneNrdAvailable()
 {
@@ -160,7 +160,7 @@ Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 Emis
     return (ClampedCount << 1u) | (EnableEnvNEE ? 1u : 0u);
 }
 
-RTXPTRayTracingDispatch MakePathTraceDispatch(const RTXPTRenderTargets& RenderTargets,
+RTXPTRayTracingDispatch MakePathTraceDispatch(const RTXPTRenderTargets&  RenderTargets,
                                               const SampleMiniConstants& MiniConstants)
 {
     RTXPTRayTracingDispatch Dispatch;
@@ -1089,13 +1089,12 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_AccelerationStructures.GetTLAS(),
                                     nullptr,
                                     0,
-                                     false,
-                                     m_AccelerationStructures.GetStats().AlphaBlendedGeometryCount > 0,
-                                     m_ReferenceUI.EnableLDSamplerForBSDF,
+                                    false,
+                                    m_AccelerationStructures.GetStats().AlphaBlendedGeometryCount > 0,
+                                    m_ReferenceUI.EnableLDSamplerForBSDF,
                                     m_FeatureCaps.RayTracing,
                                     m_FeatureCaps.StandaloneRayTracingShaders);
     }
-
 }
 
 bool RTXPTSample::BuildEmissiveTriangles()
@@ -1199,9 +1198,9 @@ bool RTXPTSample::PathTrace()
     m_LastRealtimeFinalMergeReady   = false;
     RecordRealtimePathTraceStatus("");
 
-    SampleMiniConstants MiniConstants = {};
-    const RTXPTRayTracingDispatch BaseDispatch = MakePathTraceDispatch(m_RenderTargets, MiniConstants);
-    const bool UseStablePlanes = m_RealtimeUI.RealtimeMode;
+    SampleMiniConstants           MiniConstants   = {};
+    const RTXPTRayTracingDispatch BaseDispatch    = MakePathTraceDispatch(m_RenderTargets, MiniConstants);
+    const bool                    UseStablePlanes = m_RealtimeUI.RealtimeMode;
 
     // PathTracePrePass dispatches BuildStablePlanes and synchronizes exported realtime state.
     if (UseStablePlanes && !DispatchPathTracePrePass(BaseDispatch))
@@ -1234,7 +1233,7 @@ bool RTXPTSample::PathTrace()
 
 bool RTXPTSample::DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTracingDispatch& BaseDispatch)
 {
-    const Uint32 SPP = std::max(m_RealtimeUI.ActualSamplesPerPixel(), 1u);
+    const Uint32                SPP = std::max(m_RealtimeUI.ActualSamplesPerPixel(), 1u);
     const RTXPTPathTraceVariant Variant =
         UseStablePlanes ? RTXPTPathTraceVariant::FillStablePlanes : RTXPTPathTraceVariant::Reference;
 
@@ -1247,10 +1246,10 @@ bool RTXPTSample::DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTrac
         }
 
         SampleMiniConstants MiniConstants = {};
-        MiniConstants.params.x = SubSampleIndex;
+        MiniConstants.params.x            = SubSampleIndex;
 
         RTXPTRayTracingDispatch Dispatch = BaseDispatch;
-        Dispatch.pMiniConstants = &MiniConstants;
+        Dispatch.pMiniConstants          = &MiniConstants;
 
         const bool TraceOk = m_RayTracingPass.Dispatch(m_pImmediateContext, Variant, Dispatch);
         if (!TraceOk)
@@ -1407,7 +1406,7 @@ bool RTXPTSample::RunRealtimeNoDenoiserFinalMerge()
 
 bool RTXPTSample::PresentRealtimeFinalOutput()
 {
-    const RTXPTSuperResolutionSettings DisabledSuperResolution;
+    const RTXPTSuperResolutionSettings  DisabledSuperResolution;
     const RTXPTSuperResolutionFrameDesc FrameDesc =
         m_PostProcessPipeline.ResolveSuperResolutionFrameDesc(DisabledSuperResolution,
                                                               m_RenderTargets.GetDisplayWidth(),
@@ -1443,9 +1442,9 @@ bool RTXPTSample::PresentRealtimeFinalOutput()
     }
 
     if (!m_PostProcessPipeline.RunToneMapping(m_pImmediateContext,
-                                             m_RenderTargets,
-                                             m_ReferenceUI.ToneMapping,
-                                             m_ReferenceUI.EnableToneMapping))
+                                              m_RenderTargets,
+                                              m_ReferenceUI.ToneMapping,
+                                              m_ReferenceUI.EnableToneMapping))
     {
         RecordRealtimePathTraceStatus("Realtime tone mapping failed");
         return false;
@@ -1721,7 +1720,7 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
     SanitizeRealtimeSettings(m_RealtimeUI);
     const RTXPTRenderTargetCreateInfo CreateInfo =
         MakeRenderTargetCreateInfo(m_CurrentTargetDimensions, m_RealtimeUI, m_FeatureCaps.RayTracing);
-    const bool Ok             = m_RenderTargets.Resize(m_pDevice, CreateInfo);
+    const bool Ok = m_RenderTargets.Resize(m_pDevice, CreateInfo);
     ResetNrdIntegrations();
     const bool ResourcesValid = m_PostProcessPipeline.ValidateRenderTargets(m_RenderTargets);
     m_AccumulationActive =

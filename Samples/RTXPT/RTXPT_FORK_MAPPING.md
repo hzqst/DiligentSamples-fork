@@ -532,6 +532,19 @@ Parity notes:
 - Final presentation reads only `LdrColor` through `RTXPTRenderTargets::GetPresentationSRV()`.
 - P1-P5 must stay backend-neutral for D3D12 and Vulkan. P8 integrations may be D3D12/NVIDIA-only, but must compile out cleanly elsewhere.
 
+## Realtime G6 Denoising Guides Baker
+
+| RTXPT-fork source | Diligent port | Notes |
+|---|---|---|
+| `ProcessingPasses/DenoisingGuidesBaker.h` | `src/RTXPTDenoisingGuidesBaker.hpp` | Diligent pass owner for guide compute dispatch and stats. |
+| `ProcessingPasses/DenoisingGuidesBaker.cpp::DenoiseSpecHitT` | `src/RTXPTDenoisingGuidesBaker.cpp::Bake` | Preserves ping then pong dispatch ordering using `SpecularHitT` and `ScratchFloat1`. |
+| `ProcessingPasses/DenoisingGuidesBaker.cpp::ComputeAvgLayerRadiance` | `src/RTXPTDenoisingGuidesBaker.cpp::Bake` | Dispatches at half render resolution and writes `DenoiserAvgLayerRadianceHalfRes`. |
+| `ProcessingPasses/DenoisingGuidesBaker.cpp::RenderDebugViz` | `src/RTXPTDenoisingGuidesBaker.cpp::Bake` + `src/RTXPTSample.cpp::PresentRealtimeGuideDebug` | Diligent debug visualization writes to `ProcessedOutputColor` for optional presentation because no RTXPT-fork `ShaderDebug` texture owner is ported. |
+| `ProcessingPasses/DenoisingGuidesBaker.hlsl` | `assets/shaders/PathTracer/DenoisingGuidesBaker.hlsl` | Shader algorithms use Diligent resource names and existing `StablePlanesContext`. |
+| `Sample.cpp::PathTrace` guide bake call point | `src/RTXPTSample.cpp::PathTrace` | Runs after FILL stable-plane loop and before later final merge/NRD work. |
+
+G6 intentionally does not port `ShaderDebug`, `StablePlanesDebugViz`, NRD prepare/final merge, or no-denoiser final merge. Those remain owned by later realtime denoise phases.
+
 ## Skinned glTF Current Geometry
 
 The Diligent RTXPT port uses a Diligent-native current-geometry path for skinned glTF:

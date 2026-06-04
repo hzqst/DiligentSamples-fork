@@ -94,25 +94,53 @@ bool IsDenoiserFinalMergePass(RTXPTPostProcessPassId Pass)
         Pass == RTXPTPostProcessPassId::ReblurDenoiserFinalMerge;
 }
 
-bool SetStaticVariable(IPipelineState* pPSO, SHADER_TYPE ShaderType, const char* Name, IDeviceObject* pObject, bool Required)
+bool SetStaticVariable(IPipelineState*        pPSO,
+                       SHADER_TYPE            ShaderType,
+                       const char*            Name,
+                       IDeviceObject*         pObject,
+                       bool                   Required,
+                       RTXPTPostProcessPassId Pass,
+                       const char*            ResourceName)
 {
     IShaderResourceVariable* pVar = pPSO != nullptr ? pPSO->GetStaticVariableByName(ShaderType, Name) : nullptr;
     if (pVar == nullptr)
+    {
+        if (Required)
+            UNEXPECTED("RTXPT static shader variable is missing: ", ResourceName, " (", Name, ") for pass: ", GetPassName(Pass));
         return !Required;
+    }
     if (pObject == nullptr)
+    {
+        if (Required)
+            DEV_ERROR("RTXPT static resource object is null: ", ResourceName, " (", Name, ") for pass: ", GetPassName(Pass));
         return !Required;
+    }
 
     pVar->Set(pObject);
     return true;
 }
 
-bool SetSRBVariable(IShaderResourceBinding* pSRB, SHADER_TYPE ShaderType, const char* Name, IDeviceObject* pObject, bool Required)
+bool SetSRBVariable(IShaderResourceBinding* pSRB,
+                    SHADER_TYPE             ShaderType,
+                    const char*             Name,
+                    IDeviceObject*          pObject,
+                    bool                    Required,
+                    RTXPTPostProcessPassId  Pass,
+                    const char*             ResourceName)
 {
     IShaderResourceVariable* pVar = pSRB != nullptr ? pSRB->GetVariableByName(ShaderType, Name) : nullptr;
     if (pVar == nullptr)
+    {
+        if (Required)
+            UNEXPECTED("RTXPT dynamic shader variable is missing: ", ResourceName, " (", Name, ") for pass: ", GetPassName(Pass));
         return !Required;
+    }
     if (pObject == nullptr)
+    {
+        if (Required)
+            DEV_ERROR("RTXPT dynamic resource object is null: ", ResourceName, " (", Name, ") for pass: ", GetPassName(Pass));
         return !Required;
+    }
 
     pVar->Set(pObject);
     return true;
@@ -124,7 +152,8 @@ bool UpdateMiniConstantsBuffer(IDeviceContext*                        pContext,
                                const RTXPTDenoiserPostProcessAttribs& Attribs)
 {
     SampleMiniConstants MiniConstants = Attribs.MiniConstants;
-    MiniConstants.params.x            = Attribs.PlaneIndex;
+    // Stable-plane debug viz uses params.x == 0 as the shader-side four-way split convention.
+    MiniConstants.params.x = Attribs.PlaneIndex;
     if (IsDenoiserPreparePass(Pass))
         MiniConstants.params.y = Attribs.InitOutput ? 1u : 0u;
     else if (IsDenoiserFinalMergePass(Pass))
@@ -154,28 +183,28 @@ bool BindDispatchResources(IShaderResourceBinding*                pSRB,
     const bool StableBufferRequired = StablePlanesRequired || FinalMergePass;
     const bool ValidationRequired   = FinalMergePass && Attribs.HasValidation;
 
-    return SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_LdrColorScratch", nullptr, false) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_Depth", RenderTargets.GetDepthSRV(), false) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_MotionVectors", RenderTargets.GetScreenMotionVectorsSRV(), false) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_SpecularHitT", RenderTargets.GetSpecularHitTSRV(), PreparePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutDiffRadianceHitDist", RenderTargets.GetDenoiserOutDiffRadianceHitDistSRV(Attribs.PlaneIndex), FinalMergePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutSpecRadianceHitDist", RenderTargets.GetDenoiserOutSpecRadianceHitDistSRV(Attribs.PlaneIndex), FinalMergePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutValidation", RenderTargets.GetDenoiserOutValidationSRV(), ValidationRequired) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserViewspaceZ", RenderTargets.GetDenoiserViewspaceZSRV(), FinalMergePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserDisocclusionThresholdMix", RenderTargets.GetDenoiserDisocclusionThresholdMixSRV(), false) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_OutputColor", Attribs.pMergeOutputUAV, true) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_ProcessedOutputColor", nullptr, false) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_PostTonemapOutputColor", nullptr, false) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StableRadiance", RenderTargets.GetStableRadianceUAV(), StablePlanesRequired) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StablePlanesHeader", RenderTargets.GetStablePlanesHeaderUAV(), StablePlanesRequired) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StablePlanesBuffer", RenderTargets.GetStablePlanesBufferUAV(), StableBufferRequired) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserViewspaceZ", RenderTargets.GetDenoiserViewspaceZUAV(), PreparePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserMotionVectors", RenderTargets.GetDenoiserMotionVectorsUAV(), PreparePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserNormalRoughness", RenderTargets.GetDenoiserNormalRoughnessUAV(), PreparePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserDiffRadianceHitDist", RenderTargets.GetDenoiserDiffRadianceHitDistUAV(), PreparePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserSpecRadianceHitDist", RenderTargets.GetDenoiserSpecRadianceHitDistUAV(), PreparePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserDisocclusionThresholdMix", RenderTargets.GetDenoiserDisocclusionThresholdMixUAV(), PreparePass) &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_CombinedHistoryClampRelax", RenderTargets.GetCombinedHistoryClampRelaxUAV(), PreparePass);
+    return SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_LdrColorScratch", nullptr, false, Pass, "LDR color scratch SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_Depth", RenderTargets.GetDepthSRV(), false, Pass, "depth SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_MotionVectors", RenderTargets.GetScreenMotionVectorsSRV(), false, Pass, "motion vectors SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_SpecularHitT", RenderTargets.GetSpecularHitTSRV(), PreparePass, Pass, "specular hit T SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutDiffRadianceHitDist", RenderTargets.GetDenoiserOutDiffRadianceHitDistSRV(Attribs.PlaneIndex), FinalMergePass, Pass, "denoiser output diffuse radiance hit distance SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutSpecRadianceHitDist", RenderTargets.GetDenoiserOutSpecRadianceHitDistSRV(Attribs.PlaneIndex), FinalMergePass, Pass, "denoiser output specular radiance hit distance SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutValidation", RenderTargets.GetDenoiserOutValidationSRV(), ValidationRequired, Pass, "denoiser validation SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserViewspaceZ", RenderTargets.GetDenoiserViewspaceZSRV(), FinalMergePass, Pass, "denoiser viewspace Z SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserDisocclusionThresholdMix", RenderTargets.GetDenoiserDisocclusionThresholdMixSRV(), false, Pass, "denoiser disocclusion threshold mix SRV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_OutputColor", Attribs.pMergeOutputUAV, true, Pass, "merge output UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_ProcessedOutputColor", nullptr, false, Pass, "processed output color UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_PostTonemapOutputColor", nullptr, false, Pass, "post-tonemap output color UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StableRadiance", RenderTargets.GetStableRadianceUAV(), StablePlanesRequired, Pass, "stable radiance UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StablePlanesHeader", RenderTargets.GetStablePlanesHeaderUAV(), StablePlanesRequired, Pass, "stable planes header UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StablePlanesBuffer", RenderTargets.GetStablePlanesBufferUAV(), StableBufferRequired, Pass, "stable planes buffer UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserViewspaceZ", RenderTargets.GetDenoiserViewspaceZUAV(), PreparePass, Pass, "denoiser viewspace Z UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserMotionVectors", RenderTargets.GetDenoiserMotionVectorsUAV(), PreparePass, Pass, "denoiser motion vectors UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserNormalRoughness", RenderTargets.GetDenoiserNormalRoughnessUAV(), PreparePass, Pass, "denoiser normal roughness UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserDiffRadianceHitDist", RenderTargets.GetDenoiserDiffRadianceHitDistUAV(), PreparePass, Pass, "denoiser diffuse radiance hit distance UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserSpecRadianceHitDist", RenderTargets.GetDenoiserSpecRadianceHitDistUAV(), PreparePass, Pass, "denoiser specular radiance hit distance UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_DenoiserDisocclusionThresholdMix", RenderTargets.GetDenoiserDisocclusionThresholdMixUAV(), PreparePass, Pass, "denoiser disocclusion threshold mix UAV") &&
+        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_CombinedHistoryClampRelax", RenderTargets.GetCombinedHistoryClampRelaxUAV(), PreparePass, Pass, "combined history clamp relax UAV");
 }
 
 } // namespace
@@ -268,6 +297,7 @@ bool RTXPTPostProcessPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
         if (!CreatePostProcessPSO(pDevice, ShaderCI, Pass))
         {
             DEV_ERROR("Failed to create RTXPT post-process pipeline: ", GetPassName(Pass));
+            Reset();
             return false;
         }
     }
@@ -341,10 +371,17 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
     if (!State.PSO)
         return false;
 
+    const bool LegacyPostProcessPass =
+        Pass == RTXPTPostProcessPassId::HdrTest ||
+        Pass == RTXPTPostProcessPassId::EdgeDetection;
+    const bool MiniConstantsRequired =
+        IsDenoiserPreparePass(Pass) ||
+        IsDenoiserFinalMergePass(Pass) ||
+        Pass == RTXPTPostProcessPassId::StablePlanesDebugViz;
     const bool StaticBound =
-        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_PostProcessConstants", m_Constants, false) &&
-        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_Const", m_FrameConstants, false) &&
-        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_MiniConst", m_MiniConstants, false);
+        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_PostProcessConstants", m_Constants, LegacyPostProcessPass, Pass, "post-process constants") &&
+        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_Const", m_FrameConstants, !LegacyPostProcessPass, Pass, "frame constants") &&
+        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_MiniConst", m_MiniConstants, MiniConstantsRequired, Pass, "mini constants");
     if (!StaticBound)
     {
         DEV_ERROR("RTXPT post-process pass failed to bind static constants for ", GetPassName(Pass));
@@ -441,7 +478,7 @@ bool RTXPTPostProcessPass::RunHdrTest(IDeviceContext* pContext, const RTXPTPostP
     if (!UpdateConstants(pContext, Attribs.Width, Attribs.Height, Attribs.Params.EdgeThreshold))
         return false;
 
-    if (!SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "u_ProcessedOutputColor", Attribs.pProcessedOutputUAV, true))
+    if (!SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "u_ProcessedOutputColor", Attribs.pProcessedOutputUAV, true, RTXPTPostProcessPassId::HdrTest, "processed output color UAV"))
         return false;
 
     pContext->SetPipelineState(State.PSO);
@@ -490,8 +527,8 @@ bool RTXPTPostProcessPass::RunEdgeDetection(IDeviceContext* pContext, const RTXP
         return false;
 
     const bool Bound =
-        SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "t_LdrColorScratch", Attribs.pLdrColorScratchSRV, true) &&
-        SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "u_PostTonemapOutputColor", Attribs.pLdrColorUAV, true);
+        SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "t_LdrColorScratch", Attribs.pLdrColorScratchSRV, true, RTXPTPostProcessPassId::EdgeDetection, "LDR color scratch SRV") &&
+        SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "u_PostTonemapOutputColor", Attribs.pLdrColorUAV, true, RTXPTPostProcessPassId::EdgeDetection, "post-tonemap output color UAV");
     if (!Bound)
         return false;
 

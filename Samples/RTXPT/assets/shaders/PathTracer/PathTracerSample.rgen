@@ -241,9 +241,9 @@ void main()
         TraceRay(t_SceneBVH,
                  RAY_FLAG_NONE,
                  0xFF,
-                 0,
-                 1,
-                 0,
+                 RTXPT_PRIMARY_RAY_INDEX,
+                 RTXPT_HIT_GROUP_STRIDE,
+                 RTXPT_PRIMARY_RAY_INDEX,
                  ray,
                  payload);
 
@@ -498,9 +498,9 @@ void nextHit(inout PathState path, inout float2 tMinMax, const PathTracer::Worki
     TraceRay(t_SceneBVH,
              RAY_FLAG_NONE,
              0xFF,
-             0,
-             1,
-             0,
+             RTXPT_PRIMARY_RAY_INDEX,
+             RTXPT_HIT_GROUP_STRIDE,
+             RTXPT_PRIMARY_RAY_INDEX,
              ray,
              payload);
     path = PathPayload::unpack(payload);

@@ -72,6 +72,9 @@ int GetVariantModeMacro(RTXPTPathTraceVariant Variant)
     }
 }
 
+constexpr Uint32 kRTXPTPrimaryRayIndex    = 0;
+constexpr Uint32 kRTXPTVisibilityRayIndex = 1;
+
 size_t GetVariantIndex(RTXPTPathTraceVariant Variant)
 {
     return static_cast<size_t>(Variant);
@@ -319,6 +322,16 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             pDevice->CreateShader(ShaderCI, &pMiss);
         }
 
+        RefCntAutoPtr<IShader> pVisibilityMiss;
+        if (!ScreenPatternDiagnostic)
+        {
+            ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
+            ShaderCI.Desc.Name       = "RTXPT path trace visibility miss";
+            ShaderCI.FilePath        = "PathTracer/PathTracerMiss.rmiss";
+            ShaderCI.EntryPoint      = "visibilityMain";
+            pDevice->CreateShader(ShaderCI, &pVisibilityMiss);
+        }
+
         RefCntAutoPtr<IShader> pClosestHit;
         if (!ScreenPatternDiagnostic)
         {
@@ -339,9 +352,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             pDevice->CreateShader(ShaderCI, &pAnyHit);
         }
 
-        VERIFY(pRayGen && (ScreenPatternDiagnostic || (pMiss && pClosestHit && (!UseAnyHit || pAnyHit))),
+        VERIFY(pRayGen && (ScreenPatternDiagnostic || (pMiss && pVisibilityMiss && pClosestHit && (!UseAnyHit || pAnyHit))),
                "Failed to create RTXPT path tracing shaders");
-        if (!pRayGen || (!ScreenPatternDiagnostic && (!pMiss || !pClosestHit || (UseAnyHit && !pAnyHit))))
+        if (!pRayGen || (!ScreenPatternDiagnostic && (!pMiss || !pVisibilityMiss || !pClosestHit || (UseAnyHit && !pAnyHit))))
         {
             DEV_ERROR("Failed to create RTXPT path tracing shaders for variant: ", GetVariantName(Variant));
             return false;
@@ -354,6 +367,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         if (!ScreenPatternDiagnostic)
         {
             PSOCreateInfo.AddGeneralShader("PrimaryMiss", pMiss);
+            PSOCreateInfo.AddGeneralShader("VisibilityMiss", pVisibilityMiss);
             if (UseAnyHit)
                 PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit, pAnyHit);
             else
@@ -570,8 +584,10 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         State.SBT->BindRayGenShader("Main");
         if (!ScreenPatternDiagnostic)
         {
-            State.SBT->BindMissShader("PrimaryMiss", 0);
-            State.SBT->BindHitGroupForTLAS(m_TLAS, 0, "PrimaryHit");
+            State.SBT->BindMissShader("PrimaryMiss", kRTXPTPrimaryRayIndex);
+            State.SBT->BindMissShader("VisibilityMiss", kRTXPTVisibilityRayIndex);
+            State.SBT->BindHitGroupForTLAS(m_TLAS, kRTXPTPrimaryRayIndex, "PrimaryHit");
+            State.SBT->BindHitGroupForTLAS(m_TLAS, kRTXPTVisibilityRayIndex, "PrimaryHit");
         }
         pContext->UpdateSBT(State.SBT);
 

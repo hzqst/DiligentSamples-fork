@@ -106,7 +106,7 @@ float2 SampleConcentricDisk(float2 sample)
 float3 ComputeNonNormalizedRayDirPinhole(PathTracerCameraData data, uint2 pixel, float2 jitter)
 {
     const float2 p   = (float2(pixel) + float2(0.5, 0.5) + jitter) / float2(data.ViewportSize);
-    const float2 ndc = p * 2.0 - 1.0;
+    const float2 ndc = float2(2.0, -2.0) * p + float2(-1.0, 1.0);
     return ndc.x * data.CameraU + ndc.y * data.CameraV + data.CameraW;
 }
 
@@ -114,7 +114,10 @@ CameraRay ComputeRayThinlens(PathTracerCameraData data, uint2 pixel, float2 jitt
 {
     CameraRay ray;
     ray.origin = data.PosW;
-    ray.dir    = ComputeNonNormalizedRayDirPinhole(data, pixel, jitter);
+
+    const float2 p   = (float2(pixel) + float2(0.5, 0.5) + float2(-jitter.x, jitter.y)) / float2(data.ViewportSize);
+    const float2 ndc = float2(2.0, -2.0) * p + float2(-1.0, 1.0);
+    ray.dir          = ndc.x * data.CameraU + ndc.y * data.CameraV + data.CameraW;
 
     const float2 apertureSample = SampleConcentricDisk(sample2D);
     const float3 target         = ray.origin + ray.dir;

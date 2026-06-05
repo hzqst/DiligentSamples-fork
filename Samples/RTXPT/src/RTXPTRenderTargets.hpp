@@ -50,7 +50,7 @@ struct RTXPTRenderTargetFormats
     TEXTURE_FORMAT LdrColor                  = TEX_FORMAT_RGBA8_UNORM;
     TEXTURE_FORMAT ComputeColor              = TEX_FORMAT_RGBA8_UNORM;
     TEXTURE_FORMAT Depth                     = TEX_FORMAT_R32_FLOAT;
-    TEXTURE_FORMAT ScreenMotionVectors       = TEX_FORMAT_RG16_FLOAT;
+    TEXTURE_FORMAT ScreenMotionVectors       = TEX_FORMAT_RGBA16_FLOAT;
     TEXTURE_FORMAT TemporalFeedback          = TEX_FORMAT_RGBA16_SNORM;
     TEXTURE_FORMAT CombinedHistoryClampRelax = TEX_FORMAT_R8_UNORM;
 

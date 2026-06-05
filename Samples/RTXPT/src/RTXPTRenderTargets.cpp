@@ -287,7 +287,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
         return FailResize("R32F UAV Depth is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (!SupportsBindFlags(pDevice, Formats.ScreenMotionVectors, UavFlags))
-        return FailResize("RG16F UAV ScreenMotionVectors is not supported; RTXPT post-processing resource graph is unavailable");
+        return FailResize("RGBA16F UAV ScreenMotionVectors is not supported; RTXPT post-processing resource graph is unavailable");
 
     if (!SupportsBindFlags(pDevice, Formats.ProcessedOutputColor, HdrRtFlags))
         return FailResize("HDR UAV/RTV ProcessedOutputColor is not supported; RTXPT post-processing resource graph is unavailable");

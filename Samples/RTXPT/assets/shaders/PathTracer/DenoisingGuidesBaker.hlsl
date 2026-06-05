@@ -28,7 +28,7 @@ ConstantBuffer<SampleConstants>               g_Const;
 ConstantBuffer<DenoisingGuidesBakerConstants> g_DenoisingGuidesBakerConstants;
 
 Texture2D<float>                                  t_Depth;
-Texture2D<float2>                                 t_MotionVectors;
+Texture2D<float4>                                 t_MotionVectors;
 VK_IMAGE_FORMAT("r32f") RWTexture2D<float>        u_SpecularHitT;
 VK_IMAGE_FORMAT("r32f") RWTexture2D<float>        u_ScratchFloat1;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>    u_StableRadiance;
@@ -124,7 +124,7 @@ void ComputeAvgLayerRadiance(uint2 DispatchThreadID : SV_DispatchThreadID)
 
     const uint2  RenderMax          = max(g_DenoisingGuidesBakerConstants.RenderResolution, uint2(1u, 1u)) - 1u;
     const uint2  BasePixel          = min(HalfResPos * 2u, RenderMax);
-    const float2 ScreenSpaceMotion  = t_MotionVectors[min(BasePixel + (HalfResPos & 1u), RenderMax)];
+    const float2 ScreenSpaceMotion  = t_MotionVectors[min(BasePixel + (HalfResPos & 1u), RenderMax)].xy;
     const int2   HistoricPixel      = int2(float2(BasePixel) + ScreenSpaceMotion + 0.5.xx);
     const uint2  HistoricHalfResPos = min(uint2(max(HistoricPixel, int2(0, 0))) / 2u, HalfRes - 1u);
 
@@ -201,7 +201,7 @@ void DebugViz(uint2 DispatchThreadID : SV_DispatchThreadID)
     }
     else if (DebugView == RTXPT_DENOISING_GUIDE_DEBUG_MOTION_VECTORS)
     {
-        const float2 Motion = t_MotionVectors[PixelPos];
+        const float2 Motion = t_MotionVectors[PixelPos].xy;
         Color               = float4(0.5.xx + Motion * 0.2, 0.0, 1.0);
     }
     else if (DebugView == RTXPT_DENOISING_GUIDE_DEBUG_SPECULAR_HIT_T)

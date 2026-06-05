@@ -215,7 +215,8 @@ PathTracerCameraData MakePathTracerCameraData(const FirstPersonCamera& Camera,
     Data.ViewportWidth        = std::max(RenderWidth, Uint32{1});
     Data.ViewportHeight       = std::max(RenderHeight, Uint32{1});
     Data.ApertureRadius       = std::max(ApertureRadius, 0.0f);
-    Data.Jitter               = Jitter;
+    // Match RTXPT-fork BridgeCamera jitter storage; shader helpers apply per-camera-model signs.
+    Data.Jitter               = Jitter * float2{1.0f, -1.0f};
     return Data;
 }
 

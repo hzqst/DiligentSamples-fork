@@ -35,7 +35,7 @@ Buffer<uint>                           t_IndexBuffer;
 // Task 5 binding contract: source-name realtime UAVs are not bound by the current reference RT pass.
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_OutputColor;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>        u_Depth;
-VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>       u_MotionVectors;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_MotionVectors;
 VK_IMAGE_FORMAT("r32ui")   RWTexture2D<uint>         u_Throughput;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>        u_SpecularHitT;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_StableRadiance;
@@ -272,7 +272,7 @@ namespace Bridge
     void ExportSurfaceInit(uint2 pixelPos)
     {
         u_Depth[pixelPos]         = 0.0;
-        u_MotionVectors[pixelPos] = float2(0.0, 0.0);
+        u_MotionVectors[pixelPos] = float4(0.0, 0.0, 0.0, 0.0);
         u_Throughput[pixelPos]    = 0u;
         u_SpecularHitT[pixelPos]  = 0.0;
     }
@@ -280,7 +280,7 @@ namespace Bridge
     void ExportNonSurface(uint2 pixelPos)
     {
         u_Depth[pixelPos]         = 0.0;
-        u_MotionVectors[pixelPos] = float2(0.0, 0.0);
+        u_MotionVectors[pixelPos] = float4(0.0, 0.0, 0.0, 0.0);
         u_Throughput[pixelPos]    = 0u;
     }
 
@@ -288,7 +288,7 @@ namespace Bridge
     {
         const uint2 pixelPos = path.GetPixelPos();
         u_Depth[pixelPos]         = sceneLength;
-        u_MotionVectors[pixelPos] = motionVectors.xy;
+        u_MotionVectors[pixelPos] = float4(motionVectors, 0.0);
         u_Throughput[pixelPos]    = Pack_R11G11B10_FLOAT(saturate(path.GetThp()));
     }
 
@@ -296,7 +296,7 @@ namespace Bridge
     {
         const uint2 pixelPos = path.GetPixelPos();
         u_Depth[pixelPos]         = 0.0;
-        u_MotionVectors[pixelPos] = motionVectors.xy;
+        u_MotionVectors[pixelPos] = float4(motionVectors, 0.0);
         u_Throughput[pixelPos]    = 0u;
     }
 

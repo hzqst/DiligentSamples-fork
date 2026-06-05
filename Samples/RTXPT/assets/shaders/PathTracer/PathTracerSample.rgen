@@ -15,7 +15,7 @@
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
-VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_ScreenMotionVectors;
 
 [shader("raygeneration")]
 void main()
@@ -32,7 +32,7 @@ void main()
 
     u_Output[pixel]              = float4(debugColor, 1.0);
     u_Depth[pixel]               = 1.0;
-    u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
+    u_ScreenMotionVectors[pixel] = float4(0.0, 0.0, 0.0, 0.0);
 }
 
 #elif RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
@@ -43,7 +43,7 @@ RaytracingAccelerationStructure                t_SceneBVH;
 
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
-VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_ScreenMotionVectors;
 
 struct DiagnosticPayload
 {
@@ -128,7 +128,7 @@ void main()
     {
         u_Output[pixel]              = float4(diagnosticColor, 1.0);
         u_Depth[pixel]               = 1.0;
-        u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
+        u_ScreenMotionVectors[pixel] = float4(0.0, 0.0, 0.0, 0.0);
         return;
     }
 
@@ -158,7 +158,7 @@ void main()
 
     u_Output[pixel]              = float4(payload.color, 1.0);
     u_Depth[pixel]               = payload.hit != 0u ? payload.hitDistance : 1.0;
-    u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
+    u_ScreenMotionVectors[pixel] = float4(0.0, 0.0, 0.0, 0.0);
 }
 
 #else
@@ -173,7 +173,7 @@ void main()
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
-VK_IMAGE_FORMAT("rg16f")   RWTexture2D<float2>  u_ScreenMotionVectors;
+VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_ScreenMotionVectors;
 
 static const float kSpecularRoughnessThreshold = 0.25;
 
@@ -401,7 +401,7 @@ void main()
 
     u_Output[pixel]              = float4(pathRadiance, 1.0);
     u_Depth[pixel]               = primaryDepth;
-    u_ScreenMotionVectors[pixel] = float2(0.0, 0.0);
+    u_ScreenMotionVectors[pixel] = float4(0.0, 0.0, 0.0, 0.0);
 }
 
 #else

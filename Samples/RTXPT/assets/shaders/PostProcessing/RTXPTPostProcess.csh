@@ -59,7 +59,7 @@ cbuffer g_MiniConst
 };
 
 Texture2D<float>        t_Depth;
-Texture2D<float2>       t_MotionVectors;
+Texture2D<float4>       t_MotionVectors;
 Texture2D<float>        t_SpecularHitT;
 Texture2D<float4>       t_DenoiserOutDiffRadianceHitDist;
 Texture2D<float4>       t_DenoiserOutSpecRadianceHitDist;

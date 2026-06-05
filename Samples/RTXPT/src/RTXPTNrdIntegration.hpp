@@ -101,9 +101,9 @@ private:
 #if RTXPT_HAS_NRD
     struct PipelineState
     {
-        RefCntAutoPtr<IPipelineState>         PSO;
-        RefCntAutoPtr<IShaderResourceBinding> SRB;
-        std::vector<std::string>              ConstantBufferNames;
+        RefCntAutoPtr<IPipelineState>               PSO;
+        RefCntAutoPtr<IShaderResourceBinding>       SRB;
+        std::vector<std::string>                    ConstantBufferNames;
         std::vector<std::pair<Uint32, std::string>> SamplerNames;
         std::vector<std::pair<Uint32, std::string>> TextureSRVNames;
         std::vector<std::pair<Uint32, std::string>> TextureUAVNames;

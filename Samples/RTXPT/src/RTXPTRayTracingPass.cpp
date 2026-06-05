@@ -376,9 +376,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         }
         PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth =
             Variant == RTXPTPathTraceVariant::FillStablePlanes ? 2 : 1;
-        PSOCreateInfo.RayTracingPipeline.ShaderRecordSize  = 0;
-        PSOCreateInfo.MaxAttributeSize                     = static_cast<Uint32>(sizeof(float) * 2);
-        PSOCreateInfo.MaxPayloadSize                       = static_cast<Uint32>(sizeof(float) * 40);
+        PSOCreateInfo.RayTracingPipeline.ShaderRecordSize = 0;
+        PSOCreateInfo.MaxAttributeSize                    = static_cast<Uint32>(sizeof(float) * 2);
+        PSOCreateInfo.MaxPayloadSize                      = static_cast<Uint32>(sizeof(float) * 40);
 
         PipelineResourceLayoutDescX ResourceLayout;
         ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;

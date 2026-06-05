@@ -417,89 +417,262 @@ bool IsFiniteScalar(float v)
     return (v == v) && (abs(v) < 3.402823466e+38);
 }
 
-float3 EvalSpecularReflectionTransmission(StandardBSDFData bsdfData, float3 wiLocal, float3 woLocal)
+struct SpecularReflectionMicrofacet
 {
-    if (bsdfData.alpha == 0.0 || woLocal.z < kMinCosTheta || abs(wiLocal.z) < kMinCosTheta)
-        return float3(0.0, 0.0, 0.0);
+    float3 albedo;
+    float  alpha;
+    uint   activeLobes;
 
-    const bool  isReflection = wiLocal.z > 0.0;
-    const float actualEta    = (bsdfData.thinSurface && !isReflection) ? 1.0 : bsdfData.eta;
-    if (!isReflection && abs(actualEta - 1.0) <= 1e-6)
-        return float3(0.0, 0.0, 0.0);
-
-    const float3 hUnnormalized = wiLocal + woLocal * (isReflection ? 1.0 : actualEta);
-    const float  hLen2         = dot(hUnnormalized, hUnnormalized);
-    if (!IsFiniteScalar(hLen2) || hLen2 <= 1e-14)
-        return float3(0.0, 0.0, 0.0);
-
-    float3 hLocal = hUnnormalized * rsqrt(hLen2);
-    if (hLocal.z < 0.0)
-        hLocal = -hLocal;
-
-    const float viewDotH  = dot(woLocal, hLocal);
-    const float lightDotH = dot(wiLocal, hLocal);
-    const float d         = evalNdfGGX(bsdfData.alpha, hLocal.z);
-    const float vis       = evalVisibilitySmithGGXCorrelated(bsdfData.alpha, woLocal.z, abs(wiLocal.z));
-    const float g         = vis * 4.0 * woLocal.z * abs(wiLocal.z);
-    const float fresnel   = evalFresnelDielectric(actualEta, viewDotH);
-
-    if (isReflection)
-        return float3(fresnel, fresnel, fresnel) * d * g * 0.25 / max(woLocal.z, kMinCosTheta);
-
-    const float sqrtDenom = lightDotH + actualEta * viewDotH;
-    const float t         = actualEta * actualEta * viewDotH * lightDotH /
-        max(woLocal.z * sqrtDenom * sqrtDenom, 1e-7);
-    return GetTransmissionAlbedo(bsdfData) * (1.0 - fresnel) * d * g * abs(t);
-}
-
-float EvalPdfSpecularReflectionTransmission(StandardBSDFData bsdfData, float3 wiLocal, float3 woLocal)
-{
-    if (bsdfData.alpha == 0.0 || woLocal.z < kMinCosTheta || abs(wiLocal.z) < kMinCosTheta)
-        return 0.0;
-
-    const bool  isReflection = wiLocal.z > 0.0;
-    const float actualEta    = (bsdfData.thinSurface && !isReflection) ? 1.0 : bsdfData.eta;
-    if (!isReflection && abs(actualEta - 1.0) <= 1e-6)
-        return 0.0;
-
-    const float3 hUnnormalized = wiLocal + woLocal * (isReflection ? 1.0 : actualEta);
-    const float  hLen2         = dot(hUnnormalized, hUnnormalized);
-    if (!IsFiniteScalar(hLen2) || hLen2 <= 1e-14)
-        return 0.0;
-
-    float3 hLocal = hUnnormalized * rsqrt(hLen2);
-    if (hLocal.z < 0.0)
-        hLocal = -hLocal;
-
-    const float viewDotH  = dot(woLocal, hLocal);
-    const float lightDotH = dot(wiLocal, hLocal);
-    float       pdf       = evalPdfGGX_BVNDF(bsdfData.alpha, woLocal, hLocal);
-
-    if (isReflection)
+    bool hasLobe(uint lobe)
     {
-        if (lightDotH <= 0.0)
-            return 0.0;
-        pdf *= viewDotH / max(lightDotH, 1e-7);
+        return (activeLobes & lobe) != 0u;
     }
-    else
+
+    float3 eval(const float3 wi, const float3 wo)
     {
-        if (lightDotH > 0.0)
+        if (alpha == 0.0 || min(wi.z, wo.z) < kMinCosTheta || !hasLobe(kLobeTypeSpecularReflection))
+            return float3(0.0, 0.0, 0.0);
+
+        const float3 hLocal = normalize(wi + wo);
+        const float  wiDotH = saturate(dot(wi, hLocal));
+        const float  d      = evalNdfGGX(alpha, hLocal.z);
+        const float  vis    = evalVisibilitySmithGGXCorrelated(alpha, wi.z, wo.z);
+        const float3 fresnel = evalFresnelSchlick(albedo, float3(1.0, 1.0, 1.0), wiDotH);
+        const float3 msSpecular = MultiScatterSpecularApprox(alpha, wi.z, albedo);
+        return d * vis * fresnel * msSpecular * wo.z;
+    }
+
+    bool sample(const float3 wi, out float3 wo, out float pdf, out float3 weight, out uint lobe, out float lobeP, float3 preGeneratedSample)
+    {
+        wo     = float3(0.0, 0.0, 0.0);
+        pdf    = 0.0;
+        weight = float3(0.0, 0.0, 0.0);
+        lobe   = kLobeTypeSpecularReflection;
+        lobeP  = 1.0;
+
+        if (wi.z < kMinCosTheta)
+            return false;
+
+        if (alpha == 0.0)
+        {
+            if (!hasLobe(kLobeTypeDeltaReflection))
+                return false;
+
+            wo     = float3(-wi.x, -wi.y, wi.z);
+            weight = evalFresnelSchlick(albedo, float3(1.0, 1.0, 1.0), wi.z);
+            lobe   = kLobeTypeDeltaReflection;
+            return IsFiniteVector(wo);
+        }
+
+        if (!hasLobe(kLobeTypeSpecularReflection))
+            return false;
+
+        const float3 hLocal = sampleGGX_BVNDF(alpha, wi, preGeneratedSample.xy);
+        const float  wiDotH = dot(wi, hLocal);
+        if (wiDotH <= 0.0)
+            return false;
+
+        wo = 2.0 * wiDotH * hLocal - wi;
+        if (wo.z < kMinCosTheta)
+            return false;
+
+        pdf = evalPdf(wi, wo);
+        if (!IsFiniteScalar(pdf) || pdf <= 0.0)
+            return false;
+
+        weight = eval(wi, wo) / pdf;
+        lobe   = kLobeTypeSpecularReflection;
+        return IsFiniteVector(weight);
+    }
+
+    float evalPdf(const float3 wi, const float3 wo)
+    {
+        if (alpha == 0.0 || min(wi.z, wo.z) < kMinCosTheta || !hasLobe(kLobeTypeSpecularReflection))
             return 0.0;
+
+        const float3 hLocal = normalize(wi + wo);
+        return evalPdfGGX_BVNDF(alpha, wi, hLocal);
+    }
+};
+
+struct SpecularReflectionTransmissionMicrofacet
+{
+    float3 transmissionAlbedo;
+    float  alpha;
+    float  eta;
+    uint   activeLobes;
+    bool   isThinSurface;
+
+    bool hasLobe(uint lobe)
+    {
+        return (activeLobes & lobe) != 0u;
+    }
+
+    float3 eval(const float3 wi, const float3 wo)
+    {
+        if (alpha == 0.0 || wi.z < kMinCosTheta || abs(wo.z) < kMinCosTheta)
+            return float3(0.0, 0.0, 0.0);
+
+        const bool isReflection = wo.z > 0.0;
+        if ((isReflection && !hasLobe(kLobeTypeSpecularReflection)) ||
+            (!isReflection && !hasLobe(kLobeTypeSpecularTransmission)))
+            return float3(0.0, 0.0, 0.0);
+
+        const float actualEta = (isThinSurface && !isReflection) ? 1.0 : eta;
+        if (!isReflection && abs(actualEta - 1.0) <= 1e-6)
+            return float3(0.0, 0.0, 0.0);
+
+        const float3 hUnnormalized = wo + wi * (isReflection ? 1.0 : actualEta);
+        const float  hLen2         = dot(hUnnormalized, hUnnormalized);
+        if (!IsFiniteScalar(hLen2) || hLen2 <= 1e-14)
+            return float3(0.0, 0.0, 0.0);
+
+        float3 hLocal = hUnnormalized * rsqrt(hLen2);
+        if (hLocal.z < 0.0)
+            hLocal = -hLocal;
+
+        const float viewDotH  = dot(wi, hLocal);
+        const float lightDotH = dot(wo, hLocal);
+        const float d         = evalNdfGGX(alpha, hLocal.z);
+        const float vis       = evalVisibilitySmithGGXCorrelated(alpha, wi.z, abs(wo.z));
+        const float g         = vis * 4.0 * wi.z * abs(wo.z);
+        const float fresnel   = evalFresnelDielectric(actualEta, viewDotH);
+
+        if (isReflection)
+            return float3(fresnel, fresnel, fresnel) * d * g * 0.25 / max(wi.z, kMinCosTheta);
+
         const float sqrtDenom = lightDotH + actualEta * viewDotH;
-        pdf *= viewDotH * 4.0 * abs(lightDotH) / max(sqrtDenom * sqrtDenom, 1e-7);
+        const float t         = actualEta * actualEta * viewDotH * lightDotH /
+            max(wi.z * sqrtDenom * sqrtDenom, 1e-7);
+        return transmissionAlbedo * (1.0 - fresnel) * d * g * abs(t);
     }
 
-    if (bsdfData.specularTransmission > 0.0)
+    bool sample(const float3 wi, out float3 wo, out float pdf, out float3 weight, out uint lobe, out float lobeP, float3 preGeneratedSample)
     {
-        const float fresnel = evalFresnelDielectric(actualEta, viewDotH);
-        pdf *= isReflection ? fresnel : (1.0 - fresnel);
+        wo     = float3(0.0, 0.0, 0.0);
+        pdf    = 0.0;
+        weight = float3(0.0, 0.0, 0.0);
+        lobe   = kLobeTypeSpecularReflection;
+        lobeP  = 1.0;
+
+        if (wi.z < kMinCosTheta)
+            return false;
+
+        const bool hasReflection = hasLobe(alpha == 0.0 ? kLobeTypeDeltaReflection : kLobeTypeSpecularReflection);
+        const bool hasTransmission = hasLobe(alpha == 0.0 ? kLobeTypeDeltaTransmission : kLobeTypeSpecularTransmission);
+        if (!(hasReflection || hasTransmission))
+            return false;
+
+        const bool   delta   = alpha == 0.0;
+        const float3 hLocal  = delta ? float3(0.0, 0.0, 1.0) : sampleGGX_BVNDF(alpha, wi, preGeneratedSample.xy);
+        const float  wiDotH  = delta ? wi.z : dot(wi, hLocal);
+        float        cosThetaT;
+        float        fresnel = evalFresnelDielectric(eta, wiDotH, cosThetaT);
+
+        bool isReflection = hasReflection;
+        if (hasReflection && hasTransmission)
+            isReflection = preGeneratedSample.z < fresnel;
+        else if (hasTransmission && fresnel == 1.0)
+            return false;
+
+        float actualEta = eta;
+        if (isThinSurface && !isReflection)
+        {
+            actualEta = 1.0;
+            fresnel   = evalFresnelDielectric(actualEta, wi.z, cosThetaT);
+        }
+
+        const bool deltaEvent = delta || (!isReflection && abs(actualEta - 1.0) <= 1e-6);
+        if (deltaEvent && !isReflection)
+        {
+            if (!hasLobe(kLobeTypeDeltaTransmission))
+                return false;
+            fresnel = evalFresnelDielectric(actualEta, wi.z, cosThetaT);
+        }
+
+        if (isReflection)
+            wo = deltaEvent ? float3(-wi.x, -wi.y, wi.z) : 2.0 * wiDotH * hLocal - wi;
+        else
+            wo = deltaEvent ? float3(-wi.x * actualEta, -wi.y * actualEta, -cosThetaT) :
+                (actualEta * wiDotH - cosThetaT) * hLocal - actualEta * wi;
+
+        if (abs(wo.z) < kMinCosTheta || ((wo.z > 0.0) != isReflection))
+            return false;
+
+        lobeP = isReflection ? fresnel : (1.0 - fresnel);
+        lobe  = isReflection ?
+            (deltaEvent ? kLobeTypeDeltaReflection : kLobeTypeSpecularReflection) :
+            (deltaEvent ? kLobeTypeDeltaTransmission : kLobeTypeSpecularTransmission);
+
+        if (deltaEvent)
+        {
+            weight = isReflection ? float3(1.0, 1.0, 1.0) : transmissionAlbedo;
+            pdf    = 0.0;
+            return IsFiniteVector(wo);
+        }
+
+        pdf = evalPdf(wi, wo);
+        if (!IsFiniteScalar(pdf) || pdf <= 0.0)
+            return false;
+
+        weight = eval(wi, wo) / pdf;
+        return IsFiniteVector(weight);
     }
 
-    if (!IsFiniteScalar(pdf))
-        return 0.0;
+    float evalPdf(const float3 wi, const float3 wo)
+    {
+        if (alpha == 0.0 || wi.z < kMinCosTheta || abs(wo.z) < kMinCosTheta)
+            return 0.0;
 
-    return clamp(pdf, 0.0, 3.402823466e+38);
-}
+        const bool isReflection = wo.z > 0.0;
+        const bool hasReflection = hasLobe(kLobeTypeSpecularReflection);
+        const bool hasTransmission = hasLobe(kLobeTypeSpecularTransmission);
+        if ((isReflection && !hasReflection) || (!isReflection && !hasTransmission))
+            return 0.0;
+
+        const float actualEta = (isThinSurface && !isReflection) ? 1.0 : eta;
+        if (!isReflection && abs(actualEta - 1.0) <= 1e-6)
+            return 0.0;
+
+        const float3 hUnnormalized = wo + wi * (isReflection ? 1.0 : actualEta);
+        const float  hLen2         = dot(hUnnormalized, hUnnormalized);
+        if (!IsFiniteScalar(hLen2) || hLen2 <= 1e-14)
+            return 0.0;
+
+        float3 hLocal = hUnnormalized * rsqrt(hLen2);
+        if (hLocal.z < 0.0)
+            hLocal = -hLocal;
+
+        const float viewDotH  = dot(wi, hLocal);
+        const float lightDotH = dot(wo, hLocal);
+        float       pdf       = evalPdfGGX_BVNDF(alpha, wi, hLocal);
+
+        if (isReflection)
+        {
+            if (lightDotH <= 0.0)
+                return 0.0;
+            pdf *= viewDotH / max(lightDotH, 1e-7);
+        }
+        else
+        {
+            if (lightDotH > 0.0)
+                return 0.0;
+            const float sqrtDenom = lightDotH + actualEta * viewDotH;
+            pdf *= viewDotH * 4.0 * abs(lightDotH) / max(sqrtDenom * sqrtDenom, 1e-7);
+        }
+
+        if (hasReflection && hasTransmission)
+        {
+            const float fresnel = evalFresnelDielectric(actualEta, viewDotH);
+            pdf *= isReflection ? fresnel : (1.0 - fresnel);
+        }
+
+        if (!IsFiniteScalar(pdf))
+            return 0.0;
+
+        return clamp(pdf, 0.0, 3.402823466e+38);
+    }
+};
 
 // Evaluate f(Wo,Wi) * NoL and the single-sample MIS pdf for the given unit directions.
 // specProb is the probability the sampler used to pick the specular lobe.
@@ -544,17 +717,13 @@ void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, o
         diffuseReflection    = (1.0 - specTrans) * (1.0 - diffTrans) * diffuseReflectionBxDF.eval(woLocal, wiLocal);
         pdfDiffuseReflection = diffuseReflectionBxDF.evalPdf(woLocal, wiLocal);
 
-        if (bsdfData.alpha != 0.0)
-        {
-            const float3 hLocal     = normalize(woLocal + wiLocal);
-            const float  VdotH      = saturate(dot(woLocal, hLocal));
-            const float  d          = evalNdfGGX(bsdfData.alpha, hLocal.z);
-            const float  vis        = evalVisibilitySmithGGXCorrelated(bsdfData.alpha, woLocal.z, wiLocal.z);
-            const float3 fresnel    = evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), VdotH);
-            const float3 msSpecular = MultiScatterSpecularApprox(bsdfData.alpha, woLocal.z, bsdfData.specular);
-            specularReflection      = (1.0 - specTrans) * d * vis * fresnel * msSpecular * wiLocal.z;
-            pdfSpecularReflection   = evalPdfGGX_BVNDF(bsdfData.alpha, woLocal, hLocal);
-        }
+        SpecularReflectionMicrofacet specularReflectionBxDF;
+        specularReflectionBxDF.albedo      = bsdfData.specular;
+        specularReflectionBxDF.alpha       = bsdfData.alpha;
+        specularReflectionBxDF.activeLobes = bsdfData.activeLobes;
+
+        specularReflection    = (1.0 - specTrans) * specularReflectionBxDF.eval(woLocal, wiLocal);
+        pdfSpecularReflection = specularReflectionBxDF.evalPdf(woLocal, wiLocal);
     }
     else
     {
@@ -565,8 +734,15 @@ void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, o
         pdfDiffuseTransmission = diffuseTransmissionBxDF.evalPdf(woLocal, wiLocal);
     }
 
-    specularTransmission    = specTrans * EvalSpecularReflectionTransmission(bsdfData, wiLocal, woLocal);
-    pdfSpecularTransmission = EvalPdfSpecularReflectionTransmission(bsdfData, wiLocal, woLocal);
+    SpecularReflectionTransmissionMicrofacet specularTransmissionBxDF;
+    specularTransmissionBxDF.transmissionAlbedo = GetTransmissionAlbedo(bsdfData);
+    specularTransmissionBxDF.alpha              = bsdfData.alpha;
+    specularTransmissionBxDF.eta                = bsdfData.eta;
+    specularTransmissionBxDF.activeLobes        = bsdfData.activeLobes;
+    specularTransmissionBxDF.isThinSurface      = bsdfData.thinSurface;
+
+    specularTransmission    = specTrans * specularTransmissionBxDF.eval(woLocal, wiLocal);
+    pdfSpecularTransmission = specularTransmissionBxDF.evalPdf(woLocal, wiLocal);
 
     f = diffuseReflection + diffuseTransmission + specularReflection + specularTransmission;
     pdf = p.pDiffuseReflection * pdfDiffuseReflection +
@@ -633,66 +809,53 @@ bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, float3 preGeneratedSample,
     }
     else if (uSelect < cSpecularReflection)
     {
-        lobeP = p.pSpecularReflection;
-        if (bsdfData.alpha == 0.0)
+        SpecularReflectionMicrofacet specularReflectionBxDF;
+        specularReflectionBxDF.albedo      = bsdfData.specular;
+        specularReflectionBxDF.alpha       = bsdfData.alpha;
+        specularReflectionBxDF.activeLobes = bsdfData.activeLobes;
+
+        float3 lobeWeight;
+        uint   componentLobe;
+        float  componentLobeP;
+        if (!specularReflectionBxDF.sample(woLocal, wiLocal, pdf, lobeWeight, componentLobe, componentLobeP, preGeneratedSample))
+            return false;
+
+        lobeP = p.pSpecularReflection * componentLobeP;
+        lobe  = componentLobe;
+
+        if (lobe == kLobeTypeDeltaReflection)
         {
-            wi     = normalize(tangent * -woLocal.x + bitangent * -woLocal.y + bsdfData.N * woLocal.z);
-            weight = (1.0 - saturate(bsdfData.specularTransmission)) *
-                evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), NdotV) / max(lobeP, 1e-7);
-            pdf  = 0.0;
-            lobe = kBSDFLobeDeltaReflection;
+            wi     = normalize(tangent * wiLocal.x + bitangent * wiLocal.y + bsdfData.N * wiLocal.z);
+            weight = (1.0 - saturate(bsdfData.specularTransmission)) * lobeWeight / max(p.pSpecularReflection, 1e-7);
+            pdf    = 0.0;
             return IsFiniteVector(wi);
         }
-
-        const float3 hLocal  = sampleGGX_BVNDF(bsdfData.alpha, woLocal, preGeneratedSample.xy);
-        const float  wiDotH  = dot(woLocal, hLocal);
-        if (wiDotH <= 0.0)
-            return false;
-        wiLocal = 2.0 * wiDotH * hLocal - woLocal;
-        if (wiLocal.z < kMinCosTheta)
-            return false;
-        lobe    = kBSDFLobeSpecularReflection;
     }
     else if (p.pSpecularTransmission > 0.0)
     {
         const float branchSample = clamp((uSelect - cSpecularReflection) / max(p.pSpecularTransmission, 1e-7), 0.0, 0.99999994);
-        const bool  delta        = bsdfData.alpha == 0.0;
-        const float3 hLocal      = delta ? float3(0.0, 0.0, 1.0) : sampleGGX_BVNDF(bsdfData.alpha, woLocal, preGeneratedSample.xy);
-        const float wiDotH       = delta ? woLocal.z : dot(woLocal, hLocal);
-        float       cosThetaT;
-        float       fresnel      = evalFresnelDielectric(bsdfData.eta, wiDotH, cosThetaT);
-        bool        isReflection = branchSample < fresnel;
-        float       actualEta    = bsdfData.eta;
+        float3 localSample = preGeneratedSample;
+        localSample.z      = branchSample;
 
-        if (bsdfData.thinSurface && !isReflection)
-        {
-            actualEta = 1.0;
-            fresnel   = evalFresnelDielectric(actualEta, woLocal.z, cosThetaT);
-        }
+        SpecularReflectionTransmissionMicrofacet specularTransmissionBxDF;
+        specularTransmissionBxDF.transmissionAlbedo = GetTransmissionAlbedo(bsdfData);
+        specularTransmissionBxDF.alpha              = bsdfData.alpha;
+        specularTransmissionBxDF.eta                = bsdfData.eta;
+        specularTransmissionBxDF.activeLobes        = bsdfData.activeLobes;
+        specularTransmissionBxDF.isThinSurface      = bsdfData.thinSurface;
 
-        const bool deltaEvent = delta || (!isReflection && abs(actualEta - 1.0) <= 1e-6);
-        if (deltaEvent && !isReflection)
-            fresnel = evalFresnelDielectric(actualEta, woLocal.z, cosThetaT);
-
-        if (isReflection)
-            wiLocal = deltaEvent ? float3(-woLocal.x, -woLocal.y, woLocal.z) : 2.0 * wiDotH * hLocal - woLocal;
-        else
-            wiLocal = deltaEvent ? float3(-woLocal.x * actualEta, -woLocal.y * actualEta, -cosThetaT) :
-                (actualEta * wiDotH - cosThetaT) * hLocal - actualEta * woLocal;
-
-        if (abs(wiLocal.z) < kMinCosTheta || ((wiLocal.z > 0.0) != isReflection))
+        float3 lobeWeight;
+        uint   componentLobe;
+        float  componentLobeP;
+        if (!specularTransmissionBxDF.sample(woLocal, wiLocal, pdf, lobeWeight, componentLobe, componentLobeP, localSample))
             return false;
 
-        const float branchP = isReflection ? fresnel : (1.0 - fresnel);
-        lobeP = p.pSpecularTransmission * branchP;
-        lobe  = isReflection ?
-            (deltaEvent ? kBSDFLobeDeltaReflection : kBSDFLobeSpecularReflection) :
-            (deltaEvent ? kBSDFLobeDeltaTransmission : kBSDFLobeSpecularTransmission);
+        lobeP = p.pSpecularTransmission * componentLobeP;
+        lobe  = componentLobe;
 
-        if (deltaEvent)
+        if ((lobe & kLobeTypeDelta) != 0u)
         {
-            weight = (isReflection ? float3(1.0, 1.0, 1.0) : GetTransmissionAlbedo(bsdfData)) *
-                saturate(bsdfData.specularTransmission) / max(p.pSpecularTransmission, 1e-7);
+            weight = lobeWeight * saturate(bsdfData.specularTransmission) / max(p.pSpecularTransmission, 1e-7);
             wi  = normalize(tangent * wiLocal.x + bitangent * wiLocal.y + bsdfData.N * wiLocal.z);
             pdf = 0.0;
             return IsFiniteVector(wi);

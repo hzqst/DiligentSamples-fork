@@ -402,6 +402,15 @@ bool IsRTXPTAssetsRoot(const std::string& Path)
     return !EnumerateSceneFiles(Path).empty();
 }
 
+std::string MakeAbsoluteRTXPTPath(const std::string& Path)
+{
+    std::error_code             Error;
+    const std::filesystem::path AbsolutePath = std::filesystem::absolute(std::filesystem::path{Path}, Error);
+    std::string                 Result       = Error ? Path : AbsolutePath.string();
+    FileSystem::CorrectSlashes(Result);
+    return FileSystem::SimplifyPath(Result.c_str());
+}
+
 std::string ResolveRTXPTAssetsRoot()
 {
     const char* DirectCandidates[] =
@@ -415,7 +424,7 @@ std::string ResolveRTXPTAssetsRoot()
     {
         const std::string Path = FileSystem::SimplifyPath(Candidate);
         if (IsRTXPTAssetsRoot(Path))
-            return Path;
+            return MakeAbsoluteRTXPTPath(Path);
     }
 
     const char* AncestorPrefixes[] =
@@ -441,11 +450,11 @@ std::string ResolveRTXPTAssetsRoot()
         {
             const std::string Path = FileSystem::SimplifyPath((std::string{Prefix} + Suffix).c_str());
             if (IsRTXPTAssetsRoot(Path))
-                return Path;
+                return MakeAbsoluteRTXPTPath(Path);
         }
     }
 
-    return FileSystem::SimplifyPath("DiligentSamples/Samples/RTXPT/assets");
+    return MakeAbsoluteRTXPTPath("DiligentSamples/Samples/RTXPT/assets");
 }
 
 void SanitizeCameraClipPlanes(float& NearPlane, float& FarPlane)
@@ -800,6 +809,11 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
     CreateFrameResources();
 
     m_AssetsRoot = ResolveRTXPTAssetsRoot();
+    std::error_code WorkingDirError;
+    std::filesystem::current_path(m_AssetsRoot, WorkingDirError);
+    if (!WorkingDirError)
+        FileSystem::SetWorkingDirectory(m_AssetsRoot.c_str());
+
     EnumerateEnvironmentMaps();
     EnumerateAvailableScenes();
 

@@ -14,6 +14,8 @@ static const uint kLobeTypeDelta                = 0x44u;
 static const uint kLobeTypeNonDelta             = 0x33u;
 static const uint kLobeTypeReflection           = 0x0fu;
 static const uint kLobeTypeTransmission         = 0xf0u;
+static const uint kLobeTypeNonDeltaReflection   = 0x03u;
+static const uint kLobeTypeNonDeltaTransmission = 0x30u;
 static const uint kLobeTypeAll                  = 0xffu;
 
 #endif // __LOBE_TYPE_HLSLI__

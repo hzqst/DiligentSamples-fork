@@ -329,7 +329,8 @@ namespace PathTracer
     {
         BSDFSample bs;
         bs.lobe           = lobe;
-        bs.deltaLobeIndex = (lobe & kBSDFLobeSpecularTransmission) != 0u ? 1u : 0u;
+        bs.deltaLobeIndex = (lobe & kBSDFLobeDeltaTransmission) != 0u ? 0u :
+            (((lobe & kBSDFLobeDeltaReflection) != 0u) ? 1u : 0u);
         bs.pdf            = pdf;
         bs.lobeP          = lobeP;
         bs.weight         = weight;

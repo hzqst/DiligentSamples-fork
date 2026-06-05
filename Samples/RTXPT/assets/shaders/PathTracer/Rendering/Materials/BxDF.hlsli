@@ -656,6 +656,26 @@ struct SpecularReflectionTransmissionMicrofacet
     }
 };
 
+static const uint cBxDFMaxDeltaLobes = 2u;
+
+struct BxDFDeltaLobe
+{
+    float3 dir;
+    float3 thp;
+    uint   transmission;
+    float  probability;
+
+    static BxDFDeltaLobe make()
+    {
+        BxDFDeltaLobe ret;
+        ret.dir          = float3(0.0, 0.0, 1.0);
+        ret.thp          = float3(0.0, 0.0, 0.0);
+        ret.transmission = 0u;
+        ret.probability  = 0.0;
+        return ret;
+    }
+};
+
 struct FalcorBSDF
 {
     DiffuseReflectionFrostbite diffuseReflection;
@@ -753,6 +773,71 @@ struct FalcorBSDF
             lobes |= isDelta ? kLobeTypeDeltaTransmission : kLobeTypeSpecularTransmission;
 
         return lobes;
+    }
+
+    void evalDeltaLobes(const float3 wi, out BxDFDeltaLobe deltaLobes[cBxDFMaxDeltaLobes], out uint deltaLobeCount, out float nonDeltaPart)
+    {
+        deltaLobeCount = cBxDFMaxDeltaLobes;
+        for (uint i = 0u; i < cBxDFMaxDeltaLobes; ++i)
+            deltaLobes[i] = BxDFDeltaLobe::make();
+
+        nonDeltaPart = pDiffuseReflection + pDiffuseTransmission;
+        if (specularReflection.alpha > 0.0)
+            nonDeltaPart += pSpecularReflection;
+        if (specularReflectionTransmission.alpha > 0.0)
+            nonDeltaPart += pSpecularReflectionTransmission;
+
+        if ((pSpecularReflection + pSpecularReflectionTransmission) == 0.0 || psdExclude)
+            return;
+
+        BxDFDeltaLobe deltaTransmission = BxDFDeltaLobe::make();
+        BxDFDeltaLobe deltaReflection   = BxDFDeltaLobe::make();
+        deltaTransmission.transmission  = 1u;
+        deltaReflection.transmission    = 0u;
+        deltaReflection.dir             = float3(-wi.x, -wi.y, wi.z);
+
+        if (specularReflection.alpha == 0.0 && specularReflection.hasLobe(kLobeTypeDeltaReflection))
+        {
+            deltaReflection.probability = pSpecularReflection;
+            deltaReflection.thp = (1.0 - pSpecularReflectionTransmission) *
+                evalFresnelSchlick(specularReflection.albedo, float3(1.0, 1.0, 1.0), wi.z);
+        }
+
+        if (specularReflectionTransmission.alpha == 0.0)
+        {
+            const bool hasReflection   = specularReflectionTransmission.hasLobe(kLobeTypeDeltaReflection);
+            const bool hasTransmission = specularReflectionTransmission.hasLobe(kLobeTypeDeltaTransmission);
+            if (hasReflection || hasTransmission)
+            {
+                float cosThetaT;
+                float F = evalFresnelDielectric(specularReflectionTransmission.eta, wi.z, cosThetaT);
+
+                if (hasReflection)
+                {
+                    const float localProbability = pSpecularReflectionTransmission * F;
+                    deltaReflection.thp += float3(localProbability, localProbability, localProbability);
+                    deltaReflection.probability += localProbability;
+                }
+
+                if (hasTransmission)
+                {
+                    float actualEta = specularReflectionTransmission.eta;
+                    if (specularReflectionTransmission.isThinSurface)
+                    {
+                        actualEta = 1.0;
+                        F         = evalFresnelDielectric(actualEta, wi.z, cosThetaT);
+                    }
+
+                    const float localProbability = pSpecularReflectionTransmission * (1.0 - F);
+                    deltaTransmission.dir         = float3(-wi.x * actualEta, -wi.y * actualEta, -cosThetaT);
+                    deltaTransmission.thp         = specularReflectionTransmission.transmissionAlbedo * localProbability;
+                    deltaTransmission.probability = localProbability;
+                }
+            }
+        }
+
+        deltaLobes[0] = deltaTransmission;
+        deltaLobes[1] = deltaReflection;
     }
 
     float4 eval(const float3 wi, const float3 wo)

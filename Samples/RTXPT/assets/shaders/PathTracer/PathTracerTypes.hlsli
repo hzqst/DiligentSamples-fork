@@ -43,19 +43,21 @@ struct BSDFSample
 
 namespace PathTracer
 {
-    // transitional Task 3 Diligent compatibility shim. This is only the minimal
-    // material-state shape needed by stable-plane shader state; Task 4/5 must
-    // replace the stubbed PSD queries when BUILD/FILL runtime plumbing is wired.
     struct StablePlaneMaterialState
     {
         uint flags;
         uint nestedPriority;
+        uint activeLobes;
+        uint psdExclude;
+        uint psdBlockMotionVectorsAtSurface;
         uint psdDominantDeltaLobeP1;
 
-        bool isPSDBlockMotionVectorsAtSurface() { return false; }
+        bool isPSDExclude() { return psdExclude != 0u; }
+        bool isPSDBlockMotionVectorsAtSurface() { return psdBlockMotionVectorsAtSurface != 0u; }
         uint getPSDDominantDeltaLobeP1() { return psdDominantDeltaLobeP1; }
         bool isThinSurface() { return (flags & kMaterialFlagThinSurface) != 0u; }
         uint getNestedPriority() { return nestedPriority; }
+        uint getActiveLobes() { return activeLobes == 0u ? kLobeTypeAll : activeLobes; }
     };
 
     struct StablePlaneShadingData
@@ -95,10 +97,29 @@ namespace PathTracer
                             out uint deltaLobeCount,
                             out float nonDeltaPart)
         {
-            for (uint i = 0; i < cMaxDeltaLobes; ++i)
+            for (uint i = 0u; i < cMaxDeltaLobes; ++i)
                 deltaLobes[i] = DeltaLobe::make();
-            deltaLobeCount = 0u;
-            nonDeltaPart   = 1.0;
+
+            const MaterialHeader mtl = MakeMaterialHeader(standardData);
+            FalcorBSDF bsdf = FalcorBSDF::make(mtl, shadingData.N, shadingData.V, standardData);
+
+            BxDFDeltaLobe localLobes[cBxDFMaxDeltaLobes];
+            uint localCount;
+            const float3 viewLocal = float3(dot(shadingData.V, shadingData.T),
+                                            dot(shadingData.V, shadingData.B),
+                                            dot(shadingData.V, shadingData.N));
+            bsdf.evalDeltaLobes(viewLocal, localLobes, localCount, nonDeltaPart);
+
+            deltaLobeCount = min(localCount, cMaxDeltaLobes);
+            for (uint i = 0u; i < deltaLobeCount; ++i)
+            {
+                deltaLobes[i].dir = normalize(shadingData.T * localLobes[i].dir.x +
+                                               shadingData.B * localLobes[i].dir.y +
+                                               shadingData.N * localLobes[i].dir.z);
+                deltaLobes[i].thp          = localLobes[i].thp;
+                deltaLobes[i].transmission = localLobes[i].transmission;
+                deltaLobes[i].probability  = localLobes[i].probability;
+            }
         }
 
         void estimateSpecDiffBSDF(out float3 diffBSDFEstimate, out float3 specBSDFEstimate, float3 normal, float3 view)

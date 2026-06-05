@@ -558,25 +558,28 @@ struct SpecularReflectionTransmissionMicrofacet
         if (wi.z < kMinCosTheta)
             return false;
 
-        const bool hasRoughReflection    = hasLobe(kLobeTypeSpecularReflection);
-        const bool hasDeltaReflection    = hasLobe(kLobeTypeDeltaReflection);
-        const bool hasRoughTransmission  = hasLobe(kLobeTypeSpecularTransmission);
-        const bool hasDeltaTransmission  = hasLobe(kLobeTypeDeltaTransmission);
-        const bool canReflect            = alpha == 0.0 ? hasDeltaReflection : hasRoughReflection;
-        const bool canTransmit           = alpha == 0.0 ? hasDeltaTransmission : (hasRoughTransmission || hasDeltaTransmission);
+        const bool delta                  = alpha == 0.0;
+        const bool hasRoughReflection     = hasLobe(kLobeTypeSpecularReflection);
+        const bool hasDeltaReflection     = hasLobe(kLobeTypeDeltaReflection);
+        const bool hasRoughTransmission   = hasLobe(kLobeTypeSpecularTransmission);
+        const bool hasDeltaTransmission   = hasLobe(kLobeTypeDeltaTransmission);
+        const bool transmissionMayBeDelta = delta || isThinSurface || abs(eta - 1.0) <= 1e-6;
+        const bool canReflect             = delta ? hasDeltaReflection : hasRoughReflection;
+        const bool canTransmit            = delta ? hasDeltaTransmission : (hasRoughTransmission || (transmissionMayBeDelta && hasDeltaTransmission));
         if (!(canReflect || canTransmit))
             return false;
 
-        const bool   delta   = alpha == 0.0;
         const float3 hLocal  = delta ? float3(0.0, 0.0, 1.0) : sampleGGX_BVNDF(alpha, wi, preGeneratedSample.xy);
         const float  wiDotH  = delta ? wi.z : dot(wi, hLocal);
         float        cosThetaT;
         float        fresnel = evalFresnelDielectric(eta, wiDotH, cosThetaT);
+        const float  splitFresnel = fresnel;
+        const bool   branchSplit  = canReflect && canTransmit;
 
         bool isReflection = canReflect;
-        if (canReflect && canTransmit)
-            isReflection = preGeneratedSample.z < fresnel;
-        else if (canTransmit && fresnel == 1.0)
+        if (branchSplit)
+            isReflection = preGeneratedSample.z < splitFresnel;
+        else if (canTransmit && splitFresnel == 1.0)
             return false;
 
         float actualEta = eta;
@@ -614,7 +617,9 @@ struct SpecularReflectionTransmissionMicrofacet
         if (abs(wo.z) < kMinCosTheta || ((wo.z > 0.0) != isReflection))
             return false;
 
-        lobeP = isReflection ? fresnel : (1.0 - fresnel);
+        const float branchP      = isReflection ? splitFresnel : (1.0 - splitFresnel);
+        const float branchWeight = isReflection ? fresnel : (1.0 - fresnel);
+        lobeP = branchSplit ? branchP : 1.0;
         lobe  = isReflection ?
             (deltaEvent ? kLobeTypeDeltaReflection : kLobeTypeSpecularReflection) :
             (deltaEvent ? kLobeTypeDeltaTransmission : kLobeTypeSpecularTransmission);
@@ -622,11 +627,15 @@ struct SpecularReflectionTransmissionMicrofacet
         if (deltaEvent)
         {
             weight = isReflection ? float3(1.0, 1.0, 1.0) : transmissionAlbedo;
+            if (!branchSplit)
+                weight *= branchWeight;
             pdf    = 0.0;
             return IsFiniteVector(wo);
         }
 
         pdf = evalPdf(wi, wo);
+        if (branchSplit && !(hasRoughReflection && hasRoughTransmission))
+            pdf *= branchP;
         if (!IsFiniteScalar(pdf) || pdf <= 0.0)
             return false;
 

@@ -366,6 +366,7 @@ endif()
 if (DILIGENT_DSR_SUPPORTED)
     target_link_libraries(RTXPT PRIVATE DirectSR-AgilitySDK)
     copy_directsr_dlls(RTXPT)
+    install_directsr_dlls(RTXPT)
 endif()
 
 if (DILIGENT_DLSS_SUPPORTED)

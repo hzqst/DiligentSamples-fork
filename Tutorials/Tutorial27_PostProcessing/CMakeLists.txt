@@ -40,6 +40,7 @@ endif()
 if (DILIGENT_DSR_SUPPORTED)
     target_link_libraries(Tutorial27_PostProcessing PRIVATE DirectSR-AgilitySDK)
     copy_directsr_dlls(Tutorial27_PostProcessing)
+    install_directsr_dlls(Tutorial27_PostProcessing)
 endif()
 
 if (DILIGENT_DLSS_SUPPORTED)

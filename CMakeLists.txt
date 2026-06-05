@@ -188,6 +188,29 @@ function(add_sample_app APP_NAME)
 
 endfunction()
 
+function(install_directsr_dlls TARGET_NAME)
+    if(NOT DILIGENT_INSTALL_SAMPLES OR NOT PLATFORM_WIN32)
+        return()
+    endif()
+
+    if(NOT DIRECTSR_BIN_DIR)
+        message(WARNING "DIRECTSR_BIN_DIR is not defined. Skipping DirectSR DLL installation for ${TARGET_NAME}.")
+        return()
+    endif()
+
+    set(DIRECTSR_D3D12CORE_DLL "${DIRECTSR_BIN_DIR}/D3D12Core.dll")
+    set(DIRECTSR_RUNTIME_DLL   "${DIRECTSR_BIN_DIR}/DirectSR.dll")
+    if(NOT EXISTS "${DIRECTSR_D3D12CORE_DLL}" OR NOT EXISTS "${DIRECTSR_RUNTIME_DLL}")
+        message(WARNING "DirectSR DLLs not found in '${DIRECTSR_BIN_DIR}'. Skipping DirectSR DLL installation for ${TARGET_NAME}.")
+        return()
+    endif()
+
+    get_target_property(TARGET_SOURCE_DIR ${TARGET_NAME} SOURCE_DIR)
+    file(RELATIVE_PATH TARGET_REL_PATH "${CMAKE_SOURCE_DIR}" "${TARGET_SOURCE_DIR}")
+    install(FILES "${DIRECTSR_D3D12CORE_DLL}" "${DIRECTSR_RUNTIME_DLL}"
+            DESTINATION "${CMAKE_INSTALL_BINDIR}/${TARGET_REL_PATH}/$<CONFIG>/D3D12")
+endfunction()
+
 add_subdirectory(ThirdParty)
 
 if(TARGET Diligent-NativeAppBase AND TARGET Diligent-TextureLoader AND TARGET Diligent-Imgui)

@@ -48,6 +48,7 @@ RTXPTDenoiserPostProcessAttribs MakeRealtimePostProcessAttribs(const RTXPTRender
 
 void RTXPTPostProcessPipeline::Reset()
 {
+    m_RealtimeCopyContext.reset();
     m_AccumulationPass.Reset();
     m_PostProcessPass.Reset();
     m_SuperResolutionPass.Reset();
@@ -79,6 +80,16 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     }
 
     m_Device = pDevice;
+
+    PostFXContext::CreateInfo RealtimeCopyCI;
+    RealtimeCopyCI.EnableAsyncCreation = false;
+    RealtimeCopyCI.PackMatrixRowMajor  = true;
+    m_RealtimeCopyContext              = std::make_unique<PostFXContext>(pDevice, RealtimeCopyCI);
+    if (!m_RealtimeCopyContext)
+    {
+        DEV_ERROR("RTXPT realtime OutputColor copy context failed to initialize");
+        return false;
+    }
 
     m_Stats.SuperResolutionStageReady = m_SuperResolutionPass.Initialize(pDevice);
     if (!m_Stats.SuperResolutionStageReady)
@@ -286,11 +297,30 @@ bool RTXPTPostProcessPipeline::CopyRealtimeOutputToProcessed(IDeviceContext*    
     m_Stats.LastTemporalAAActive     = false;
     m_Stats.LastSuperResolutionActive = false;
 
-    const bool Executed = m_TemporalAAPass.CopyOutputToProcessed(m_Device, pContext, RenderTargets);
-    m_Stats.LastRealtimeCopyExecuted = Executed;
-    if (!Executed)
-        DEV_ERROR("RTXPT realtime OutputColor copy failed: ", m_TemporalAAPass.GetStats().DisabledReason.c_str());
-    return Executed;
+    const auto FailCopy = [this](const char* Reason) {
+        m_Stats.LastRealtimeCopyExecuted = false;
+        DEV_ERROR("RTXPT realtime OutputColor copy failed: ", Reason);
+        return false;
+    };
+
+    if (!m_RealtimeCopyContext)
+        return FailCopy("realtime copy context is not initialized");
+    if (!m_Device || pContext == nullptr)
+        return FailCopy("copy requires a device and context");
+    if (RenderTargets.GetOutputColorSRV() == nullptr || RenderTargets.GetProcessedOutputColorRTV() == nullptr)
+        return FailCopy("copy requires OutputColor SRV and ProcessedOutputColor RTV");
+    if (RenderTargets.GetRenderWidth() != RenderTargets.GetDisplayWidth() ||
+        RenderTargets.GetRenderHeight() != RenderTargets.GetDisplayHeight())
+        return FailCopy("copy requires render and display dimensions to match");
+
+    PostFXContext::TextureOperationAttribs CopyAttribs;
+    CopyAttribs.pDevice        = m_Device;
+    CopyAttribs.pDeviceContext = pContext;
+    m_RealtimeCopyContext->CopyTextureColor(CopyAttribs,
+                                            RenderTargets.GetOutputColorSRV(),
+                                            RenderTargets.GetProcessedOutputColorRTV());
+    m_Stats.LastRealtimeCopyExecuted = true;
+    return true;
 }
 
 bool RTXPTPostProcessPipeline::RunTemporalAA(IDeviceContext*               pContext,

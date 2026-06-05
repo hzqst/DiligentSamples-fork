@@ -26,8 +26,11 @@
 
 #pragma once
 
+#include <memory>
+
 #include "DeviceContext.h"
 #include "EngineFactory.h"
+#include "PostFXContext.hpp"
 #include "RefCntAutoPtr.hpp"
 #include "RenderDevice.h"
 #include "RTXPTAccumulationPass.hpp"
@@ -146,6 +149,7 @@ public:
 private:
     RTXPTPostProcessPipelineStats m_Stats;
     RefCntAutoPtr<IRenderDevice>  m_Device;
+    std::unique_ptr<PostFXContext> m_RealtimeCopyContext;
     RTXPTAccumulationPass         m_AccumulationPass;
     RTXPTPostProcessPass          m_PostProcessPass;
     RTXPTSuperResolutionPass      m_SuperResolutionPass;

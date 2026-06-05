@@ -833,7 +833,12 @@ struct FalcorBSDF
         }
         else if (pSpecularReflectionTransmission > 0.0)
         {
-            valid = specularReflectionTransmission.sample(wi, wo, pdf, weight, lobe, lobeP, preGeneratedSample);
+            float3 localSample = preGeneratedSample;
+            localSample.z = clamp((uSelect - (pDiffuseReflection + pDiffuseTransmission + pSpecularReflection)) /
+                                      max(pSpecularReflectionTransmission, 1e-7),
+                                  0.0,
+                                  0.99999994);
+            valid = specularReflectionTransmission.sample(wi, wo, pdf, weight, lobe, lobeP, localSample);
             weight /= pSpecularReflectionTransmission;
             weight *= specTrans;
             pdf *= pSpecularReflectionTransmission;

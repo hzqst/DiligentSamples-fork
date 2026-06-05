@@ -324,6 +324,8 @@ add_sample_app(RTXPT
         ${SHADERS}
     DXC_REQUIRED
         YES
+    INSTALL_ASSETS_DIR
+        assets
 )
 
 if (NOT SUPER_RESOLUTION_SUPPORTED)

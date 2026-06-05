@@ -31,6 +31,7 @@ option(DILIGENT_EMSCRIPTEN_INCLUDE_COI_SERVICE_WORKER "Include cross-origin isol
 #   ASSETS - List of asset files
 #   IDE_FOLDER - Optional folder name for IDE
 #   DXC_REQUIRED - Indicates if DXC compiler is required for the sample (optional, default is OFF)
+#   INSTALL_ASSETS_DIR - Optional destination subdirectory for installed assets
 #
 # Example:
 #
@@ -51,7 +52,7 @@ option(DILIGENT_EMSCRIPTEN_INCLUDE_COI_SERVICE_WORKER "Include cross-origin isol
 function(add_sample_app APP_NAME)
 
     set(options)
-    set(oneValueArgs IDE_FOLDER DXC_REQUIRED)
+    set(oneValueArgs IDE_FOLDER DXC_REQUIRED INSTALL_ASSETS_DIR)
     set(multiValueArgs SOURCES INCLUDES SHADERS ASSETS)
     cmake_parse_arguments(PARSE_ARGV 1 arg "${options}" "${oneValueArgs}" "${multiValueArgs}")
     if (arg_DXC_REQUIRED)
@@ -155,8 +156,13 @@ function(add_sample_app APP_NAME)
                 DESTINATION "${CMAKE_INSTALL_BINDIR}/${TUTORIAL_REL_PATH}/$<CONFIG>")
 
         if(PLATFORM_LINUX OR PLATFORM_WIN32)
+            set(ASSETS_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}/${TUTORIAL_REL_PATH}/$<CONFIG>")
+            if(arg_INSTALL_ASSETS_DIR)
+                set(ASSETS_INSTALL_DIR "${ASSETS_INSTALL_DIR}/${arg_INSTALL_ASSETS_DIR}")
+            endif()
+
             install(DIRECTORY   "${CMAKE_CURRENT_SOURCE_DIR}/assets/"
-                    DESTINATION "${CMAKE_INSTALL_BINDIR}/${TUTORIAL_REL_PATH}/$<CONFIG>")
+                    DESTINATION "${ASSETS_INSTALL_DIR}")
         endif()
 
         if(PLATFORM_WIN32)

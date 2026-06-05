@@ -2048,14 +2048,34 @@ void RTXPTSample::UpdateUI()
                         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Enabled)
                         {
                             if (Item == static_cast<int>(RTXPTRealtimeAAMode::TAA))
-                                ImGui::SetTooltip("DiligentFX TemporalAntiAliasing is not initialized.");
+                            {
+                                const auto& TAAStats = m_PostProcessPipeline.GetTemporalAAPass().GetStats();
+                                ImGui::SetTooltip("%s",
+                                                  TAAStats.DisabledReason.empty() ?
+                                                      "DiligentFX TemporalAntiAliasing is not initialized." :
+                                                      TAAStats.DisabledReason.c_str());
+                            }
                             else if (Item == static_cast<int>(RTXPTRealtimeAAMode::SuperResolution))
                             {
                                 const auto& SRStats = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
-                                ImGui::SetTooltip("%s",
-                                                  SRStats.DisabledReason.empty() ?
-                                                      "No temporal Diligent super-resolution variant is available." :
-                                                      SRStats.DisabledReason.c_str());
+                                const char* SRDisabledReason = nullptr;
+                                if (!SRStats.FactoryReady)
+                                {
+                                    SRDisabledReason = SRStats.DisabledReason.empty() ?
+                                        "Diligent super-resolution provider is unavailable." :
+                                        SRStats.DisabledReason.c_str();
+                                }
+                                else if (SRStats.VariantCount == 0)
+                                {
+                                    SRDisabledReason = SRStats.DisabledReason.empty() ?
+                                        "No Diligent super-resolution variants are available." :
+                                        SRStats.DisabledReason.c_str();
+                                }
+                                else
+                                {
+                                    SRDisabledReason = "No temporal Diligent super-resolution variant is available.";
+                                }
+                                ImGui::SetTooltip("%s", SRDisabledReason);
                             }
                             else if (Item == static_cast<int>(RTXPTRealtimeAAMode::DLSSRR))
                                 ImGui::SetTooltip("DLSS-RR is reserved by TODO(RTXPT-Realtime-DLSS-RR).");
@@ -2713,13 +2733,13 @@ void RTXPTSample::UpdateUI()
         const auto& SRStats  = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
         ImGui::Text("Realtime TAA: %s, executed=%s",
                     TAAStats.Ready ? "ready" : "not ready",
-                    TAAStats.LastExecute ? "yes" : "no");
+                    PostStats.LastTemporalAAActive ? "yes" : "no");
         if (!TAAStats.DisabledReason.empty())
             ImGui::TextWrapped("Realtime TAA status: %s", TAAStats.DisabledReason.c_str());
         ImGui::Text("Super resolution: variants=%u, active=%s, executed=%s",
                     SRStats.VariantCount,
                     m_CurrentSuperResolutionFrame.Enabled ? "yes" : "no",
-                    SRStats.LastExecute ? "yes" : "no");
+                    PostStats.LastSuperResolutionActive ? "yes" : "no");
         if (!SRStats.DisabledReason.empty())
             ImGui::TextWrapped("Super resolution status: %s", SRStats.DisabledReason.c_str());
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);

@@ -31,10 +31,13 @@
 
 #include "BasicMath.hpp"
 #include "DeviceContext.h"
+#include "PipelineState.h"
 #include "RefCntAutoPtr.hpp"
 #include "RenderDevice.h"
+#include "ShaderResourceBinding.h"
 #include "SuperResolution.h"
 #include "SuperResolutionFactory.h"
+#include "Texture.h"
 
 #include "RTXPTRenderTargets.hpp"
 
@@ -109,6 +112,11 @@ public:
 
 private:
     const SuperResolutionInfo* GetActiveVariant(const RTXPTSuperResolutionSettings& Settings) const;
+    bool                       CreateMotionConversionPipeline(IRenderDevice* pDevice);
+    bool                       EnsureMotionConversionResources(IRenderDevice* pDevice, const RTXPTRenderTargets& RenderTargets);
+    bool                       ConvertMotionVectors(IDeviceContext* pContext, const RTXPTRenderTargets& RenderTargets);
+    ITextureView*              GetSRMotionSRV() const;
+    ITextureView*              GetSRMotionUAV() const;
     bool                       EnsureUpscaler(const RTXPTSuperResolutionFrameDesc& FrameDesc);
     SUPER_RESOLUTION_FLAGS     GetFlags(const SuperResolutionInfo& Variant, float Sharpness) const;
 
@@ -116,9 +124,14 @@ private:
     RefCntAutoPtr<IRenderDevice>           m_Device;
     RefCntAutoPtr<ISuperResolutionFactory> m_Factory;
     RefCntAutoPtr<ISuperResolution>        m_Upscaler;
+    RefCntAutoPtr<IPipelineState>          m_MotionConversionPSO;
+    RefCntAutoPtr<IShaderResourceBinding>  m_MotionConversionSRB;
+    RefCntAutoPtr<ITexture>                m_SRMotionVectors;
     std::vector<SuperResolutionInfo>       m_Variants;
     RTXPTSuperResolutionStats              m_Stats;
     SuperResolutionDesc                    m_UpscalerDesc;
+    Uint32                                 m_SRMotionWidth  = 0;
+    Uint32                                 m_SRMotionHeight = 0;
 };
 
 } // namespace Diligent

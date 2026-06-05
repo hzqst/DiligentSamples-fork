@@ -107,6 +107,7 @@ set(SHADERS
     assets/shaders/PostProcessing/RTXPTAccumulation.csh
     assets/shaders/PostProcessing/RTXPTPostProcess.csh
     assets/shaders/PostProcessing/RTXPTTemporalAAInputs.csh
+    assets/shaders/PostProcessing/RTXPTSuperResolutionMotion.csh
     assets/shaders/PostProcessing/RTXPTDenoiserNRD.hlsli
     assets/shaders/PostProcessing/RTXPTBloomShared.h
     assets/shaders/PostProcessing/RTXPTBloomCopy.psh

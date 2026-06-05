@@ -44,6 +44,7 @@ bool FormatsMatch(const RTXPTRenderTargetFormats& Lhs, const RTXPTRenderTargetFo
         Lhs.LdrColor == Rhs.LdrColor &&
         Lhs.ComputeColor == Rhs.ComputeColor &&
         Lhs.Depth == Rhs.Depth &&
+        Lhs.PreviousDepth == Rhs.PreviousDepth &&
         Lhs.ScreenMotionVectors == Rhs.ScreenMotionVectors &&
         Lhs.TemporalFeedback == Rhs.TemporalFeedback &&
         Lhs.CombinedHistoryClampRelax == Rhs.CombinedHistoryClampRelax &&
@@ -94,6 +95,7 @@ void RTXPTRenderTargets::Reset()
     m_LdrColor.Release();
     m_ComputeColor.Release();
     m_Depth.Release();
+    m_PreviousDepth.Release();
     m_ScreenMotionVectors.Release();
     m_TemporalFeedback1.Release();
     m_TemporalFeedback2.Release();
@@ -243,6 +245,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
         m_ProcessedOutputColor != nullptr &&
         m_LdrColor != nullptr &&
         m_Depth != nullptr &&
+        (!CreateRealtimeResources || m_PreviousDepth != nullptr) &&
         m_ScreenMotionVectors != nullptr &&
         (!RequiresSuperResolutionTargets || m_SuperResolutionInputColor != nullptr);
     const bool HasP6PostProcessTargets =
@@ -270,9 +273,10 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
         return true;
     }
 
-    const BIND_FLAGS UavFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
-    const BIND_FLAGS HdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
-    const BIND_FLAGS LdrRtFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
+    const BIND_FLAGS UavFlags     = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+    const BIND_FLAGS HdrRtFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
+    const BIND_FLAGS LdrRtFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS | BIND_RENDER_TARGET;
+    const BIND_FLAGS DepthRtFlags = BIND_SHADER_RESOURCE | BIND_RENDER_TARGET;
 
     if (!SupportsBindFlags(pDevice, Formats.OutputColor, UavFlags))
         return FailResize("RGBA16F UAV OutputColor is not supported; RTXPT post-processing resource graph is unavailable");
@@ -285,6 +289,9 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
 
     if (!SupportsBindFlags(pDevice, Formats.Depth, UavFlags))
         return FailResize("R32F UAV Depth is not supported; RTXPT post-processing resource graph is unavailable");
+
+    if (CreateRealtimeResources && !SupportsBindFlags(pDevice, Formats.PreviousDepth, DepthRtFlags))
+        return FailResize("R32F SRV/RTV PreviousDepth is not supported; RTXPT realtime TAA is unavailable");
 
     if (!SupportsBindFlags(pDevice, Formats.ScreenMotionVectors, UavFlags))
         return FailResize("RGBA16F UAV ScreenMotionVectors is not supported; RTXPT post-processing resource graph is unavailable");
@@ -350,6 +357,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
     RefCntAutoPtr<ITexture>                                     LdrColor;
     RefCntAutoPtr<ITexture>                                     ComputeColor;
     RefCntAutoPtr<ITexture>                                     Depth;
+    RefCntAutoPtr<ITexture>                                     PreviousDepth;
     RefCntAutoPtr<ITexture>                                     ScreenMotionVectors;
     RefCntAutoPtr<ITexture>                                     TemporalFeedback1;
     RefCntAutoPtr<ITexture>                                     TemporalFeedback2;
@@ -384,6 +392,10 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
 
     if (!CreateTarget(pDevice, "RTXPT Depth", RenderWidth, RenderHeight, Formats.Depth, UavFlags, Depth))
         return FailResize("Failed to create RTXPT Depth");
+
+    if (CreateRealtimeResources &&
+        !CreateTarget(pDevice, "RTXPT PreviousDepth", RenderWidth, RenderHeight, Formats.PreviousDepth, DepthRtFlags, PreviousDepth))
+        return FailResize("Failed to create RTXPT PreviousDepth");
 
     if (!CreateTarget(pDevice, "RTXPT ScreenMotionVectors", RenderWidth, RenderHeight, Formats.ScreenMotionVectors, UavFlags, ScreenMotionVectors))
         return FailResize("Failed to create RTXPT ScreenMotionVectors");
@@ -469,6 +481,7 @@ bool RTXPTRenderTargets::Resize(IRenderDevice* pDevice, const RTXPTRenderTargetC
     m_LdrColor                         = LdrColor;
     m_ComputeColor                     = ComputeColor;
     m_Depth                            = Depth;
+    m_PreviousDepth                    = PreviousDepth;
     m_ScreenMotionVectors              = ScreenMotionVectors;
     m_TemporalFeedback1                = TemporalFeedback1;
     m_TemporalFeedback2                = TemporalFeedback2;
@@ -560,7 +573,8 @@ bool RTXPTRenderTargets::HasRealtimeRenderTargets() const
         std::all_of(m_DenoiserOutSpecRadianceHitDist.begin(), m_DenoiserOutSpecRadianceHitDist.end(),
                     [](const RefCntAutoPtr<ITexture>& Texture) { return Texture != nullptr; });
 
-    return m_StableRadiance != nullptr &&
+    return m_PreviousDepth != nullptr &&
+        m_StableRadiance != nullptr &&
         m_StablePlanesHeader != nullptr &&
         m_StablePlanesBuffer != nullptr &&
         m_Throughput != nullptr &&
@@ -691,6 +705,16 @@ ITextureView* RTXPTRenderTargets::GetDepthUAV() const
 ITextureView* RTXPTRenderTargets::GetDepthSRV() const
 {
     return m_Depth ? m_Depth->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetPreviousDepthSRV() const
+{
+    return m_PreviousDepth ? m_PreviousDepth->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+}
+
+ITextureView* RTXPTRenderTargets::GetPreviousDepthRTV() const
+{
+    return m_PreviousDepth ? m_PreviousDepth->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET) : nullptr;
 }
 
 ITextureView* RTXPTRenderTargets::GetScreenMotionVectorsUAV() const

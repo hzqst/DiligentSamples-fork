@@ -50,6 +50,7 @@ struct RTXPTRenderTargetFormats
     TEXTURE_FORMAT LdrColor                  = TEX_FORMAT_RGBA8_UNORM;
     TEXTURE_FORMAT ComputeColor              = TEX_FORMAT_RGBA8_UNORM;
     TEXTURE_FORMAT Depth                     = TEX_FORMAT_R32_FLOAT;
+    TEXTURE_FORMAT PreviousDepth             = TEX_FORMAT_R32_FLOAT;
     TEXTURE_FORMAT ScreenMotionVectors       = TEX_FORMAT_RGBA16_FLOAT;
     TEXTURE_FORMAT TemporalFeedback          = TEX_FORMAT_RGBA16_SNORM;
     TEXTURE_FORMAT CombinedHistoryClampRelax = TEX_FORMAT_R8_UNORM;
@@ -170,6 +171,8 @@ public:
     ITextureView* GetSuperResolutionInputColorSRV() const;
     ITextureView* GetDepthUAV() const;
     ITextureView* GetDepthSRV() const;
+    ITextureView* GetPreviousDepthSRV() const;
+    ITextureView* GetPreviousDepthRTV() const;
     ITextureView* GetScreenMotionVectorsUAV() const;
     ITextureView* GetScreenMotionVectorsSRV() const;
     ITextureView* GetTemporalFeedback1UAV() const;
@@ -235,6 +238,7 @@ public:
     TEXTURE_FORMAT                     GetProcessedOutputColorFormat() const { return m_Formats.ProcessedOutputColor; }
     TEXTURE_FORMAT                     GetLdrColorFormat() const { return m_Formats.LdrColor; }
     TEXTURE_FORMAT                     GetDepthFormat() const { return m_Formats.Depth; }
+    TEXTURE_FORMAT                     GetPreviousDepthFormat() const { return m_Formats.PreviousDepth; }
     TEXTURE_FORMAT                     GetScreenMotionVectorsFormat() const { return m_Formats.ScreenMotionVectors; }
 
 private:
@@ -260,6 +264,7 @@ private:
     RefCntAutoPtr<ITexture>                                     m_LdrColor;
     RefCntAutoPtr<ITexture>                                     m_ComputeColor;
     RefCntAutoPtr<ITexture>                                     m_Depth;
+    RefCntAutoPtr<ITexture>                                     m_PreviousDepth;
     RefCntAutoPtr<ITexture>                                     m_ScreenMotionVectors;
     RefCntAutoPtr<ITexture>                                     m_TemporalFeedback1;
     RefCntAutoPtr<ITexture>                                     m_TemporalFeedback2;

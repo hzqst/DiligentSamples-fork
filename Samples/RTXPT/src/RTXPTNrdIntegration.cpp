@@ -32,8 +32,10 @@
 #    include "GraphicsTypesX.hpp"
 #    include "MapHelper.hpp"
 #    include "Shader.h"
-#    include "Graphics/GraphicsEngineD3DBase/interface/ShaderD3D.h"
 #    include "ShaderMacroHelper.hpp"
+#    if RTXPT_HAS_D3D_SHADER_REFLECTION
+#        include "ShaderD3D.h"
+#    endif
 
 #    include <algorithm>
 #    include <array>
@@ -48,6 +50,24 @@
 
 namespace Diligent
 {
+
+namespace
+{
+
+void ResetNrdStats(RTXPTNrdIntegrationStats& Stats)
+{
+    Stats.Ready                = false;
+    Stats.LastDispatchExecuted = false;
+    Stats.DispatchCount        = 0;
+    Stats.LastPlaneIndex       = 0;
+    Stats.LastDispatches       = 0;
+    Stats.Width                = 0;
+    Stats.Height               = 0;
+    Stats.Method               = RTXPTNrdMethod::REBLUR;
+    Stats.LastFailureReason.clear();
+}
+
+} // namespace
 
 RTXPTNrdIntegration::~RTXPTNrdIntegration()
 {
@@ -65,7 +85,7 @@ bool RTXPTNrdIntegration::Fail(const char* Reason)
 
 void RTXPTNrdIntegration::Reset()
 {
-    m_Stats = {};
+    ResetNrdStats(m_Stats);
 }
 
 bool RTXPTNrdIntegration::Initialize(IRenderDevice*,
@@ -290,7 +310,7 @@ void RTXPTNrdIntegration::Reset()
     m_Samplers.clear();
     m_PermanentTextures.clear();
     m_TransientTextures.clear();
-    m_Stats = {};
+    ResetNrdStats(m_Stats);
 }
 
 bool RTXPTNrdIntegration::Initialize(IRenderDevice*  pDevice,
@@ -449,7 +469,9 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
             return Fail("Failed to create NRD compute shader");
 
         PipelineState& Pipeline = m_Pipelines[PipelineIndex];
+#if RTXPT_HAS_D3D_SHADER_REFLECTION
         RefCntAutoPtr<IShaderD3D> pShaderD3D{pCS, IID_ShaderD3D};
+#endif
         for (Uint32 ResourceIndex = 0; ResourceIndex < pCS->GetResourceCount(); ++ResourceIndex)
         {
             ShaderResourceDesc ResourceDesc;
@@ -458,12 +480,14 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
                 return Fail("NRD shader reflected an unnamed resource");
 
             Uint32 SortKey = ResourceIndex;
+#if RTXPT_HAS_D3D_SHADER_REFLECTION
             if (pShaderD3D)
             {
                 HLSLShaderResourceDesc HLSLDesc;
                 pShaderD3D->GetHLSLResource(ResourceIndex, HLSLDesc);
                 SortKey = HLSLDesc.ShaderRegister;
             }
+#endif
 
             switch (ResourceDesc.Type)
             {

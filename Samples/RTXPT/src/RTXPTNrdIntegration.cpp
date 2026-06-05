@@ -469,9 +469,9 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
             return Fail("Failed to create NRD compute shader");
 
         PipelineState& Pipeline = m_Pipelines[PipelineIndex];
-#if RTXPT_HAS_D3D_SHADER_REFLECTION
+#    if RTXPT_HAS_D3D_SHADER_REFLECTION
         RefCntAutoPtr<IShaderD3D> pShaderD3D{pCS, IID_ShaderD3D};
-#endif
+#    endif
         for (Uint32 ResourceIndex = 0; ResourceIndex < pCS->GetResourceCount(); ++ResourceIndex)
         {
             ShaderResourceDesc ResourceDesc;
@@ -480,14 +480,14 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
                 return Fail("NRD shader reflected an unnamed resource");
 
             Uint32 SortKey = ResourceIndex;
-#if RTXPT_HAS_D3D_SHADER_REFLECTION
+#    if RTXPT_HAS_D3D_SHADER_REFLECTION
             if (pShaderD3D)
             {
                 HLSLShaderResourceDesc HLSLDesc;
                 pShaderD3D->GetHLSLResource(ResourceIndex, HLSLDesc);
                 SortKey = HLSLDesc.ShaderRegister;
             }
-#endif
+#    endif
 
             switch (ResourceDesc.Type)
             {

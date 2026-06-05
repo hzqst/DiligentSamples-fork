@@ -313,13 +313,13 @@ bool RTXPTSuperResolutionPass::EnsureUpscaler(const RTXPTSuperResolutionFrameDes
 }
 
 bool RTXPTSuperResolutionPass::Execute(IDeviceContext*                      pContext,
-                                        const RTXPTRenderTargets&            RenderTargets,
-                                        const RTXPTSuperResolutionFrameDesc& FrameDesc,
-                                        float                                CameraNear,
-                                        float                                CameraFar,
-                                        float                                CameraFovAngleVert,
-                                        ITextureView*                        pColorSRV,
-                                        ITextureView*                        pOutputUAV)
+                                       const RTXPTRenderTargets&            RenderTargets,
+                                       const RTXPTSuperResolutionFrameDesc& FrameDesc,
+                                       float                                CameraNear,
+                                       float                                CameraFar,
+                                       float                                CameraFovAngleVert,
+                                       ITextureView*                        pColorSRV,
+                                       ITextureView*                        pOutputUAV)
 {
     m_Stats.LastExecute = false;
     if (!FrameDesc.Enabled)

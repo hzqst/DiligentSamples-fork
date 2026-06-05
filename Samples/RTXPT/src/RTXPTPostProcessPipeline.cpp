@@ -294,7 +294,7 @@ float2 RTXPTPostProcessPipeline::GetRealtimeTAAJitter(Uint32 FrameIndex, Uint32 
 bool RTXPTPostProcessPipeline::CopyRealtimeOutputToProcessed(IDeviceContext*           pContext,
                                                              const RTXPTRenderTargets& RenderTargets)
 {
-    m_Stats.LastTemporalAAActive     = false;
+    m_Stats.LastTemporalAAActive      = false;
     m_Stats.LastSuperResolutionActive = false;
 
     const auto FailCopy = [this](const char* Reason) {
@@ -323,12 +323,12 @@ bool RTXPTPostProcessPipeline::CopyRealtimeOutputToProcessed(IDeviceContext*    
     return true;
 }
 
-bool RTXPTPostProcessPipeline::RunTemporalAA(IDeviceContext*               pContext,
-                                             const RTXPTRenderTargets&     RenderTargets,
-                                             const SampleConstants&        FrameConstants,
-                                             Uint32                        FrameIndex,
-                                             bool                          ResetHistory,
-                                             bool                          PreviousViewValid,
+bool RTXPTPostProcessPipeline::RunTemporalAA(IDeviceContext*                pContext,
+                                             const RTXPTRenderTargets&      RenderTargets,
+                                             const SampleConstants&         FrameConstants,
+                                             Uint32                         FrameIndex,
+                                             bool                           ResetHistory,
+                                             bool                           PreviousViewValid,
                                              const RTXPTTemporalAASettings& Settings)
 {
     m_Stats.LastRealtimeCopyExecuted  = false;
@@ -371,7 +371,7 @@ bool RTXPTPostProcessPipeline::RunRealtimeSuperResolution(IDeviceContext*       
                                       CameraFovAngleVert,
                                       RenderTargets.GetOutputColorSRV(),
                                       RenderTargets.GetProcessedOutputColorUAV());
-    const auto& SRStats = m_SuperResolutionPass.GetStats();
+    const auto& SRStats               = m_SuperResolutionPass.GetStats();
     m_Stats.SuperResolutionStageReady = !FrameDesc.Enabled || (Executed && SRStats.UpscalerReady);
     m_Stats.LastSuperResolutionActive = Executed && SRStats.LastExecute && FrameDesc.Enabled;
     if (!Executed && SRStats.DisabledReason.empty())

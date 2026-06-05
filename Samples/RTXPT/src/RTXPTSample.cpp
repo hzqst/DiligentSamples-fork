@@ -243,7 +243,7 @@ PathTracerCameraData MakePathTracerCameraData(const FirstPersonCamera& Camera,
     Data.ViewportHeight       = std::max(RenderHeight, Uint32{1});
     Data.ApertureRadius       = std::max(ApertureRadius, 0.0f);
     // Match RTXPT-fork BridgeCamera jitter storage; shader helpers apply per-camera-model signs.
-    Data.Jitter               = Jitter * float2{1.0f, -1.0f};
+    Data.Jitter = Jitter * float2{1.0f, -1.0f};
     return Data;
 }
 
@@ -811,9 +811,9 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 
 void RTXPTSample::UpdateRenderTargetDimensions(float TimeDeltaSeconds)
 {
-    const SwapChainDesc&                  SCDesc = m_pSwapChain->GetDesc();
-    const RTXPTRenderTargetFormats        Formats;
-    const RTXPTSuperResolutionSettings    SuperResolution =
+    const SwapChainDesc&               SCDesc = m_pSwapChain->GetDesc();
+    const RTXPTRenderTargetFormats     Formats;
+    const RTXPTSuperResolutionSettings SuperResolution =
         MakeRealtimeSuperResolutionSettings(m_RealtimeUI);
 
     m_CurrentSuperResolutionFrame =
@@ -996,11 +996,11 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
             m_CurrentSuperResolutionFrame.Enabled ?
         1u :
         0u;
-    PtConsts._paddingR6_1             = 0u;
-    PtConsts._paddingR6_2             = 0u;
-    PtConsts.camera                   = CurrentCamera;
-    PtConsts.prevCamera               = PreviousCamera;
-    m_LastFrameConstants.envMap       = m_EnvMapBaker.GetConstants();
+    PtConsts._paddingR6_1       = 0u;
+    PtConsts._paddingR6_2       = 0u;
+    PtConsts.camera             = CurrentCamera;
+    PtConsts.prevCamera         = PreviousCamera;
+    m_LastFrameConstants.envMap = m_EnvMapBaker.GetConstants();
 
     if (m_FrameConstantsCB)
     {
@@ -2057,7 +2057,7 @@ void RTXPTSample::UpdateUI()
                             }
                             else if (Item == static_cast<int>(RTXPTRealtimeAAMode::SuperResolution))
                             {
-                                const auto& SRStats = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
+                                const auto& SRStats          = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
                                 const char* SRDisabledReason = nullptr;
                                 if (!SRStats.FactoryReady)
                                 {

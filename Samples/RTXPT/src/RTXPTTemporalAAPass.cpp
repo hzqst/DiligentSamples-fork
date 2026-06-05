@@ -542,9 +542,9 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
     PostFXAttribs.pPrevDepthBufferSRV = UsePrevious ?
         Attribs.pRenderTargets->GetPreviousDepthSRV() :
         GetTAADepthSRV();
-    PostFXAttribs.pMotionVectorsSRV   = GetTAAMotionSRV();
-    PostFXAttribs.pCurrCamera         = &CurrentCamera;
-    PostFXAttribs.pPrevCamera         = &PreviousCamera;
+    PostFXAttribs.pMotionVectorsSRV = GetTAAMotionSRV();
+    PostFXAttribs.pCurrCamera       = &CurrentCamera;
+    PostFXAttribs.pPrevCamera       = &PreviousCamera;
     m_PostFXContext->Execute(PostFXAttribs);
     if (!m_PostFXContext->IsPSOsReady())
     {

@@ -94,13 +94,13 @@ public:
                                                    bool                                ResetHistory,
                                                    float                               TimeDeltaSeconds);
     bool                          Execute(IDeviceContext*                      pContext,
-                                           const RTXPTRenderTargets&            RenderTargets,
-                                           const RTXPTSuperResolutionFrameDesc& FrameDesc,
-                                           float                                CameraNear,
-                                           float                                CameraFar,
-                                           float                                CameraFovAngleVert,
-                                           ITextureView*                        pColorSRV  = nullptr,
-                                           ITextureView*                        pOutputUAV = nullptr);
+                                          const RTXPTRenderTargets&            RenderTargets,
+                                          const RTXPTSuperResolutionFrameDesc& FrameDesc,
+                                          float                                CameraNear,
+                                          float                                CameraFar,
+                                          float                                CameraFovAngleVert,
+                                          ITextureView*                        pColorSRV  = nullptr,
+                                          ITextureView*                        pOutputUAV = nullptr);
 
     const std::vector<SuperResolutionInfo>& GetVariants() const { return m_Variants; }
     const RTXPTSuperResolutionStats&        GetStats() const { return m_Stats; }

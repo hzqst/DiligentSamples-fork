@@ -115,12 +115,12 @@ public:
     bool CopyRealtimeOutputToProcessed(IDeviceContext*           pContext,
                                        const RTXPTRenderTargets& RenderTargets);
 
-    bool RunTemporalAA(IDeviceContext*               pContext,
-                       const RTXPTRenderTargets&     RenderTargets,
-                       const SampleConstants&        FrameConstants,
-                       Uint32                        FrameIndex,
-                       bool                          ResetHistory,
-                       bool                          PreviousViewValid,
+    bool RunTemporalAA(IDeviceContext*                pContext,
+                       const RTXPTRenderTargets&      RenderTargets,
+                       const SampleConstants&         FrameConstants,
+                       Uint32                         FrameIndex,
+                       bool                           ResetHistory,
+                       bool                           PreviousViewValid,
                        const RTXPTTemporalAASettings& Settings);
 
     bool RunRealtimeSuperResolution(IDeviceContext*                      pContext,
@@ -147,15 +147,15 @@ public:
     const RTXPTTemporalAAPass&           GetTemporalAAPass() const { return m_TemporalAAPass; }
 
 private:
-    RTXPTPostProcessPipelineStats m_Stats;
-    RefCntAutoPtr<IRenderDevice>  m_Device;
+    RTXPTPostProcessPipelineStats  m_Stats;
+    RefCntAutoPtr<IRenderDevice>   m_Device;
     std::unique_ptr<PostFXContext> m_RealtimeCopyContext;
-    RTXPTAccumulationPass         m_AccumulationPass;
-    RTXPTPostProcessPass          m_PostProcessPass;
-    RTXPTSuperResolutionPass      m_SuperResolutionPass;
-    RTXPTTemporalAAPass           m_TemporalAAPass;
-    RTXPTBloomPass                m_BloomPass;
-    RTXPTToneMappingPass          m_ToneMappingPass;
+    RTXPTAccumulationPass          m_AccumulationPass;
+    RTXPTPostProcessPass           m_PostProcessPass;
+    RTXPTSuperResolutionPass       m_SuperResolutionPass;
+    RTXPTTemporalAAPass            m_TemporalAAPass;
+    RTXPTBloomPass                 m_BloomPass;
+    RTXPTToneMappingPass           m_ToneMappingPass;
 };
 
 } // namespace Diligent

@@ -163,9 +163,12 @@ namespace PathTracer
         tangent     = normalize(tangent);
 
         StablePlaneMaterialState mtl;
-        mtl.flags                 = materialFlags;
-        mtl.nestedPriority        = nestedPriority;
-        mtl.psdDominantDeltaLobeP1 = 0u;
+        mtl.flags                          = materialFlags;
+        mtl.nestedPriority                 = nestedPriority;
+        mtl.activeLobes                    = kLobeTypeAll;
+        mtl.psdExclude                     = 0u;
+        mtl.psdBlockMotionVectorsAtSurface = 0u;
+        mtl.psdDominantDeltaLobeP1         = 0u;
 
         StablePlaneShadingData shadingData;
         shadingData.posW        = worldPos;
@@ -192,7 +195,11 @@ namespace PathTracer
                                                  transmissionFactor,
                                                  diffuseTransmissionFactor,
                                                  thinSurface,
-                                                 frontFacing);
+                                                 frontFacing,
+                                                 mtl.getActiveLobes(),
+                                                 mtl.isPSDExclude(),
+                                                 mtl.isPSDBlockMotionVectorsAtSurface(),
+                                                 mtl.getPSDDominantDeltaLobeP1());
 
         return SurfaceData::make(shadingData,
                                  bsdf,

@@ -32,10 +32,13 @@ float RTXPTNormalizedDeviceZToDepth(float NdcZ)
 float ComputeTAADepth(uint2 PixelPos, float RawDepth)
 {
     const float FarDepth = RTXPTNormalizedDeviceZToDepth(1.0);
-    if (!isfinite(RawDepth) || RawDepth <= 0.0 || RawDepth >= g_Frame.ptConsts.camera.FarZ)
+    CameraRay   Ray      = ComputeRayThinlens(g_Frame.ptConsts.camera, PixelPos, g_Frame.ptConsts.camera.Jitter, 0.5.xx);
+
+    // RTXPT depth is ray distance; DiligentFX TAA consumes projection depth-buffer values.
+    // Treat distances at or beyond this pixel ray's valid range as sky/far.
+    if (!isfinite(RawDepth) || RawDepth <= 0.0 || RawDepth >= Ray.tMax)
         return FarDepth;
 
-    CameraRay    Ray      = ComputeRayThinlens(g_Frame.ptConsts.camera, PixelPos, g_Frame.ptConsts.camera.Jitter, 0.5.xx);
     const float3 WorldPos = Ray.origin + Ray.dir * RawDepth;
     const float4 Clip     = mul(float4(WorldPos, 1.0), g_Frame.view.MatWorldToClip);
     if (!all(isfinite(Clip)) || Clip.w <= 0.0)

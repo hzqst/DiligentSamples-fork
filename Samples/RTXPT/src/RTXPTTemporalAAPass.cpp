@@ -92,6 +92,9 @@ bool ValidateTemporalInputs(const RTXPTTemporalAAFrameAttribs& Attribs, std::str
     else if (Attribs.pRenderTargets->GetRenderWidth() != Attribs.pRenderTargets->GetDisplayWidth() ||
              Attribs.pRenderTargets->GetRenderHeight() != Attribs.pRenderTargets->GetDisplayHeight())
         Reason = "Temporal AA requires render and display dimensions to match";
+    else if (Attribs.pFrameConstants->ptConsts.imageWidth != Attribs.pRenderTargets->GetRenderWidth() ||
+             Attribs.pFrameConstants->ptConsts.imageHeight != Attribs.pRenderTargets->GetRenderHeight())
+        Reason = "Temporal AA frame constants dimensions do not match render targets";
     else if (Attribs.pRenderTargets->GetOutputColorSRV() == nullptr)
         Reason = "OutputColor SRV is null";
     else if (Attribs.pRenderTargets->GetProcessedOutputColorRTV() == nullptr)
@@ -459,6 +462,12 @@ bool RTXPTTemporalAAPass::CopyOutputToProcessed(IRenderDevice*            pDevic
         m_Stats.DisabledReason = "copy requires OutputColor SRV and ProcessedOutputColor RTV";
         return false;
     }
+    if (RenderTargets.GetRenderWidth() != RenderTargets.GetDisplayWidth() ||
+        RenderTargets.GetRenderHeight() != RenderTargets.GetDisplayHeight())
+    {
+        m_Stats.DisabledReason = "copy requires render and display dimensions to match";
+        return false;
+    }
 
     PostFXContext::TextureOperationAttribs CopyAttribs;
     CopyAttribs.pDevice        = pDevice;
@@ -516,7 +525,8 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
         return false;
 
     const SampleConstants&    Constants          = *Attribs.pFrameConstants;
-    const bool                UsePrevious        = Attribs.PreviousViewValid && !Attribs.ResetHistory;
+    const bool                ResetAccumulation  = Attribs.ResetHistory || !Attribs.PreviousViewValid;
+    const bool                UsePrevious        = !ResetAccumulation;
     const Uint32              PreviousFrameIndex = Attribs.FrameIndex > 0 ? Attribs.FrameIndex - 1u : 0u;
     const HLSL::CameraAttribs CurrentCamera =
         MakeCameraAttribs(Constants, Constants.view, Constants.ptConsts.camera, Attribs.FrameIndex);
@@ -536,10 +546,15 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
     PostFXAttribs.pCurrCamera         = &CurrentCamera;
     PostFXAttribs.pPrevCamera         = &PreviousCamera;
     m_PostFXContext->Execute(PostFXAttribs);
+    if (!m_PostFXContext->IsPSOsReady())
+    {
+        m_Stats.DisabledReason = "Temporal AA PostFX resources are not ready";
+        return false;
+    }
 
     HLSL::TemporalAntiAliasingAttribs TAAAttribs = {};
     TAAAttribs.TemporalStabilityFactor           = std::clamp(Attribs.Settings.TemporalStabilityFactor, 0.0f, 1.0f);
-    TAAAttribs.ResetAccumulation                 = Attribs.ResetHistory ? TRUE : FALSE;
+    TAAAttribs.ResetAccumulation                 = ResetAccumulation ? TRUE : FALSE;
     TAAAttribs.SkipRejection                     = Attribs.Settings.SkipRejection ? TRUE : FALSE;
 
     TemporalAntiAliasing::RenderAttributes TAARenderAttribs;

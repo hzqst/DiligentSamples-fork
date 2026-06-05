@@ -110,10 +110,24 @@ bool IsRealtimeSuperResolutionSelected(const RTXPTRealtimeSettings& RealtimeUI)
     return RealtimeUI.RealtimeMode && RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution;
 }
 
-RTXPTSuperResolutionSettings MakeRealtimeSuperResolutionSettings(const RTXPTRealtimeSettings& RealtimeUI)
+Int32 GetFirstTemporalSuperResolutionVariantIdx(const RTXPTSuperResolutionPass& SuperResolutionPass)
+{
+    const auto& Variants = SuperResolutionPass.GetVariants();
+    for (size_t VariantIdx = 0; VariantIdx < Variants.size(); ++VariantIdx)
+    {
+        if (Variants[VariantIdx].Type == SUPER_RESOLUTION_TYPE_TEMPORAL)
+            return static_cast<Int32>(VariantIdx);
+    }
+    return 0;
+}
+
+RTXPTSuperResolutionSettings MakeRealtimeSuperResolutionSettings(const RTXPTRealtimeSettings&      RealtimeUI,
+                                                                 const RTXPTSuperResolutionPass& SuperResolutionPass)
 {
     RTXPTSuperResolutionSettings Settings;
     Settings.Enabled = IsRealtimeSuperResolutionSelected(RealtimeUI);
+    if (Settings.Enabled)
+        Settings.ActiveVariantIdx = GetFirstTemporalSuperResolutionVariantIdx(SuperResolutionPass);
     return Settings;
 }
 
@@ -774,6 +788,7 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
     m_HasLastCameraMatrices = false;
     InvalidatePreviousFrameConstants();
     RequestAccumulationReset("Scene camera changed");
+    RequestRealtimeReset(RTXPT_REALTIME_RESET_TAA_SR_HISTORY, "Scene camera changed");
     return true;
 }
 
@@ -814,7 +829,7 @@ void RTXPTSample::UpdateRenderTargetDimensions(float TimeDeltaSeconds)
     const SwapChainDesc&               SCDesc = m_pSwapChain->GetDesc();
     const RTXPTRenderTargetFormats     Formats;
     const RTXPTSuperResolutionSettings SuperResolution =
-        MakeRealtimeSuperResolutionSettings(m_RealtimeUI);
+        MakeRealtimeSuperResolutionSettings(m_RealtimeUI, m_PostProcessPipeline.GetSuperResolutionPass());
 
     m_CurrentSuperResolutionFrame =
         m_PostProcessPipeline.ResolveSuperResolutionFrameDesc(SuperResolution,
@@ -2548,6 +2563,7 @@ void RTXPTSample::UpdateUI()
         {
             m_ReferenceUI.CameraAperture = std::clamp(m_ReferenceUI.CameraAperture, 0.0f, 1.0f);
             InvalidatePreviousFrameConstants();
+            ResetTaaSrOnChange(true, "Camera aperture changed");
         }
 
         if (ResetOnChange(ImGui::InputFloat("Focal Distance", &m_ReferenceUI.CameraFocalDistance, 0.1f),
@@ -2555,6 +2571,7 @@ void RTXPTSample::UpdateUI()
         {
             m_ReferenceUI.CameraFocalDistance = std::clamp(m_ReferenceUI.CameraFocalDistance, 0.001f, 1.0e16f);
             InvalidatePreviousFrameConstants();
+            ResetTaaSrOnChange(true, "Camera focal distance changed");
         }
 
         m_ReferenceUI.CameraAperture      = std::clamp(m_ReferenceUI.CameraAperture, 0.0f, 1.0f);
@@ -2569,6 +2586,7 @@ void RTXPTSample::UpdateUI()
             const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
             UpdateCameraProjection(SCDesc.Width, SCDesc.Height);
             RequestAccumulationReset("Camera clip planes changed");
+            RequestRealtimeReset(RTXPT_REALTIME_RESET_TAA_SR_HISTORY, "Camera clip planes changed");
             InvalidatePreviousFrameConstants();
         }
 

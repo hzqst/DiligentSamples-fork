@@ -40,7 +40,7 @@ RTXPTDenoiserPostProcessAttribs MakeRealtimePostProcessAttribs(const RTXPTRender
 {
     RTXPTDenoiserPostProcessAttribs Attribs;
     Attribs.pRenderTargets  = &RenderTargets;
-    Attribs.pMergeOutputUAV = RenderTargets.GetAccumulationOutputUAV();
+    Attribs.pMergeOutputUAV = RenderTargets.GetOutputColorUAV();
     return Attribs;
 }
 

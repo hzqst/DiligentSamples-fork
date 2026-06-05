@@ -139,7 +139,7 @@ void DrawDisabledTooltip(const char* Text)
 
 void InsertDenoiserPrepareOutputBarriers(IDeviceContext* pContext, const RTXPTRenderTargets& RenderTargets)
 {
-    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetAccumulationOutputUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetOutputColorUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetCombinedHistoryClampRelaxUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetDenoiserViewspaceZUAV());
     RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetDenoiserMotionVectorsUAV());
@@ -151,7 +151,7 @@ void InsertDenoiserPrepareOutputBarriers(IDeviceContext* pContext, const RTXPTRe
 
 void InsertDenoiserFinalMergeOutputBarrier(IDeviceContext* pContext, const RTXPTRenderTargets& RenderTargets)
 {
-    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetAccumulationOutputUAV());
+    RTXPTRayTracingPass::InsertUAVBarrier(pContext, RenderTargets.GetOutputColorUAV());
 }
 
 Uint32 PackEnvironmentNEEAndEmissiveTriangleCount(bool EnableEnvNEE, Uint32 EmissiveTriangleCount)
@@ -1402,6 +1402,8 @@ bool RTXPTSample::RunRealtimeNoDenoiserFinalMerge()
         RecordRealtimePathTraceStatus("NoDenoiserFinalMerge dispatch failed");
     else
         RecordRealtimePathTraceStatus("Realtime PathTrace, denoising guides, and final merge dispatched");
+    if (MergeOk)
+        RTXPTRayTracingPass::InsertUAVBarrier(m_pImmediateContext, m_RenderTargets.GetOutputColorUAV());
     return MergeOk;
 }
 

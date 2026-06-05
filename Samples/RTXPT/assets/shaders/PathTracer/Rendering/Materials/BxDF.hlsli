@@ -213,48 +213,6 @@ float luminance(float3 C)
     return dot(C, float3(0.2126, 0.7152, 0.0722));
 }
 
-struct BSDFLobeProbabilities
-{
-    float pDiffuseReflection;
-    float pDiffuseTransmission;
-    float pSpecularReflection;
-    float pSpecularTransmission;
-};
-
-BSDFLobeProbabilities GetBSDFLobeProbabilities(StandardBSDFData bsdfData, float3 wo)
-{
-    const float specTrans     = saturate(bsdfData.specularTransmission);
-    const float diffTrans     = saturate(bsdfData.diffuseTransmission);
-    const float metallicBRDF  = saturate(bsdfData.metallic) * (1.0 - specTrans);
-    const float dielectricBSDF = (1.0 - saturate(bsdfData.metallic)) * (1.0 - specTrans);
-    const float diffuseWeight = luminance(bsdfData.diffuse);
-    const float specWeight    = luminance(evalFresnelSchlick(bsdfData.specular, float3(1.0, 1.0, 1.0), saturate(dot(bsdfData.N, wo))));
-
-    BSDFLobeProbabilities p;
-    p.pDiffuseReflection    = diffuseWeight * dielectricBSDF * (1.0 - diffTrans);
-    p.pDiffuseTransmission  = diffuseWeight * dielectricBSDF * diffTrans;
-    p.pSpecularReflection   = specWeight * (metallicBRDF + dielectricBSDF);
-    p.pSpecularTransmission = specTrans;
-
-    const float norm = p.pDiffuseReflection + p.pDiffuseTransmission + p.pSpecularReflection + p.pSpecularTransmission;
-    if (norm > 0.0)
-    {
-        const float invNorm = 1.0 / norm;
-        p.pDiffuseReflection *= invNorm;
-        p.pDiffuseTransmission *= invNorm;
-        p.pSpecularReflection *= invNorm;
-        p.pSpecularTransmission *= invNorm;
-    }
-
-    return p;
-}
-
-float getSpecularProbability(StandardBSDFData bsdfData, float3 wo)
-{
-    BSDFLobeProbabilities p = GetBSDFLobeProbabilities(bsdfData, wo);
-    return p.pSpecularReflection + p.pSpecularTransmission;
-}
-
 float EmsApprox(float r2, float NdV)
 {
     const float r4  = r2 * r2;
@@ -698,6 +656,210 @@ struct SpecularReflectionTransmissionMicrofacet
     }
 };
 
+struct FalcorBSDF
+{
+    DiffuseReflectionFrostbite diffuseReflection;
+    DiffuseTransmissionLambert diffuseTransmission;
+    SpecularReflectionMicrofacet specularReflection;
+    SpecularReflectionTransmissionMicrofacet specularReflectionTransmission;
+
+    float diffTrans;
+    float specTrans;
+    float pDiffuseReflection;
+    float pDiffuseTransmission;
+    float pSpecularReflection;
+    float pSpecularReflectionTransmission;
+    bool  psdExclude;
+
+    void __init(const MaterialHeader mtl, float3 N, float3 V, const StandardBSDFData data)
+    {
+        const bool isThinSurface = mtl.isThinSurface();
+        const float3 dataTransmission = data.Transmission();
+        const float3 transmissionAlbedo = isThinSurface ? dataTransmission : sqrt(max(dataTransmission, float3(0.0, 0.0, 0.0)));
+        const float dataRoughness = data.Roughness();
+
+        diffuseReflection.albedo   = data.Diffuse();
+        diffuseReflection.roughness = dataRoughness;
+        diffuseTransmission.albedo = transmissionAlbedo;
+
+        float alpha = dataRoughness * dataRoughness;
+        if (alpha < kMinGGXAlpha)
+            alpha = 0.0;
+        else
+            alpha = max(alpha, kMinGGXAlpha);
+
+        const uint activeLobes = mtl.getActiveLobes();
+        psdExclude = mtl.isPSDExclude();
+
+        specularReflection.albedo      = data.Specular();
+        specularReflection.alpha       = alpha;
+        specularReflection.activeLobes = activeLobes;
+
+        specularReflectionTransmission.transmissionAlbedo = transmissionAlbedo;
+        specularReflectionTransmission.alpha = data.Eta() == 1.0 ? 0.0 : alpha;
+        specularReflectionTransmission.eta = data.Eta();
+        specularReflectionTransmission.activeLobes = activeLobes;
+        specularReflectionTransmission.isThinSurface = isThinSurface;
+
+        diffTrans = data.DiffuseTransmission();
+        specTrans = data.SpecularTransmission();
+
+        const float metallicBRDF  = data.Metallic() * (1.0 - specTrans);
+        const float dielectricBSDF = (1.0 - data.Metallic()) * (1.0 - specTrans);
+        const float specularBSDF  = specTrans;
+        const float diffuseWeight = luminance(data.Diffuse());
+        const float specularWeight = luminance(evalFresnelSchlick(data.Specular(), float3(1.0, 1.0, 1.0), saturate(dot(V, N))));
+
+        pDiffuseReflection = (activeLobes & kLobeTypeDiffuseReflection) != 0u ? diffuseWeight * dielectricBSDF * (1.0 - diffTrans) : 0.0;
+        pDiffuseTransmission = (activeLobes & kLobeTypeDiffuseTransmission) != 0u ? diffuseWeight * dielectricBSDF * diffTrans : 0.0;
+        pSpecularReflection = (activeLobes & (kLobeTypeSpecularReflection | kLobeTypeDeltaReflection)) != 0u ? specularWeight * (metallicBRDF + dielectricBSDF) : 0.0;
+        pSpecularReflectionTransmission =
+            (activeLobes & (kLobeTypeSpecularReflection | kLobeTypeDeltaReflection | kLobeTypeSpecularTransmission | kLobeTypeDeltaTransmission)) != 0u ? specularBSDF : 0.0;
+
+        float normFactor = pDiffuseReflection + pDiffuseTransmission + pSpecularReflection + pSpecularReflectionTransmission;
+        if (normFactor > 0.0)
+        {
+            normFactor = 1.0 / normFactor;
+            pDiffuseReflection *= normFactor;
+            pDiffuseTransmission *= normFactor;
+            pSpecularReflection *= normFactor;
+            pSpecularReflectionTransmission *= normFactor;
+        }
+    }
+
+    static FalcorBSDF make(const MaterialHeader mtl, float3 N, float3 V, const StandardBSDFData data)
+    {
+        FalcorBSDF ret;
+        ret.__init(mtl, N, V, data);
+        return ret;
+    }
+
+    static uint getLobes(const StandardBSDFData data)
+    {
+        const float alpha = data.Roughness() * data.Roughness();
+        const bool  isDelta = alpha < kMinGGXAlpha;
+        const float diffTransValue = data.DiffuseTransmission();
+        const float specTransValue = data.SpecularTransmission();
+
+        uint lobes = isDelta ? kLobeTypeDeltaReflection : kLobeTypeSpecularReflection;
+        if (any(data.Diffuse() > 0.0) && specTransValue < 1.0)
+        {
+            if (diffTransValue < 1.0)
+                lobes |= kLobeTypeDiffuseReflection;
+            if (diffTransValue > 0.0)
+                lobes |= kLobeTypeDiffuseTransmission;
+        }
+        if (specTransValue > 0.0)
+            lobes |= isDelta ? kLobeTypeDeltaTransmission : kLobeTypeSpecularTransmission;
+
+        return lobes;
+    }
+
+    float4 eval(const float3 wi, const float3 wo)
+    {
+        float3 diffuse = float3(0.0, 0.0, 0.0);
+        float3 specular = float3(0.0, 0.0, 0.0);
+
+        if (pDiffuseReflection > 0.0)
+            diffuse += (1.0 - specTrans) * (1.0 - diffTrans) * diffuseReflection.eval(wi, wo);
+        if (pDiffuseTransmission > 0.0)
+            diffuse += (1.0 - specTrans) * diffTrans * diffuseTransmission.eval(wi, wo);
+        if (pSpecularReflection > 0.0)
+            specular += (1.0 - specTrans) * specularReflection.eval(wi, wo);
+        if (pSpecularReflectionTransmission > 0.0)
+            specular += specTrans * specularReflectionTransmission.eval(wi, wo);
+
+        return float4(diffuse + specular, Average(specular));
+    }
+
+    float evalPdf(const float3 wi, const float3 wo)
+    {
+        float pdf = 0.0;
+        if (pDiffuseReflection > 0.0)
+            pdf += pDiffuseReflection * diffuseReflection.evalPdf(wi, wo);
+        if (pDiffuseTransmission > 0.0)
+            pdf += pDiffuseTransmission * diffuseTransmission.evalPdf(wi, wo);
+        if (pSpecularReflection > 0.0)
+            pdf += pSpecularReflection * specularReflection.evalPdf(wi, wo);
+        if (pSpecularReflectionTransmission > 0.0)
+            pdf += pSpecularReflectionTransmission * specularReflectionTransmission.evalPdf(wi, wo);
+        return pdf;
+    }
+
+    bool sample(const float3 wi, out float3 wo, out float pdf, out float3 weight, out uint lobe, out float lobeP, float3 preGeneratedSample)
+    {
+        wo     = float3(0.0, 0.0, 0.0);
+        weight = float3(0.0, 0.0, 0.0);
+        pdf    = 0.0;
+        lobe   = 0u;
+        lobeP  = 0.0;
+
+        bool valid = false;
+        const float uSelect = preGeneratedSample.z;
+
+        if (uSelect < pDiffuseReflection)
+        {
+            valid = diffuseReflection.sample(wi, wo, pdf, weight, lobe, lobeP, preGeneratedSample);
+            weight /= pDiffuseReflection;
+            weight *= (1.0 - specTrans) * (1.0 - diffTrans);
+            pdf *= pDiffuseReflection;
+            lobeP *= pDiffuseReflection;
+            if (pSpecularReflection > 0.0)
+                pdf += pSpecularReflection * specularReflection.evalPdf(wi, wo);
+            if (pSpecularReflectionTransmission > 0.0)
+                pdf += pSpecularReflectionTransmission * specularReflectionTransmission.evalPdf(wi, wo);
+        }
+        else if (uSelect < pDiffuseReflection + pDiffuseTransmission)
+        {
+            valid = diffuseTransmission.sample(wi, wo, pdf, weight, lobe, lobeP, preGeneratedSample);
+            weight /= pDiffuseTransmission;
+            weight *= (1.0 - specTrans) * diffTrans;
+            pdf *= pDiffuseTransmission;
+            lobeP *= pDiffuseTransmission;
+            if (pSpecularReflectionTransmission > 0.0)
+                pdf += pSpecularReflectionTransmission * specularReflectionTransmission.evalPdf(wi, wo);
+        }
+        else if (uSelect < pDiffuseReflection + pDiffuseTransmission + pSpecularReflection)
+        {
+            valid = specularReflection.sample(wi, wo, pdf, weight, lobe, lobeP, preGeneratedSample);
+            weight /= pSpecularReflection;
+            weight *= (1.0 - specTrans);
+            pdf *= pSpecularReflection;
+            lobeP *= pSpecularReflection;
+            if (pDiffuseReflection > 0.0)
+                pdf += pDiffuseReflection * diffuseReflection.evalPdf(wi, wo);
+            if (pSpecularReflectionTransmission > 0.0)
+                pdf += pSpecularReflectionTransmission * specularReflectionTransmission.evalPdf(wi, wo);
+        }
+        else if (pSpecularReflectionTransmission > 0.0)
+        {
+            valid = specularReflectionTransmission.sample(wi, wo, pdf, weight, lobe, lobeP, preGeneratedSample);
+            weight /= pSpecularReflectionTransmission;
+            weight *= specTrans;
+            pdf *= pSpecularReflectionTransmission;
+            lobeP *= pSpecularReflectionTransmission;
+            if (pDiffuseReflection > 0.0)
+                pdf += pDiffuseReflection * diffuseReflection.evalPdf(wi, wo);
+            if (pDiffuseTransmission > 0.0)
+                pdf += pDiffuseTransmission * diffuseTransmission.evalPdf(wi, wo);
+            if (pSpecularReflection > 0.0)
+                pdf += pSpecularReflection * specularReflection.evalPdf(wi, wo);
+        }
+
+        if (!valid || ((lobe & kLobeTypeDelta) != 0u))
+            pdf = 0.0;
+
+        return valid;
+    }
+};
+
+float getSpecularProbability(StandardBSDFData bsdfData, float3 wo)
+{
+    const MaterialHeader mtl = MakeMaterialHeader(bsdfData);
+    FalcorBSDF bsdf = FalcorBSDF::make(mtl, bsdfData.N, wo, bsdfData);
+    return bsdf.pSpecularReflection + bsdf.pSpecularReflectionTransmission;
+}
+
 // Evaluate f(Wo,Wi) * NoL and the single-sample MIS pdf for the given unit directions.
 // specProb is the probability the sampler used to pick the specular lobe.
 void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, out float3 f, out float pdf)
@@ -705,74 +867,20 @@ void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, o
     f   = float3(0.0, 0.0, 0.0);
     pdf = 0.0;
 
-    const float NdotV = dot(bsdfData.N, wo);
-    if (NdotV < kMinCosTheta)
-        return;
-
     float3 tangent;
     float3 bitangent;
     BranchlessONB(bsdfData.N, tangent, bitangent);
 
-    const float NdotL  = dot(bsdfData.N, wi);
-    const float3 woLocal = float3(dot(wo, tangent), dot(wo, bitangent), NdotV);
-    const float3 wiLocal = float3(dot(wi, tangent), dot(wi, bitangent), NdotL);
-    if (abs(wiLocal.z) < kMinCosTheta)
+    const float3 viewLocal = float3(dot(wo, tangent), dot(wo, bitangent), dot(bsdfData.N, wo));
+    const float3 scatterLocal = float3(dot(wi, tangent), dot(wi, bitangent), dot(bsdfData.N, wi));
+    if (viewLocal.z < kMinCosTheta || abs(scatterLocal.z) < kMinCosTheta)
         return;
 
-    BSDFLobeProbabilities p = GetBSDFLobeProbabilities(bsdfData, wo);
-    const float specTrans = saturate(bsdfData.specularTransmission);
-    const float diffTrans = saturate(bsdfData.diffuseTransmission);
-
-    float3 diffuseReflection     = float3(0.0, 0.0, 0.0);
-    float3 diffuseTransmission   = float3(0.0, 0.0, 0.0);
-    float3 specularReflection    = float3(0.0, 0.0, 0.0);
-    float3 specularTransmission  = float3(0.0, 0.0, 0.0);
-    float  pdfDiffuseReflection  = 0.0;
-    float  pdfDiffuseTransmission = 0.0;
-    float  pdfSpecularReflection = 0.0;
-    float  pdfSpecularTransmission = 0.0;
-
-    if (wiLocal.z > 0.0)
-    {
-        DiffuseReflectionFrostbite diffuseReflectionBxDF;
-        diffuseReflectionBxDF.albedo    = bsdfData.diffuse;
-        diffuseReflectionBxDF.roughness = bsdfData.roughness;
-
-        diffuseReflection    = (1.0 - specTrans) * (1.0 - diffTrans) * diffuseReflectionBxDF.eval(woLocal, wiLocal);
-        pdfDiffuseReflection = diffuseReflectionBxDF.evalPdf(woLocal, wiLocal);
-
-        SpecularReflectionMicrofacet specularReflectionBxDF;
-        specularReflectionBxDF.albedo      = bsdfData.specular;
-        specularReflectionBxDF.alpha       = bsdfData.alpha;
-        specularReflectionBxDF.activeLobes = bsdfData.activeLobes;
-
-        specularReflection    = (1.0 - specTrans) * specularReflectionBxDF.eval(woLocal, wiLocal);
-        pdfSpecularReflection = specularReflectionBxDF.evalPdf(woLocal, wiLocal);
-    }
-    else
-    {
-        DiffuseTransmissionLambert diffuseTransmissionBxDF;
-        diffuseTransmissionBxDF.albedo = GetTransmissionAlbedo(bsdfData);
-
-        diffuseTransmission    = (1.0 - specTrans) * diffTrans * diffuseTransmissionBxDF.eval(woLocal, wiLocal);
-        pdfDiffuseTransmission = diffuseTransmissionBxDF.evalPdf(woLocal, wiLocal);
-    }
-
-    SpecularReflectionTransmissionMicrofacet specularTransmissionBxDF;
-    specularTransmissionBxDF.transmissionAlbedo = GetTransmissionAlbedo(bsdfData);
-    specularTransmissionBxDF.alpha              = bsdfData.alpha;
-    specularTransmissionBxDF.eta                = bsdfData.eta;
-    specularTransmissionBxDF.activeLobes        = bsdfData.activeLobes;
-    specularTransmissionBxDF.isThinSurface      = bsdfData.thinSurface;
-
-    specularTransmission    = specTrans * specularTransmissionBxDF.eval(woLocal, wiLocal);
-    pdfSpecularTransmission = specularTransmissionBxDF.evalPdf(woLocal, wiLocal);
-
-    f = diffuseReflection + diffuseTransmission + specularReflection + specularTransmission;
-    pdf = p.pDiffuseReflection * pdfDiffuseReflection +
-          p.pDiffuseTransmission * pdfDiffuseTransmission +
-          p.pSpecularReflection * pdfSpecularReflection +
-          p.pSpecularTransmission * pdfSpecularTransmission;
+    const MaterialHeader mtl = MakeMaterialHeader(bsdfData);
+    FalcorBSDF bsdf = FalcorBSDF::make(mtl, bsdfData.N, wo, bsdfData);
+    const float4 value = bsdf.eval(viewLocal, scatterLocal);
+    f = value.rgb;
+    pdf = bsdf.evalPdf(viewLocal, scatterLocal);
 }
 
 // Importance-sample an incident direction Wi. preGeneratedSample.xy samples the chosen lobe,
@@ -786,127 +894,23 @@ bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, float3 preGeneratedSample,
     lobe   = 0u;
     lobeP  = 0.0;
 
-    const float NdotV = dot(bsdfData.N, wo);
-    if (NdotV < kMinCosTheta)
-        return false;
-
     float3 tangent;
     float3 bitangent;
     BranchlessONB(bsdfData.N, tangent, bitangent);
 
-    const float3 woLocal = float3(dot(wo, tangent), dot(wo, bitangent), NdotV);
-    BSDFLobeProbabilities p = GetBSDFLobeProbabilities(bsdfData, wo);
-    const float uSelect = preGeneratedSample.z;
-    const float cDiffuseTransmission = p.pDiffuseReflection + p.pDiffuseTransmission;
-    const float cSpecularReflection = cDiffuseTransmission + p.pSpecularReflection;
-
-    float3 wiLocal = float3(0.0, 0.0, 0.0);
-
-    if (uSelect < p.pDiffuseReflection)
-    {
-        DiffuseReflectionFrostbite diffuseReflectionBxDF;
-        diffuseReflectionBxDF.albedo    = bsdfData.diffuse;
-        diffuseReflectionBxDF.roughness = bsdfData.roughness;
-
-        float3 lobeWeight;
-        uint   componentLobe;
-        float  componentLobeP;
-        if (!diffuseReflectionBxDF.sample(woLocal, wiLocal, pdf, lobeWeight, componentLobe, componentLobeP, preGeneratedSample))
-            return false;
-
-        lobeP = p.pDiffuseReflection;
-        lobe  = componentLobe;
-    }
-    else if (uSelect < cDiffuseTransmission)
-    {
-        DiffuseTransmissionLambert diffuseTransmissionBxDF;
-        diffuseTransmissionBxDF.albedo = GetTransmissionAlbedo(bsdfData);
-
-        float3 lobeWeight;
-        uint   componentLobe;
-        float  componentLobeP;
-        if (!diffuseTransmissionBxDF.sample(woLocal, wiLocal, pdf, lobeWeight, componentLobe, componentLobeP, preGeneratedSample))
-            return false;
-
-        lobeP = p.pDiffuseTransmission;
-        lobe  = componentLobe;
-    }
-    else if (uSelect < cSpecularReflection)
-    {
-        SpecularReflectionMicrofacet specularReflectionBxDF;
-        specularReflectionBxDF.albedo      = bsdfData.specular;
-        specularReflectionBxDF.alpha       = bsdfData.alpha;
-        specularReflectionBxDF.activeLobes = bsdfData.activeLobes;
-
-        float3 lobeWeight;
-        uint   componentLobe;
-        float  componentLobeP;
-        if (!specularReflectionBxDF.sample(woLocal, wiLocal, pdf, lobeWeight, componentLobe, componentLobeP, preGeneratedSample))
-            return false;
-
-        lobeP = p.pSpecularReflection * componentLobeP;
-        lobe  = componentLobe;
-
-        if (lobe == kLobeTypeDeltaReflection)
-        {
-            wi     = normalize(tangent * wiLocal.x + bitangent * wiLocal.y + bsdfData.N * wiLocal.z);
-            weight = (1.0 - saturate(bsdfData.specularTransmission)) * lobeWeight / max(p.pSpecularReflection, 1e-7);
-            pdf    = 0.0;
-            return IsFiniteVector(wi);
-        }
-    }
-    else if (p.pSpecularTransmission > 0.0)
-    {
-        const float branchSample = clamp((uSelect - cSpecularReflection) / max(p.pSpecularTransmission, 1e-7), 0.0, 0.99999994);
-        float3 localSample = preGeneratedSample;
-        localSample.z      = branchSample;
-
-        SpecularReflectionTransmissionMicrofacet specularTransmissionBxDF;
-        specularTransmissionBxDF.transmissionAlbedo = GetTransmissionAlbedo(bsdfData);
-        specularTransmissionBxDF.alpha              = bsdfData.alpha;
-        specularTransmissionBxDF.eta                = bsdfData.eta;
-        specularTransmissionBxDF.activeLobes        = bsdfData.activeLobes;
-        specularTransmissionBxDF.isThinSurface      = bsdfData.thinSurface;
-
-        float3 lobeWeight;
-        uint   componentLobe;
-        float  componentLobeP;
-        if (!specularTransmissionBxDF.sample(woLocal, wiLocal, pdf, lobeWeight, componentLobe, componentLobeP, localSample))
-            return false;
-
-        lobeP = p.pSpecularTransmission * componentLobeP;
-        lobe  = componentLobe;
-
-        if ((lobe & kLobeTypeDelta) != 0u)
-        {
-            weight = lobeWeight * saturate(bsdfData.specularTransmission) / max(p.pSpecularTransmission, 1e-7);
-            wi  = normalize(tangent * wiLocal.x + bitangent * wiLocal.y + bsdfData.N * wiLocal.z);
-            pdf = 0.0;
-            return IsFiniteVector(wi);
-        }
-    }
-    else
-    {
-        return false;
-    }
-
-    if (abs(wiLocal.z) < kMinCosTheta)
+    const float3 viewLocal = float3(dot(wo, tangent), dot(wo, bitangent), dot(bsdfData.N, wo));
+    if (viewLocal.z < kMinCosTheta)
         return false;
 
-    wi = normalize(tangent * wiLocal.x + bitangent * wiLocal.y + bsdfData.N * wiLocal.z);
-    if (!IsFiniteVector(wi))
+    float3 scatterLocal;
+    const MaterialHeader mtl = MakeMaterialHeader(bsdfData);
+    FalcorBSDF bsdf = FalcorBSDF::make(mtl, bsdfData.N, wo, bsdfData);
+    const bool valid = bsdf.sample(viewLocal, scatterLocal, pdf, weight, lobe, lobeP, preGeneratedSample);
+    if (!valid)
         return false;
 
-    float3 f;
-    EvalBSDF(bsdfData, wo, wi, 0.0, f, pdf);
-    if (!IsFiniteScalar(pdf) || pdf <= 0.0 || !IsFiniteVector(f))
-        return false;
-
-    weight = f / pdf;
-    if (!IsFiniteVector(weight))
-        return false;
-
-    return true;
+    wi = normalize(tangent * scatterLocal.x + bitangent * scatterLocal.y + bsdfData.N * scatterLocal.z);
+    return IsFiniteVector(wi) && IsFiniteVector(weight) && IsFiniteScalar(pdf);
 }
 
 #endif // __BXDF_HLSLI__

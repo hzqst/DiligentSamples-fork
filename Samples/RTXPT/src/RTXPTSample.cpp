@@ -1458,28 +1458,71 @@ bool RTXPTSample::RunRealtimeNoDenoiserFinalMerge()
 
 bool RTXPTSample::PresentRealtimeFinalOutput()
 {
-    const RTXPTSuperResolutionSettings  DisabledSuperResolution;
-    const RTXPTSuperResolutionFrameDesc FrameDesc =
-        m_PostProcessPipeline.ResolveSuperResolutionFrameDesc(DisabledSuperResolution,
-                                                              m_RenderTargets.GetDisplayWidth(),
-                                                              m_RenderTargets.GetDisplayHeight(),
-                                                              m_RenderTargets.GetProcessedOutputColorFormat(),
-                                                              HasRealtimeResetFlag(m_CurrentFrameRealtimeReset, RTXPT_REALTIME_RESET_TAA_SR_HISTORY),
-                                                              m_LastElapsedTimeSeconds);
+    const bool ResetTaaSrHistory =
+        HasRealtimeResetFlag(m_CurrentFrameRealtimeReset, RTXPT_REALTIME_RESET_TAA_SR_HISTORY);
 
-    if (FrameDesc.Enabled)
+    switch (m_RealtimeUI.RealtimeAA)
     {
-        const bool SROk = m_PostProcessPipeline.RunSuperResolution(m_pImmediateContext,
-                                                                   m_RenderTargets,
-                                                                   FrameDesc,
-                                                                   m_CameraNearPlane,
-                                                                   m_CameraFarPlane,
-                                                                   m_CameraVerticalFov);
-        if (!SROk)
+        case RTXPTRealtimeAAMode::Disabled:
         {
-            RecordRealtimePathTraceStatus("Realtime super-resolution pass failed");
+            if (!m_PostProcessPipeline.CopyRealtimeOutputToProcessed(m_pImmediateContext, m_RenderTargets))
+            {
+                RecordRealtimePathTraceStatus("Realtime OutputColor copy to ProcessedOutputColor failed");
+                return false;
+            }
+            break;
+        }
+
+        case RTXPTRealtimeAAMode::TAA:
+        {
+            if (!m_PostProcessPipeline.RunTemporalAA(m_pImmediateContext,
+                                                     m_RenderTargets,
+                                                     m_LastFrameConstants,
+                                                     m_FrameIndex,
+                                                     ResetTaaSrHistory,
+                                                     m_HasPreviousFrameConstants,
+                                                     MakeRealtimeTemporalAASettings()))
+            {
+                const auto& TAAStats = m_PostProcessPipeline.GetTemporalAAPass().GetStats();
+                RecordRealtimePathTraceStatus(
+                    TAAStats.DisabledReason.empty() ? "Realtime TAA failed" : TAAStats.DisabledReason.c_str());
+                return false;
+            }
+            break;
+        }
+
+        case RTXPTRealtimeAAMode::SuperResolution:
+        {
+            if (!m_CurrentSuperResolutionFrame.Enabled)
+            {
+                const auto& SRStats = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
+                RecordRealtimePathTraceStatus(
+                    SRStats.DisabledReason.empty() ? "Realtime super resolution is unavailable" : SRStats.DisabledReason.c_str());
+                return false;
+            }
+
+            if (!m_PostProcessPipeline.RunRealtimeSuperResolution(m_pImmediateContext,
+                                                                  m_RenderTargets,
+                                                                  m_CurrentSuperResolutionFrame,
+                                                                  m_CameraNearPlane,
+                                                                  m_CameraFarPlane,
+                                                                  m_CameraVerticalFov))
+            {
+                RecordRealtimePathTraceStatus("Realtime super-resolution pass failed");
+                return false;
+            }
+            break;
+        }
+
+        case RTXPTRealtimeAAMode::DLSSRR:
+        {
+            RecordRealtimePathTraceStatus("DLSS-RR is unavailable in this phase; TODO(RTXPT-Realtime-DLSS-RR).");
             return false;
         }
+
+        default:
+            RecordRealtimePathTraceStatus("Unknown realtime AA/SR mode");
+            return false;
     }
 
     RTXPTBloomParameters BloomParams;

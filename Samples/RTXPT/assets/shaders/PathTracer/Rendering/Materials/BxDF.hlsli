@@ -6,6 +6,7 @@
 // metallic, roughness, and shading normal from the payload.
 
 #include "../../Utils/SampleGenerators.hlsli"
+#include "../../Scene/Material/MaterialData.hlsli"
 #include "LobeType.hlsli"
 
 static const float K_PI   = 3.14159265358979323846;
@@ -32,12 +33,90 @@ struct StandardBSDFData
     float3 transmission;
     float  roughness;
     float  alpha;
-    float  eta; // incident IoR / transmitted IoR.
+    float  eta;
     float  metallic;
     float  diffuseTransmission;
     float  specularTransmission;
     bool   thinSurface;
+    uint   activeLobes;
+    uint   psdExclude;
+    uint   psdBlockMotionVectorsAtSurface;
+    uint   psdDominantDeltaLobeP1;
+
+    float3 Diffuse() { return diffuse; }
+    float3 Specular() { return specular; }
+    float3 Transmission() { return transmission; }
+    float  Roughness() { return roughness; }
+    float  Metallic() { return metallic; }
+    float  Eta() { return eta; }
+    float  DiffuseTransmission() { return diffuseTransmission; }
+    float  SpecularTransmission() { return specularTransmission; }
+
+    void SetEta(float value)
+    {
+        eta = value;
+    }
+
+    void SetRoughness(float value)
+    {
+        roughness            = saturate(value);
+        const float newAlpha = roughness * roughness;
+        alpha                = (newAlpha < kMinGGXAlpha) ? 0.0 : max(newAlpha, kMinGGXAlpha);
+    }
 };
+
+MaterialHeader MakeMaterialHeader(StandardBSDFData bsdfData)
+{
+    MaterialHeader header = MaterialHeader::make();
+    header.setActiveLobes(bsdfData.activeLobes == 0u ? kLobeTypeAll : bsdfData.activeLobes);
+    header.setThinSurface(bsdfData.thinSurface);
+    header.setPSDExclude(bsdfData.psdExclude != 0u);
+    header.setPSDBlockMotionVectorsAtSurface(bsdfData.psdBlockMotionVectorsAtSurface != 0u);
+    header.setPSDDominantDeltaLobeP1(bsdfData.psdDominantDeltaLobeP1);
+    return header;
+}
+
+StandardBSDFData MakeStandardBSDFData(float3 N,
+                                      float3 baseColor,
+                                      float  metallic,
+                                      float  roughness,
+                                      float  materialIoR,
+                                      float  outsideIoR,
+                                      float  transmissionFactor,
+                                      float  diffuseTransmissionFactor,
+                                      bool   thinSurface,
+                                      bool   frontFacing,
+                                      uint   activeLobes,
+                                      bool   psdExclude,
+                                      bool   psdBlockMotionVectorsAtSurface,
+                                      uint   psdDominantDeltaLobeP1)
+{
+    const float r               = saturate(roughness);
+    const float m               = saturate(metallic);
+    const float safeMaterialIoR = max(materialIoR, 1.0);
+    const float safeOutsideIoR  = max(outsideIoR, 1.0);
+    const float f0Sqrt          = (safeMaterialIoR - 1.0) / max(safeMaterialIoR + 1.0, 1e-4);
+    const float dielectric      = f0Sqrt * f0Sqrt;
+    const float alpha           = r * r;
+
+    StandardBSDFData bsdfData;
+    bsdfData.N                              = N;
+    bsdfData.diffuse                        = baseColor * (1.0 - m);
+    bsdfData.specular                       = lerp(float3(dielectric, dielectric, dielectric), baseColor, m);
+    bsdfData.transmission                   = baseColor;
+    bsdfData.roughness                      = r;
+    bsdfData.alpha                          = (alpha < kMinGGXAlpha) ? 0.0 : max(alpha, kMinGGXAlpha);
+    bsdfData.eta                            = frontFacing ? safeOutsideIoR / safeMaterialIoR : safeMaterialIoR / safeOutsideIoR;
+    bsdfData.metallic                       = m;
+    bsdfData.diffuseTransmission            = saturate(diffuseTransmissionFactor) * (1.0 - m);
+    bsdfData.specularTransmission           = saturate(transmissionFactor) * (1.0 - m);
+    bsdfData.thinSurface                    = thinSurface;
+    bsdfData.activeLobes                    = activeLobes == 0u ? kLobeTypeAll : activeLobes;
+    bsdfData.psdExclude                     = psdExclude ? 1u : 0u;
+    bsdfData.psdBlockMotionVectorsAtSurface = psdBlockMotionVectorsAtSurface ? 1u : 0u;
+    bsdfData.psdDominantDeltaLobeP1         = psdDominantDeltaLobeP1;
+    return bsdfData;
+}
 
 StandardBSDFData MakeStandardBSDFData(float3 N,
                                       float3 baseColor,
@@ -50,27 +129,20 @@ StandardBSDFData MakeStandardBSDFData(float3 N,
                                       bool   thinSurface,
                                       bool   frontFacing)
 {
-    const float r              = saturate(roughness);
-    const float m              = saturate(metallic);
-    const float safeMaterialIoR = max(materialIoR, 1.0);
-    const float safeOutsideIoR  = max(outsideIoR, 1.0);
-    const float f0Sqrt         = (safeMaterialIoR - 1.0) / max(safeMaterialIoR + 1.0, 1e-4);
-    const float dielectric     = f0Sqrt * f0Sqrt;
-    const float alpha          = r * r;
-
-    StandardBSDFData bsdfData;
-    bsdfData.N                     = N;
-    bsdfData.diffuse               = baseColor * (1.0 - m);
-    bsdfData.specular              = lerp(float3(dielectric, dielectric, dielectric), baseColor, m);
-    bsdfData.transmission          = baseColor;
-    bsdfData.roughness             = r;
-    bsdfData.alpha                 = (alpha < kMinGGXAlpha) ? 0.0 : max(alpha, kMinGGXAlpha);
-    bsdfData.eta                   = frontFacing ? safeOutsideIoR / safeMaterialIoR : safeMaterialIoR / safeOutsideIoR;
-    bsdfData.metallic              = m;
-    bsdfData.diffuseTransmission   = saturate(diffuseTransmissionFactor) * (1.0 - m);
-    bsdfData.specularTransmission  = saturate(transmissionFactor) * (1.0 - m);
-    bsdfData.thinSurface           = thinSurface;
-    return bsdfData;
+    return MakeStandardBSDFData(N,
+                                baseColor,
+                                metallic,
+                                roughness,
+                                materialIoR,
+                                outsideIoR,
+                                transmissionFactor,
+                                diffuseTransmissionFactor,
+                                thinSurface,
+                                frontFacing,
+                                kLobeTypeAll,
+                                false,
+                                false,
+                                0u);
 }
 
 StandardBSDFData MakeStandardBSDFData(float3 N, float3 baseColor, float metallic, float roughness)

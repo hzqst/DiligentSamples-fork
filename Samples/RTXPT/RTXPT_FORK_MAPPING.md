@@ -124,6 +124,13 @@ Hard constraints:
 | `kMinGGXAlpha` | `kMinGGXAlpha` | Near-mirror specular collapses to delta reflection |
 | `sampleGGX_BVNDF` / `evalPdfGGX_BVNDF` | `Microfacet.hlsli` | Bounded-VNDF GGX reflection sampling and matching pdf |
 | `evalDiffuseFrostbiteWeight` | `DiffuseReflectionFrostbite::evalWeight` | Frostbite/Disney energy-conserving diffuse |
+| `DiffuseReflectionFrostbite` | `DiffuseReflectionFrostbite` | Frostbite diffuse reflection component; Diligent wrapper maps world `wo` to local reference `wi` |
+| `DiffuseTransmissionLambert` | `DiffuseTransmissionLambert` | Opposite-hemisphere Lambertian diffuse transmission |
+| `SpecularReflectionMicrofacet` | `SpecularReflectionMicrofacet` | GGX BVNDF reflection, active-lobe gated, delta reflection when roughness falls below `kMinGGXAlpha` |
+| `SpecularReflectionTransmissionMicrofacet` | `SpecularReflectionTransmissionMicrofacet` | GGX dielectric reflection/transmission, thin-surface eta override for transmission only |
+| `FalcorBSDF` | `FalcorBSDF` | Four-component mixture with active-lobe gating, reference mixture pdf additions, sampled delta `pdf = 0` |
+| `FalcorBSDF::evalDeltaLobes` | `ActiveBSDF::evalDeltaLobes` bridge | Exports transmission delta slot `0` and reflection delta slot `1` for stable-plane branch IDs |
+| `MaterialHeader` PSD accessors | `Scene/Material/MaterialData.hlsli` plus `StablePlaneMaterialState` | Minimum PSD compatibility surface: exclude, block motion vectors at surface, dominant delta lobe plus one |
 | `MultiScatterSpecularApprox` | `MultiScatterSpecularApprox` | Turquin multi-scatter specular compensation |
 | `RTXPTLuminance` | `luminance` = RTXPT-fork | |
 | `RTXPTSpecularProbability` | `getSpecularProbability` (style) | |

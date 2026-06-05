@@ -255,18 +255,6 @@ float getSpecularProbability(StandardBSDFData bsdfData, float3 wo)
     return p.pSpecularReflection + p.pSpecularTransmission;
 }
 
-float3 evalDiffuseFrostbiteWeight(float3 albedo, float roughness, float3 wi, float3 wo)
-{
-    const float3 h            = normalize(wi + wo);
-    const float  woDotH       = saturate(dot(wo, h));
-    const float  energyBias   = lerp(0.0, 0.5, roughness);
-    const float  energyFactor = lerp(1.0, 1.0 / 1.51, roughness);
-    const float  fd90         = energyBias + 2.0 * woDotH * woDotH * roughness;
-    const float  wiScatter    = evalFresnelSchlick(1.0, fd90, wi.z);
-    const float  woScatter    = evalFresnelSchlick(1.0, fd90, wo.z);
-    return albedo * wiScatter * woScatter * energyFactor;
-}
-
 float EmsApprox(float r2, float NdV)
 {
     const float r4  = r2 * r2;
@@ -329,6 +317,96 @@ float3 GetTransmissionAlbedo(StandardBSDFData bsdfData)
     return bsdfData.thinSurface ? bsdfData.transmission : sqrt(max(bsdfData.transmission, float3(0.0, 0.0, 0.0)));
 }
 
+struct DiffuseReflectionFrostbite
+{
+    float3 albedo;
+    float  roughness;
+
+    float3 eval(const float3 wi, const float3 wo)
+    {
+        if (min(wi.z, wo.z) < kMinCosTheta)
+            return float3(0.0, 0.0, 0.0);
+
+        return evalWeight(wi, wo) * K_1_PI * wo.z;
+    }
+
+    bool sample(const float3 wi, out float3 wo, out float pdf, out float3 weight, out uint lobe, out float lobeP, float3 preGeneratedSample)
+    {
+        wo   = sampleCosineHemisphereLocal(preGeneratedSample.xy, pdf);
+        lobe = kLobeTypeDiffuseReflection;
+
+        if (min(wi.z, wo.z) < kMinCosTheta)
+        {
+            weight = float3(0.0, 0.0, 0.0);
+            lobeP  = 0.0;
+            return false;
+        }
+
+        weight = evalWeight(wi, wo);
+        lobeP  = 1.0;
+        return true;
+    }
+
+    float evalPdf(const float3 wi, const float3 wo)
+    {
+        if (min(wi.z, wo.z) < kMinCosTheta)
+            return 0.0;
+
+        return K_1_PI * wo.z;
+    }
+
+    float3 evalWeight(float3 wi, float3 wo)
+    {
+        const float3 h            = normalize(wi + wo);
+        const float  woDotH       = saturate(dot(wo, h));
+        const float  energyBias   = lerp(0.0, 0.5, roughness);
+        const float  energyFactor = lerp(1.0, 1.0 / 1.51, roughness);
+        const float  fd90         = energyBias + 2.0 * woDotH * woDotH * roughness;
+        const float  wiScatter    = evalFresnelSchlick(1.0, fd90, wi.z);
+        const float  woScatter    = evalFresnelSchlick(1.0, fd90, wo.z);
+        return albedo * wiScatter * woScatter * energyFactor;
+    }
+};
+
+struct DiffuseTransmissionLambert
+{
+    float3 albedo;
+
+    float3 eval(const float3 wi, const float3 wo)
+    {
+        if (min(wi.z, -wo.z) < kMinCosTheta)
+            return float3(0.0, 0.0, 0.0);
+
+        return K_1_PI * albedo * -wo.z;
+    }
+
+    bool sample(const float3 wi, out float3 wo, out float pdf, out float3 weight, out uint lobe, out float lobeP, float3 preGeneratedSample)
+    {
+        wo   = sampleCosineHemisphereLocal(preGeneratedSample.xy, pdf);
+        wo.z = -wo.z;
+        lobe = kLobeTypeDiffuseTransmission;
+
+        if (min(wi.z, -wo.z) < kMinCosTheta)
+        {
+            weight = float3(0.0, 0.0, 0.0);
+            lobeP  = 0.0;
+            return false;
+        }
+
+        weight = albedo;
+        lobeP  = 1.0;
+        return true;
+    }
+
+    float evalPdf(const float3 wi, const float3 wo)
+    {
+        if (min(wi.z, -wo.z) < kMinCosTheta)
+            return 0.0;
+
+        return K_1_PI * -wo.z;
+    }
+};
+
 bool IsFiniteVector(float3 v)
 {
     return all(v == v) && all(abs(v) < float3(3.402823466e+38, 3.402823466e+38, 3.402823466e+38));
@@ -337,23 +415,6 @@ bool IsFiniteVector(float3 v)
 bool IsFiniteScalar(float v)
 {
     return (v == v) && (abs(v) < 3.402823466e+38);
-}
-
-float3 EvalDiffuseTransmission(StandardBSDFData bsdfData, float3 wiLocal, float3 woLocal, out float pdf)
-{
-    pdf = 0.0;
-    if (woLocal.z < kMinCosTheta || -wiLocal.z < kMinCosTheta)
-        return float3(0.0, 0.0, 0.0);
-
-    pdf = -wiLocal.z * K_1_PI;
-    return GetTransmissionAlbedo(bsdfData) * pdf;
-}
-
-float3 SampleDiffuseTransmission(StandardBSDFData bsdfData, float2 rand, out float3 wi, out float pdf)
-{
-    wi   = sampleCosineHemisphereLocal(rand, pdf);
-    wi.z = -wi.z;
-    return (-wi.z < kMinCosTheta || pdf <= 0.0) ? float3(0.0, 0.0, 0.0) : GetTransmissionAlbedo(bsdfData);
 }
 
 float3 EvalSpecularReflectionTransmission(StandardBSDFData bsdfData, float3 wiLocal, float3 woLocal)
@@ -476,9 +537,12 @@ void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, o
 
     if (wiLocal.z > 0.0)
     {
-        const float3 diff = evalDiffuseFrostbiteWeight(bsdfData.diffuse, bsdfData.roughness, wiLocal, woLocal) * K_1_PI;
-        diffuseReflection = (1.0 - specTrans) * (1.0 - diffTrans) * diff * wiLocal.z;
-        pdfDiffuseReflection = wiLocal.z * K_1_PI;
+        DiffuseReflectionFrostbite diffuseReflectionBxDF;
+        diffuseReflectionBxDF.albedo    = bsdfData.diffuse;
+        diffuseReflectionBxDF.roughness = bsdfData.roughness;
+
+        diffuseReflection    = (1.0 - specTrans) * (1.0 - diffTrans) * diffuseReflectionBxDF.eval(woLocal, wiLocal);
+        pdfDiffuseReflection = diffuseReflectionBxDF.evalPdf(woLocal, wiLocal);
 
         if (bsdfData.alpha != 0.0)
         {
@@ -494,8 +558,11 @@ void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, o
     }
     else
     {
-        diffuseTransmission = (1.0 - specTrans) * diffTrans *
-            EvalDiffuseTransmission(bsdfData, wiLocal, woLocal, pdfDiffuseTransmission);
+        DiffuseTransmissionLambert diffuseTransmissionBxDF;
+        diffuseTransmissionBxDF.albedo = GetTransmissionAlbedo(bsdfData);
+
+        diffuseTransmission    = (1.0 - specTrans) * diffTrans * diffuseTransmissionBxDF.eval(woLocal, wiLocal);
+        pdfDiffuseTransmission = diffuseTransmissionBxDF.evalPdf(woLocal, wiLocal);
     }
 
     specularTransmission    = specTrans * EvalSpecularReflectionTransmission(bsdfData, wiLocal, woLocal);
@@ -537,15 +604,32 @@ bool SampleBSDF(StandardBSDFData bsdfData, float3 wo, float3 preGeneratedSample,
 
     if (uSelect < p.pDiffuseReflection)
     {
-        lobeP  = p.pDiffuseReflection;
-        wiLocal = sampleCosineHemisphereLocal(preGeneratedSample.xy, pdf);
-        lobe   = kBSDFLobeDiffuseReflection;
+        DiffuseReflectionFrostbite diffuseReflectionBxDF;
+        diffuseReflectionBxDF.albedo    = bsdfData.diffuse;
+        diffuseReflectionBxDF.roughness = bsdfData.roughness;
+
+        float3 lobeWeight;
+        uint   componentLobe;
+        float  componentLobeP;
+        if (!diffuseReflectionBxDF.sample(woLocal, wiLocal, pdf, lobeWeight, componentLobe, componentLobeP, preGeneratedSample))
+            return false;
+
+        lobeP = p.pDiffuseReflection;
+        lobe  = componentLobe;
     }
     else if (uSelect < cDiffuseTransmission)
     {
+        DiffuseTransmissionLambert diffuseTransmissionBxDF;
+        diffuseTransmissionBxDF.albedo = GetTransmissionAlbedo(bsdfData);
+
+        float3 lobeWeight;
+        uint   componentLobe;
+        float  componentLobeP;
+        if (!diffuseTransmissionBxDF.sample(woLocal, wiLocal, pdf, lobeWeight, componentLobe, componentLobeP, preGeneratedSample))
+            return false;
+
         lobeP = p.pDiffuseTransmission;
-        SampleDiffuseTransmission(bsdfData, preGeneratedSample.xy, wiLocal, pdf);
-        lobe = kBSDFLobeDiffuseTransmission;
+        lobe  = componentLobe;
     }
     else if (uSelect < cSpecularReflection)
     {

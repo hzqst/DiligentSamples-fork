@@ -1478,7 +1478,7 @@ bool RTXPTSample::PresentRealtimeFinalOutput()
             if (!m_PostProcessPipeline.RunTemporalAA(m_pImmediateContext,
                                                      m_RenderTargets,
                                                      m_LastFrameConstants,
-                                                     m_FrameIndex,
+                                                     m_LastFrameConstants.ptConsts.frameIndex,
                                                      ResetTaaSrHistory,
                                                      m_HasPreviousFrameConstants,
                                                      MakeRealtimeTemporalAASettings()))
@@ -1508,7 +1508,9 @@ bool RTXPTSample::PresentRealtimeFinalOutput()
                                                                   m_CameraFarPlane,
                                                                   m_CameraVerticalFov))
             {
-                RecordRealtimePathTraceStatus("Realtime super-resolution pass failed");
+                const auto& SRStats = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
+                RecordRealtimePathTraceStatus(
+                    SRStats.DisabledReason.empty() ? "Realtime super-resolution pass failed" : SRStats.DisabledReason.c_str());
                 return false;
             }
             break;

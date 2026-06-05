@@ -27,6 +27,7 @@ set(SOURCE
     src/RTXPTAccumulationPass.cpp
     src/RTXPTBloomPass.cpp
     src/RTXPTSuperResolutionPass.cpp
+    src/RTXPTTemporalAAPass.cpp
     src/RTXPTToneMappingPass.cpp
     src/RTXPTBlitPass.cpp
 )
@@ -59,6 +60,7 @@ set(INCLUDE
     src/RTXPTAccumulationPass.hpp
     src/RTXPTBloomPass.hpp
     src/RTXPTSuperResolutionPass.hpp
+    src/RTXPTTemporalAAPass.hpp
     src/RTXPTToneMappingPass.hpp
     src/RTXPTBlitPass.hpp
     RTXPT_FORK_MAPPING.md

@@ -2061,15 +2061,11 @@ void RTXPTSample::UpdateUI()
                                 const char* SRDisabledReason = nullptr;
                                 if (!SRStats.FactoryReady)
                                 {
-                                    SRDisabledReason = SRStats.DisabledReason.empty() ?
-                                        "Diligent super-resolution provider is unavailable." :
-                                        SRStats.DisabledReason.c_str();
+                                    SRDisabledReason = "Diligent super-resolution provider is unavailable.";
                                 }
                                 else if (SRStats.VariantCount == 0)
                                 {
-                                    SRDisabledReason = SRStats.DisabledReason.empty() ?
-                                        "No Diligent super-resolution variants are available." :
-                                        SRStats.DisabledReason.c_str();
+                                    SRDisabledReason = "No Diligent super-resolution variants are available.";
                                 }
                                 else
                                 {

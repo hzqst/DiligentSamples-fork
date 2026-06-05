@@ -107,6 +107,35 @@ const char* GetRealtimeAAModeName(RTXPTRealtimeAAMode Mode)
     }
 }
 
+bool IsRealtimeSuperResolutionSelected(const RTXPTRealtimeSettings& RealtimeUI)
+{
+    return RealtimeUI.RealtimeMode && RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution;
+}
+
+RTXPTSuperResolutionSettings MakeRealtimeSuperResolutionSettings(const RTXPTRealtimeSettings& RealtimeUI)
+{
+    RTXPTSuperResolutionSettings Settings;
+    Settings.Enabled = IsRealtimeSuperResolutionSelected(RealtimeUI);
+    return Settings;
+}
+
+RTXPTTemporalAASettings MakeRealtimeTemporalAASettings()
+{
+    RTXPTTemporalAASettings Settings;
+    Settings.TemporalStabilityFactor = 0.9375f;
+    Settings.SkipRejection           = false;
+    return Settings;
+}
+
+float2 NormalizeSuperResolutionJitterForCamera(const RTXPTSuperResolutionFrameDesc& FrameDesc)
+{
+    const float SafeWidth  = static_cast<float>(std::max(FrameDesc.Dimensions.RenderWidth, Uint32{1}));
+    const float SafeHeight = static_cast<float>(std::max(FrameDesc.Dimensions.RenderHeight, Uint32{1}));
+    return float2{
+        FrameDesc.Jitter.x / (0.5f * SafeWidth),
+        -FrameDesc.Jitter.y / (0.5f * SafeHeight)};
+}
+
 const char* GetNrdMethodName(RTXPTNrdMethod Method)
 {
     switch (Method)
@@ -784,12 +813,13 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 
 void RTXPTSample::UpdateRenderTargetDimensions(float TimeDeltaSeconds)
 {
-    const SwapChainDesc&               SCDesc = m_pSwapChain->GetDesc();
-    const RTXPTRenderTargetFormats     Formats;
-    const RTXPTSuperResolutionSettings DisabledSuperResolution;
+    const SwapChainDesc&                  SCDesc = m_pSwapChain->GetDesc();
+    const RTXPTRenderTargetFormats        Formats;
+    const RTXPTSuperResolutionSettings    SuperResolution =
+        MakeRealtimeSuperResolutionSettings(m_RealtimeUI);
 
     m_CurrentSuperResolutionFrame =
-        m_PostProcessPipeline.ResolveSuperResolutionFrameDesc(DisabledSuperResolution,
+        m_PostProcessPipeline.ResolveSuperResolutionFrameDesc(SuperResolution,
                                                               SCDesc.Width,
                                                               SCDesc.Height,
                                                               Formats.ProcessedOutputColor,
@@ -813,7 +843,22 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     const bool   RealtimeMode = m_RealtimeUI.RealtimeMode;
     const Uint32 ActualSPP    = std::max(m_RealtimeUI.ActualSamplesPerPixel(), 1u);
 
-    const float2 CameraJitter = float2{0.0f, 0.0f};
+    m_CurrentSuperResolutionFrame.ResetHistory =
+        HasRealtimeResetFlag(m_CurrentFrameRealtimeReset, RTXPT_REALTIME_RESET_TAA_SR_HISTORY);
+
+    float2 CameraJitter = float2{0.0f, 0.0f};
+    if (RealtimeMode && m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::TAA)
+    {
+        CameraJitter =
+            m_PostProcessPipeline.GetRealtimeTAAJitter(m_FrameIndex, RenderWidth, RenderHeight);
+    }
+    else if (RealtimeMode &&
+             m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution &&
+             m_CurrentSuperResolutionFrame.Enabled)
+    {
+        CameraJitter = NormalizeSuperResolutionJitterForCamera(m_CurrentSuperResolutionFrame);
+    }
+    m_CurrentRealtimeCameraJitter = CameraJitter;
 
     const float3   CameraPosition = m_Camera.GetPos();
     const float4x4 CameraView     = m_Camera.GetViewMatrix();
@@ -948,7 +993,11 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     PtConsts.analyticLightCount       = m_Lights.GetStats().LightCount;
     PtConsts.NEEMISType               = static_cast<Uint32>(std::clamp(m_ReferenceUI.NEEMISType, 0, 2));
     PtConsts.nestedDielectricsQuality = static_cast<Uint32>(std::clamp(m_ReferenceUI.NestedDielectricsQuality, 0, 2));
-    PtConsts.superResolutionActive    = 0u;
+    PtConsts.superResolutionActive =
+        RealtimeMode && m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution &&
+            m_CurrentSuperResolutionFrame.Enabled ?
+        1u :
+        0u;
     PtConsts._paddingR6_1             = 0u;
     PtConsts._paddingR6_2             = 0u;
     PtConsts.camera                   = CurrentCamera;

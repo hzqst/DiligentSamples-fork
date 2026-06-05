@@ -180,6 +180,7 @@ private:
     RTXPTRealtimeResetFlags       m_CurrentFrameRealtimeReset   = RTXPT_REALTIME_RESET_NONE;
     RTXPTRenderTargetDimensions   m_CurrentTargetDimensions     = {};
     RTXPTSuperResolutionFrameDesc m_CurrentSuperResolutionFrame = {};
+    float2                        m_CurrentRealtimeCameraJitter = float2{0.0f, 0.0f};
     float                         m_LastElapsedTimeSeconds      = 0.0f;
     float4x4                      m_LastCameraView              = float4x4::Identity();
     float4x4                      m_LastCameraProj              = float4x4::Identity();

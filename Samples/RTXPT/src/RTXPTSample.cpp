@@ -60,9 +60,7 @@ constexpr int         kExposureModeMax                = static_cast<int>(RTXPTEx
 static_assert(kToneMapOperatorMin == 0 && kToneMapOperatorMax == 5, "Tone-map UI assumes contiguous operator values");
 static_assert(kExposureModeMin == 0 && kExposureModeMax == 1, "Tone-map UI assumes contiguous exposure mode values");
 
-constexpr bool        kRTXPTRealtimeTaaAvailable = false;
-constexpr bool        kRTXPTRealtimeSrAvailable  = false;
-constexpr bool        kRTXPTDlssRrAvailable      = false;
+constexpr bool        kRTXPTDlssRrAvailable = false;
 constexpr const char* kRTXPTRealtimeRoutePendingReason =
     "Realtime mode uses standalone NRD when available; otherwise it uses no-denoiser final merge and presentation.";
 constexpr Uint32 kRTXPTRealtimeNoisePeriod = 8192u;
@@ -2026,12 +2024,14 @@ void RTXPTSample::UpdateUI()
                 int         AAMode    = static_cast<int>(m_RealtimeUI.RealtimeAA);
                 if (ImGui::BeginCombo("AA/SR/Denoising", AAItems[std::clamp(AAMode, 0, 3)]))
                 {
+                    const bool TaaAvailable = m_PostProcessPipeline.GetTemporalAAPass().IsReady();
+                    const bool SrAvailable  = m_PostProcessPipeline.GetSuperResolutionPass().HasTemporalVariant();
                     for (int Item = 0; Item < 4; ++Item)
                     {
                         const bool Enabled =
                             Item == static_cast<int>(RTXPTRealtimeAAMode::Disabled) ||
-                            (Item == static_cast<int>(RTXPTRealtimeAAMode::TAA) && kRTXPTRealtimeTaaAvailable) ||
-                            (Item == static_cast<int>(RTXPTRealtimeAAMode::SuperResolution) && kRTXPTRealtimeSrAvailable) ||
+                            (Item == static_cast<int>(RTXPTRealtimeAAMode::TAA) && TaaAvailable) ||
+                            (Item == static_cast<int>(RTXPTRealtimeAAMode::SuperResolution) && SrAvailable) ||
                             (Item == static_cast<int>(RTXPTRealtimeAAMode::DLSSRR) && kRTXPTDlssRrAvailable);
 
                         ImGui::BeginDisabled(!Enabled);
@@ -2045,6 +2045,21 @@ void RTXPTSample::UpdateUI()
                         if (Selected)
                             ImGui::SetItemDefaultFocus();
                         ImGui::EndDisabled();
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !Enabled)
+                        {
+                            if (Item == static_cast<int>(RTXPTRealtimeAAMode::TAA))
+                                ImGui::SetTooltip("DiligentFX TemporalAntiAliasing is not initialized.");
+                            else if (Item == static_cast<int>(RTXPTRealtimeAAMode::SuperResolution))
+                            {
+                                const auto& SRStats = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
+                                ImGui::SetTooltip("%s",
+                                                  SRStats.DisabledReason.empty() ?
+                                                      "No temporal Diligent super-resolution variant is available." :
+                                                      SRStats.DisabledReason.c_str());
+                            }
+                            else if (Item == static_cast<int>(RTXPTRealtimeAAMode::DLSSRR))
+                                ImGui::SetTooltip("DLSS-RR is reserved by TODO(RTXPT-Realtime-DLSS-RR).");
+                        }
                     }
                     ImGui::EndCombo();
                 }
@@ -2694,10 +2709,19 @@ void RTXPTSample::UpdateUI()
         ImGui::Text("Post-process pipeline: %s", m_PostProcessPipeline.IsReady() ? "ready" : "not ready");
         const auto& PostStats = m_PostProcessPipeline.GetStats();
         ImGui::Text("Bloom stage: %s", PostStats.BloomStageReady ? "ready" : "not ready");
-        ImGui::Text("Super resolution: %s",
-                    m_RealtimeUI.RealtimeMode && m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution ?
-                        "selected, execution starts in G10" :
-                        "disabled");
+        const auto& TAAStats = m_PostProcessPipeline.GetTemporalAAPass().GetStats();
+        const auto& SRStats  = m_PostProcessPipeline.GetSuperResolutionPass().GetStats();
+        ImGui::Text("Realtime TAA: %s, executed=%s",
+                    TAAStats.Ready ? "ready" : "not ready",
+                    TAAStats.LastExecute ? "yes" : "no");
+        if (!TAAStats.DisabledReason.empty())
+            ImGui::TextWrapped("Realtime TAA status: %s", TAAStats.DisabledReason.c_str());
+        ImGui::Text("Super resolution: variants=%u, active=%s, executed=%s",
+                    SRStats.VariantCount,
+                    m_CurrentSuperResolutionFrame.Enabled ? "yes" : "no",
+                    SRStats.LastExecute ? "yes" : "no");
+        if (!SRStats.DisabledReason.empty())
+            ImGui::TextWrapped("Super resolution status: %s", SRStats.DisabledReason.c_str());
         ImGui::Text("Accumulation frame: %u", m_AccumulationFrame);
         ImGui::Text("TraceRays executed: %s", RTPassStats.LastTraceExecuted ? "yes" : "no");
         ImGui::Text("TraceRays count: %u", RTPassStats.TraceCount);

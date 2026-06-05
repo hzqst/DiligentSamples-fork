@@ -51,6 +51,7 @@ void RTXPTPostProcessPipeline::Reset()
     m_AccumulationPass.Reset();
     m_PostProcessPass.Reset();
     m_SuperResolutionPass.Reset();
+    m_TemporalAAPass.Reset();
     m_BloomPass.Reset();
     m_ToneMappingPass.Reset();
     m_Device.Release();
@@ -83,6 +84,13 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     if (!m_Stats.SuperResolutionStageReady)
     {
         DEV_ERROR("RTXPT super-resolution pass failed to initialize");
+        return false;
+    }
+
+    m_Stats.TemporalAAStageReady = m_TemporalAAPass.Initialize(pDevice);
+    if (!m_Stats.TemporalAAStageReady)
+    {
+        DEV_ERROR("RTXPT temporal AA pass failed to initialize");
         return false;
     }
 
@@ -265,6 +273,71 @@ bool RTXPTPostProcessPipeline::RunSuperResolution(IDeviceContext*               
     m_Stats.LastSuperResolutionActive = Executed && SRStats.LastExecute && FrameDesc.Enabled;
     if (!Executed && SRStats.DisabledReason.empty())
         DEV_ERROR("RTXPT temporal super-resolution pass failed");
+    return Executed;
+}
+
+float2 RTXPTPostProcessPipeline::GetRealtimeTAAJitter(Uint32 FrameIndex, Uint32 Width, Uint32 Height) const
+{
+    return RTXPTTemporalAAPass::ComputeJitter(FrameIndex, Width, Height);
+}
+
+bool RTXPTPostProcessPipeline::CopyRealtimeOutputToProcessed(IDeviceContext*           pContext,
+                                                             const RTXPTRenderTargets& RenderTargets)
+{
+    const bool Executed = m_TemporalAAPass.CopyOutputToProcessed(m_Device, pContext, RenderTargets);
+    m_Stats.LastRealtimeCopyExecuted = Executed;
+    if (!Executed)
+        DEV_ERROR("RTXPT realtime OutputColor copy failed: ", m_TemporalAAPass.GetStats().DisabledReason.c_str());
+    return Executed;
+}
+
+bool RTXPTPostProcessPipeline::RunTemporalAA(IDeviceContext*               pContext,
+                                             const RTXPTRenderTargets&     RenderTargets,
+                                             const SampleConstants&        FrameConstants,
+                                             Uint32                        FrameIndex,
+                                             bool                          ResetHistory,
+                                             bool                          PreviousViewValid,
+                                             const RTXPTTemporalAASettings& Settings)
+{
+    RTXPTTemporalAAFrameAttribs Attribs;
+    Attribs.pDevice           = m_Device;
+    Attribs.pDeviceContext    = pContext;
+    Attribs.pRenderTargets    = &RenderTargets;
+    Attribs.pFrameConstants   = &FrameConstants;
+    Attribs.Settings          = Settings;
+    Attribs.FrameIndex        = FrameIndex;
+    Attribs.ResetHistory      = ResetHistory;
+    Attribs.PreviousViewValid = PreviousViewValid;
+
+    const bool Executed          = m_TemporalAAPass.Execute(Attribs);
+    m_Stats.TemporalAAStageReady = m_TemporalAAPass.IsReady();
+    m_Stats.LastTemporalAAActive = Executed;
+    if (!Executed)
+        DEV_ERROR("RTXPT temporal AA failed: ", m_TemporalAAPass.GetStats().DisabledReason.c_str());
+    return Executed;
+}
+
+bool RTXPTPostProcessPipeline::RunRealtimeSuperResolution(IDeviceContext*                      pContext,
+                                                          const RTXPTRenderTargets&            RenderTargets,
+                                                          const RTXPTSuperResolutionFrameDesc& FrameDesc,
+                                                          float                                CameraNear,
+                                                          float                                CameraFar,
+                                                          float                                CameraFovAngleVert)
+{
+    const bool Executed =
+        m_SuperResolutionPass.Execute(pContext,
+                                      RenderTargets,
+                                      FrameDesc,
+                                      CameraNear,
+                                      CameraFar,
+                                      CameraFovAngleVert,
+                                      RenderTargets.GetOutputColorSRV(),
+                                      RenderTargets.GetProcessedOutputColorUAV());
+    const auto& SRStats = m_SuperResolutionPass.GetStats();
+    m_Stats.SuperResolutionStageReady = !FrameDesc.Enabled || (Executed && SRStats.UpscalerReady);
+    m_Stats.LastSuperResolutionActive = Executed && SRStats.LastExecute && FrameDesc.Enabled;
+    if (!Executed && SRStats.DisabledReason.empty())
+        DEV_ERROR("RTXPT realtime super-resolution pass failed");
     return Executed;
 }
 

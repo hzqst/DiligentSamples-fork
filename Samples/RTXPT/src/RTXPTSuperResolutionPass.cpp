@@ -313,11 +313,13 @@ bool RTXPTSuperResolutionPass::EnsureUpscaler(const RTXPTSuperResolutionFrameDes
 }
 
 bool RTXPTSuperResolutionPass::Execute(IDeviceContext*                      pContext,
-                                       const RTXPTRenderTargets&            RenderTargets,
-                                       const RTXPTSuperResolutionFrameDesc& FrameDesc,
-                                       float                                CameraNear,
-                                       float                                CameraFar,
-                                       float                                CameraFovAngleVert)
+                                        const RTXPTRenderTargets&            RenderTargets,
+                                        const RTXPTSuperResolutionFrameDesc& FrameDesc,
+                                        float                                CameraNear,
+                                        float                                CameraFar,
+                                        float                                CameraFovAngleVert,
+                                        ITextureView*                        pColorSRV,
+                                        ITextureView*                        pOutputUAV)
 {
     m_Stats.LastExecute = false;
     if (!FrameDesc.Enabled)
@@ -333,10 +335,10 @@ bool RTXPTSuperResolutionPass::Execute(IDeviceContext*                      pCon
 
     ExecuteSuperResolutionAttribs Attribs;
     Attribs.pContext            = pContext;
-    Attribs.pColorTextureSRV    = RenderTargets.GetSuperResolutionColorSRV();
+    Attribs.pColorTextureSRV    = pColorSRV != nullptr ? pColorSRV : RenderTargets.GetSuperResolutionColorSRV();
     Attribs.pDepthTextureSRV    = RenderTargets.GetDepthSRV();
     Attribs.pMotionVectorsSRV   = RenderTargets.GetScreenMotionVectorsSRV();
-    Attribs.pOutputTextureView  = RenderTargets.GetSuperResolutionOutputUAV();
+    Attribs.pOutputTextureView  = pOutputUAV != nullptr ? pOutputUAV : RenderTargets.GetSuperResolutionOutputUAV();
     Attribs.StateTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
     Attribs.JitterX             = FrameDesc.Jitter.x;
     Attribs.JitterY             = FrameDesc.Jitter.y;

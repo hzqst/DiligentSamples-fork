@@ -35,6 +35,7 @@
 #include "RTXPTPostProcessPass.hpp"
 #include "RTXPTRenderTargets.hpp"
 #include "RTXPTSuperResolutionPass.hpp"
+#include "RTXPTTemporalAAPass.hpp"
 #include "RTXPTToneMappingPass.hpp"
 #include "SwapChain.h"
 
@@ -48,6 +49,9 @@ struct RTXPTPostProcessPipelineStats
     bool AccumulationStageReady      = false;
     bool SuperResolutionStageReady   = false;
     bool LastSuperResolutionActive   = false;
+    bool TemporalAAStageReady        = false;
+    bool LastTemporalAAActive        = false;
+    bool LastRealtimeCopyExecuted    = false;
     bool HdrStageReady               = false;
     bool RealtimeMergeStageReady     = false;
     bool LastRealtimeFinalMergeReady = false;
@@ -103,6 +107,26 @@ public:
                             float                                CameraFar,
                             float                                CameraFovAngleVert);
 
+    float2 GetRealtimeTAAJitter(Uint32 FrameIndex, Uint32 Width, Uint32 Height) const;
+
+    bool CopyRealtimeOutputToProcessed(IDeviceContext*           pContext,
+                                       const RTXPTRenderTargets& RenderTargets);
+
+    bool RunTemporalAA(IDeviceContext*               pContext,
+                       const RTXPTRenderTargets&     RenderTargets,
+                       const SampleConstants&        FrameConstants,
+                       Uint32                        FrameIndex,
+                       bool                          ResetHistory,
+                       bool                          PreviousViewValid,
+                       const RTXPTTemporalAASettings& Settings);
+
+    bool RunRealtimeSuperResolution(IDeviceContext*                      pContext,
+                                    const RTXPTRenderTargets&            RenderTargets,
+                                    const RTXPTSuperResolutionFrameDesc& FrameDesc,
+                                    float                                CameraNear,
+                                    float                                CameraFar,
+                                    float                                CameraFovAngleVert);
+
     bool RunPreToneMapping(IDeviceContext*             pContext,
                            const RTXPTRenderTargets&   RenderTargets,
                            const RTXPTBloomParameters& BloomParams);
@@ -117,6 +141,7 @@ public:
     bool                                 IsReady() const { return m_Stats.Ready; }
     const RTXPTPostProcessPipelineStats& GetStats() const { return m_Stats; }
     const RTXPTSuperResolutionPass&      GetSuperResolutionPass() const { return m_SuperResolutionPass; }
+    const RTXPTTemporalAAPass&           GetTemporalAAPass() const { return m_TemporalAAPass; }
 
 private:
     RTXPTPostProcessPipelineStats m_Stats;
@@ -124,6 +149,7 @@ private:
     RTXPTAccumulationPass         m_AccumulationPass;
     RTXPTPostProcessPass          m_PostProcessPass;
     RTXPTSuperResolutionPass      m_SuperResolutionPass;
+    RTXPTTemporalAAPass           m_TemporalAAPass;
     RTXPTBloomPass                m_BloomPass;
     RTXPTToneMappingPass          m_ToneMappingPass;
 };

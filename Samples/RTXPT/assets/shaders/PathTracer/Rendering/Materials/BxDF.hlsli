@@ -558,9 +558,13 @@ struct SpecularReflectionTransmissionMicrofacet
         if (wi.z < kMinCosTheta)
             return false;
 
-        const bool hasReflection = hasLobe(alpha == 0.0 ? kLobeTypeDeltaReflection : kLobeTypeSpecularReflection);
-        const bool hasTransmission = hasLobe(alpha == 0.0 ? kLobeTypeDeltaTransmission : kLobeTypeSpecularTransmission);
-        if (!(hasReflection || hasTransmission))
+        const bool hasRoughReflection    = hasLobe(kLobeTypeSpecularReflection);
+        const bool hasDeltaReflection    = hasLobe(kLobeTypeDeltaReflection);
+        const bool hasRoughTransmission  = hasLobe(kLobeTypeSpecularTransmission);
+        const bool hasDeltaTransmission  = hasLobe(kLobeTypeDeltaTransmission);
+        const bool canReflect            = alpha == 0.0 ? hasDeltaReflection : hasRoughReflection;
+        const bool canTransmit           = alpha == 0.0 ? hasDeltaTransmission : (hasRoughTransmission || hasDeltaTransmission);
+        if (!(canReflect || canTransmit))
             return false;
 
         const bool   delta   = alpha == 0.0;
@@ -569,10 +573,10 @@ struct SpecularReflectionTransmissionMicrofacet
         float        cosThetaT;
         float        fresnel = evalFresnelDielectric(eta, wiDotH, cosThetaT);
 
-        bool isReflection = hasReflection;
-        if (hasReflection && hasTransmission)
+        bool isReflection = canReflect;
+        if (canReflect && canTransmit)
             isReflection = preGeneratedSample.z < fresnel;
-        else if (hasTransmission && fresnel == 1.0)
+        else if (canTransmit && fresnel == 1.0)
             return false;
 
         float actualEta = eta;
@@ -585,9 +589,20 @@ struct SpecularReflectionTransmissionMicrofacet
         const bool deltaEvent = delta || (!isReflection && abs(actualEta - 1.0) <= 1e-6);
         if (deltaEvent && !isReflection)
         {
-            if (!hasLobe(kLobeTypeDeltaTransmission))
+            if (!hasDeltaTransmission)
                 return false;
             fresnel = evalFresnelDielectric(actualEta, wi.z, cosThetaT);
+        }
+
+        if (isReflection)
+        {
+            if ((deltaEvent && !hasDeltaReflection) || (!deltaEvent && !hasRoughReflection))
+                return false;
+        }
+        else
+        {
+            if ((deltaEvent && !hasDeltaTransmission) || (!deltaEvent && !hasRoughTransmission))
+                return false;
         }
 
         if (isReflection)

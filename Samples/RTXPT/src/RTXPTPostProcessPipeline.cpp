@@ -90,8 +90,7 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     m_Stats.TemporalAAStageReady = m_TemporalAAPass.Initialize(pDevice);
     if (!m_Stats.TemporalAAStageReady)
     {
-        DEV_ERROR("RTXPT temporal AA pass failed to initialize");
-        return false;
+        LOG_WARNING_MESSAGE("RTXPT temporal AA pass is unavailable: ", m_TemporalAAPass.GetStats().DisabledReason.c_str());
     }
 
     m_Stats.AccumulationStageReady = m_AccumulationPass.Initialize(pDevice, pEngineFactory, ComputeSupported);
@@ -284,6 +283,9 @@ float2 RTXPTPostProcessPipeline::GetRealtimeTAAJitter(Uint32 FrameIndex, Uint32 
 bool RTXPTPostProcessPipeline::CopyRealtimeOutputToProcessed(IDeviceContext*           pContext,
                                                              const RTXPTRenderTargets& RenderTargets)
 {
+    m_Stats.LastTemporalAAActive     = false;
+    m_Stats.LastSuperResolutionActive = false;
+
     const bool Executed = m_TemporalAAPass.CopyOutputToProcessed(m_Device, pContext, RenderTargets);
     m_Stats.LastRealtimeCopyExecuted = Executed;
     if (!Executed)
@@ -299,6 +301,9 @@ bool RTXPTPostProcessPipeline::RunTemporalAA(IDeviceContext*               pCont
                                              bool                          PreviousViewValid,
                                              const RTXPTTemporalAASettings& Settings)
 {
+    m_Stats.LastRealtimeCopyExecuted  = false;
+    m_Stats.LastSuperResolutionActive = false;
+
     RTXPTTemporalAAFrameAttribs Attribs;
     Attribs.pDevice           = m_Device;
     Attribs.pDeviceContext    = pContext;
@@ -324,6 +329,9 @@ bool RTXPTPostProcessPipeline::RunRealtimeSuperResolution(IDeviceContext*       
                                                           float                                CameraFar,
                                                           float                                CameraFovAngleVert)
 {
+    m_Stats.LastRealtimeCopyExecuted = false;
+    m_Stats.LastTemporalAAActive     = false;
+
     const bool Executed =
         m_SuperResolutionPass.Execute(pContext,
                                       RenderTargets,

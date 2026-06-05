@@ -19,6 +19,9 @@
 #include <algorithm>
 
 #include "DebugUtilities.hpp"
+#include "MapHelper.hpp"
+
+#include "GraphicsTypesX.hpp"
 
 namespace Diligent
 {
@@ -86,6 +89,9 @@ bool ValidateTemporalInputs(const RTXPTTemporalAAFrameAttribs& Attribs, std::str
         Reason = "render targets are null";
     else if (Attribs.pFrameConstants == nullptr)
         Reason = "frame constants are null";
+    else if (Attribs.pRenderTargets->GetRenderWidth() != Attribs.pRenderTargets->GetDisplayWidth() ||
+             Attribs.pRenderTargets->GetRenderHeight() != Attribs.pRenderTargets->GetDisplayHeight())
+        Reason = "Temporal AA requires render and display dimensions to match";
     else if (Attribs.pRenderTargets->GetOutputColorSRV() == nullptr)
         Reason = "OutputColor SRV is null";
     else if (Attribs.pRenderTargets->GetProcessedOutputColorRTV() == nullptr)
@@ -103,13 +109,63 @@ bool ValidateTemporalInputs(const RTXPTTemporalAAFrameAttribs& Attribs, std::str
     return false;
 }
 
+bool SupportsBindFlags(IRenderDevice* pDevice, TEXTURE_FORMAT Format, BIND_FLAGS BindFlags)
+{
+    return pDevice != nullptr && (pDevice->GetTextureFormatInfoExt(Format).BindFlags & BindFlags) == BindFlags;
+}
+
+ITextureView* GetDefaultView(const RefCntAutoPtr<ITexture>& Texture, TEXTURE_VIEW_TYPE ViewType)
+{
+    return Texture ? Texture->GetDefaultView(ViewType) : nullptr;
+}
+
+bool SetStaticVariable(IPipelineState* pPSO, const char* Name, IDeviceObject* pObject)
+{
+    IShaderResourceVariable* pVar = pPSO != nullptr ? pPSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, Name) : nullptr;
+    if (pVar == nullptr)
+    {
+        UNEXPECTED("RTXPT Temporal AA input conversion static variable is missing: ", Name);
+        return false;
+    }
+    if (pObject == nullptr)
+    {
+        DEV_ERROR("RTXPT Temporal AA input conversion static resource is null: ", Name);
+        return false;
+    }
+
+    pVar->Set(pObject);
+    return true;
+}
+
+bool SetDynamicVariable(IShaderResourceBinding* pSRB, const char* Name, IDeviceObject* pObject)
+{
+    IShaderResourceVariable* pVar = pSRB != nullptr ? pSRB->GetVariableByName(SHADER_TYPE_COMPUTE, Name) : nullptr;
+    if (pVar == nullptr)
+    {
+        UNEXPECTED("RTXPT Temporal AA input conversion dynamic variable is missing: ", Name);
+        return false;
+    }
+    if (pObject == nullptr)
+        return false;
+
+    pVar->Set(pObject);
+    return true;
+}
+
 } // namespace
 
 void RTXPTTemporalAAPass::Reset()
 {
     m_TemporalAA.reset();
     m_PostFXContext.reset();
-    m_Stats = {};
+    m_InputConversionPSO.Release();
+    m_InputConversionSRB.Release();
+    m_FrameConstantsBuffer.Release();
+    m_TAADepth.Release();
+    m_TAAMotion.Release();
+    m_InputWidth  = 0;
+    m_InputHeight = 0;
+    m_Stats       = {};
 }
 
 bool RTXPTTemporalAAPass::Initialize(IRenderDevice* pDevice)
@@ -123,17 +179,128 @@ bool RTXPTTemporalAAPass::Initialize(IRenderDevice* pDevice)
 
     PostFXContext::CreateInfo PostFXCI;
     PostFXCI.EnableAsyncCreation = false;
-    PostFXCI.PackMatrixRowMajor  = false;
+    PostFXCI.PackMatrixRowMajor  = true;
     m_PostFXContext              = std::make_unique<PostFXContext>(pDevice, PostFXCI);
 
     TemporalAntiAliasing::CreateInfo TAACI;
     TAACI.EnableAsyncCreation = false;
     m_TemporalAA              = std::make_unique<TemporalAntiAliasing>(pDevice, TAACI);
 
-    m_Stats.Ready = m_PostFXContext != nullptr && m_TemporalAA != nullptr;
+    if (!CreateInputConversionPipeline(pDevice))
+        return false;
+
+    m_Stats.Ready = m_PostFXContext != nullptr && m_TemporalAA != nullptr && m_InputConversionPSO && m_InputConversionSRB;
     if (!m_Stats.Ready)
         m_Stats.DisabledReason = "failed to create DiligentFX TAA objects";
     return m_Stats.Ready;
+}
+
+bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
+{
+    if (pDevice->GetDeviceInfo().Features.ComputeShaders != DEVICE_FEATURE_STATE_ENABLED)
+    {
+        m_Stats.DisabledReason = "Temporal AA input conversion requires compute shader support";
+        return false;
+    }
+
+    if (!SupportsBindFlags(pDevice, TEX_FORMAT_R32_FLOAT, BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS))
+    {
+        m_Stats.DisabledReason = "R32F SRV/UAV texture is not supported for Temporal AA depth conversion";
+        return false;
+    }
+
+    if (!SupportsBindFlags(pDevice, TEX_FORMAT_RG16_FLOAT, BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS))
+    {
+        m_Stats.DisabledReason = "RG16F SRV/UAV texture is not supported for Temporal AA motion conversion";
+        return false;
+    }
+
+    BufferDesc ConstantsDesc;
+    ConstantsDesc.Name           = "RTXPT Temporal AA frame constants";
+    ConstantsDesc.Size           = sizeof(SampleConstants);
+    ConstantsDesc.BindFlags      = BIND_UNIFORM_BUFFER;
+    ConstantsDesc.Usage          = USAGE_DYNAMIC;
+    ConstantsDesc.CPUAccessFlags = CPU_ACCESS_WRITE;
+    pDevice->CreateBuffer(ConstantsDesc, nullptr, &m_FrameConstantsBuffer);
+    VERIFY(m_FrameConstantsBuffer, "Failed to create RTXPT Temporal AA frame constants");
+    if (!m_FrameConstantsBuffer)
+    {
+        m_Stats.DisabledReason = "failed to create Temporal AA frame constants";
+        return false;
+    }
+
+    IEngineFactory* pEngineFactory = pDevice->GetEngineFactory();
+    if (pEngineFactory == nullptr)
+    {
+        m_Stats.DisabledReason = "Temporal AA input conversion requires an engine factory";
+        return false;
+    }
+
+    RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
+    pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders;shaders\\PostProcessing;shaders\\PathTracer", &pShaderSourceFactory);
+    if (!pShaderSourceFactory)
+    {
+        m_Stats.DisabledReason = "failed to create Temporal AA shader source factory";
+        return false;
+    }
+
+    ShaderCreateInfo ShaderCI;
+    ShaderCI.Desc.ShaderType            = SHADER_TYPE_COMPUTE;
+    ShaderCI.Desc.Name                  = "RTXPT Temporal AA input conversion";
+    ShaderCI.SourceLanguage             = SHADER_SOURCE_LANGUAGE_HLSL;
+    ShaderCI.ShaderCompiler             = SHADER_COMPILER_DXC;
+    ShaderCI.CompileFlags               = SHADER_COMPILE_FLAG_PACK_MATRIX_ROW_MAJOR;
+    ShaderCI.FilePath                   = "PostProcessing/RTXPTTemporalAAInputs.csh";
+    ShaderCI.EntryPoint                 = "main";
+    ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
+
+    RefCntAutoPtr<IShader> pCS;
+    pDevice->CreateShader(ShaderCI, &pCS);
+    VERIFY(pCS, "Failed to create RTXPT Temporal AA input conversion shader");
+    if (!pCS)
+    {
+        m_Stats.DisabledReason = "failed to create Temporal AA input conversion shader";
+        return false;
+    }
+
+    ComputePipelineStateCreateInfo PSOCreateInfo;
+    PSOCreateInfo.PSODesc.Name         = "RTXPT Temporal AA input conversion PSO";
+    PSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_COMPUTE;
+    PSOCreateInfo.pCS                  = pCS;
+
+    PipelineResourceLayoutDescX ResourceLayout;
+    ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
+    ResourceLayout
+        .AddVariable(SHADER_TYPE_COMPUTE, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "t_RTXPTDepth", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "t_RTXPTMotionVectors", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "u_TAADepth", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_COMPUTE, "u_TAAMotion", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
+    PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
+
+    pDevice->CreateComputePipelineState(PSOCreateInfo, &m_InputConversionPSO);
+    VERIFY(m_InputConversionPSO, "Failed to create RTXPT Temporal AA input conversion PSO");
+    if (!m_InputConversionPSO)
+    {
+        m_Stats.DisabledReason = "failed to create Temporal AA input conversion PSO";
+        return false;
+    }
+
+    if (!SetStaticVariable(m_InputConversionPSO, "g_Const", m_FrameConstantsBuffer))
+    {
+        m_Stats.DisabledReason = "failed to bind Temporal AA frame constants";
+        return false;
+    }
+
+    m_InputConversionPSO->CreateShaderResourceBinding(&m_InputConversionSRB, true);
+    VERIFY(m_InputConversionSRB, "Failed to create RTXPT Temporal AA input conversion SRB");
+    if (!m_InputConversionSRB)
+    {
+        m_Stats.DisabledReason = "failed to create Temporal AA input conversion SRB";
+        return false;
+    }
+
+    return true;
 }
 
 float2 RTXPTTemporalAAPass::ComputeJitter(Uint32 FrameIndex, Uint32 Width, Uint32 Height)
@@ -145,6 +312,114 @@ float2 RTXPTTemporalAAPass::ComputeJitter(Uint32 FrameIndex, Uint32 Width, Uint3
     return float2{
         (Halton(2u, Sample) - 0.5f) / (0.5f * SafeWidth),
         (Halton(3u, Sample) - 0.5f) / (0.5f * SafeHeight)};
+}
+
+ITextureView* RTXPTTemporalAAPass::GetTAADepthSRV() const
+{
+    return GetDefaultView(m_TAADepth, TEXTURE_VIEW_SHADER_RESOURCE);
+}
+
+ITextureView* RTXPTTemporalAAPass::GetTAADepthUAV() const
+{
+    return GetDefaultView(m_TAADepth, TEXTURE_VIEW_UNORDERED_ACCESS);
+}
+
+ITextureView* RTXPTTemporalAAPass::GetTAAMotionSRV() const
+{
+    return GetDefaultView(m_TAAMotion, TEXTURE_VIEW_SHADER_RESOURCE);
+}
+
+ITextureView* RTXPTTemporalAAPass::GetTAAMotionUAV() const
+{
+    return GetDefaultView(m_TAAMotion, TEXTURE_VIEW_UNORDERED_ACCESS);
+}
+
+bool RTXPTTemporalAAPass::EnsureInputConversionResources(IRenderDevice* pDevice, const RTXPTRenderTargets& RenderTargets)
+{
+    const Uint32 Width  = RenderTargets.GetRenderWidth();
+    const Uint32 Height = RenderTargets.GetRenderHeight();
+
+    if (Width == 0 || Height == 0)
+    {
+        m_Stats.DisabledReason = "Temporal AA input conversion dimensions are invalid";
+        return false;
+    }
+
+    if (m_TAADepth && m_TAAMotion && m_InputWidth == Width && m_InputHeight == Height)
+        return true;
+
+    m_TAADepth.Release();
+    m_TAAMotion.Release();
+    m_InputWidth  = 0;
+    m_InputHeight = 0;
+
+    TextureDesc DepthDesc;
+    DepthDesc.Name      = "RTXPT Temporal AA depth";
+    DepthDesc.Type      = RESOURCE_DIM_TEX_2D;
+    DepthDesc.Width     = Width;
+    DepthDesc.Height    = Height;
+    DepthDesc.Format    = TEX_FORMAT_R32_FLOAT;
+    DepthDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+    pDevice->CreateTexture(DepthDesc, nullptr, &m_TAADepth);
+    if (!GetTAADepthSRV() || !GetTAADepthUAV())
+    {
+        m_TAADepth.Release();
+        m_Stats.DisabledReason = "failed to create Temporal AA depth texture";
+        return false;
+    }
+
+    TextureDesc MotionDesc;
+    MotionDesc.Name      = "RTXPT Temporal AA motion vectors";
+    MotionDesc.Type      = RESOURCE_DIM_TEX_2D;
+    MotionDesc.Width     = Width;
+    MotionDesc.Height    = Height;
+    MotionDesc.Format    = TEX_FORMAT_RG16_FLOAT;
+    MotionDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+    pDevice->CreateTexture(MotionDesc, nullptr, &m_TAAMotion);
+    if (!GetTAAMotionSRV() || !GetTAAMotionUAV())
+    {
+        m_TAAMotion.Release();
+        m_Stats.DisabledReason = "failed to create Temporal AA motion texture";
+        return false;
+    }
+
+    m_InputWidth  = Width;
+    m_InputHeight = Height;
+    return true;
+}
+
+bool RTXPTTemporalAAPass::ConvertInputs(const RTXPTTemporalAAFrameAttribs& Attribs)
+{
+    if (!EnsureInputConversionResources(Attribs.pDevice, *Attribs.pRenderTargets))
+        return false;
+
+    {
+        MapHelper<SampleConstants> Constants{Attribs.pDeviceContext, m_FrameConstantsBuffer, MAP_WRITE, MAP_FLAG_DISCARD};
+        VERIFY(Constants, "Failed to map RTXPT Temporal AA frame constants");
+        if (!Constants)
+        {
+            m_Stats.DisabledReason = "failed to update Temporal AA frame constants";
+            return false;
+        }
+
+        *Constants = *Attribs.pFrameConstants;
+    }
+
+    const bool Bound =
+        SetDynamicVariable(m_InputConversionSRB, "t_RTXPTDepth", Attribs.pRenderTargets->GetDepthSRV()) &&
+        SetDynamicVariable(m_InputConversionSRB, "t_RTXPTMotionVectors", Attribs.pRenderTargets->GetScreenMotionVectorsSRV()) &&
+        SetDynamicVariable(m_InputConversionSRB, "u_TAADepth", GetTAADepthUAV()) &&
+        SetDynamicVariable(m_InputConversionSRB, "u_TAAMotion", GetTAAMotionUAV());
+    if (!Bound)
+    {
+        m_Stats.DisabledReason = "failed to bind Temporal AA input conversion resources";
+        return false;
+    }
+
+    Attribs.pDeviceContext->SetPipelineState(m_InputConversionPSO);
+    Attribs.pDeviceContext->CommitShaderResources(m_InputConversionSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    Attribs.pDeviceContext->DispatchCompute(DispatchComputeAttribs{(m_InputWidth + 7u) / 8u, (m_InputHeight + 7u) / 8u, 1u});
+    return true;
 }
 
 bool RTXPTTemporalAAPass::PreparePostFX(const RTXPTTemporalAAFrameAttribs& Attribs)
@@ -201,9 +476,9 @@ bool RTXPTTemporalAAPass::CopyCurrentDepthToPrevious(IRenderDevice*            p
                                                      const RTXPTRenderTargets& RenderTargets)
 {
     m_Stats.LastPreviousDepthCopy = false;
-    if (RenderTargets.GetDepthSRV() == nullptr || RenderTargets.GetPreviousDepthRTV() == nullptr)
+    if (GetTAADepthSRV() == nullptr || RenderTargets.GetPreviousDepthRTV() == nullptr)
     {
-        m_Stats.DisabledReason = "previous-depth update requires Depth SRV and PreviousDepth RTV";
+        m_Stats.DisabledReason = "previous-depth update requires Temporal AA depth SRV and PreviousDepth RTV";
         return false;
     }
 
@@ -211,7 +486,7 @@ bool RTXPTTemporalAAPass::CopyCurrentDepthToPrevious(IRenderDevice*            p
     CopyAttribs.pDevice        = pDevice;
     CopyAttribs.pDeviceContext = pContext;
     m_PostFXContext->CopyTextureDepth(CopyAttribs,
-                                      RenderTargets.GetDepthSRV(),
+                                      GetTAADepthSRV(),
                                       RenderTargets.GetPreviousDepthRTV());
     m_Stats.LastPreviousDepthCopy = true;
     return true;
@@ -237,6 +512,8 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
     }
 
     PreparePostFX(Attribs);
+    if (!ConvertInputs(Attribs))
+        return false;
 
     const SampleConstants&    Constants          = *Attribs.pFrameConstants;
     const bool                UsePrevious        = Attribs.PreviousViewValid && !Attribs.ResetHistory;
@@ -251,11 +528,11 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
     PostFXContext::RenderAttributes PostFXAttribs;
     PostFXAttribs.pDevice             = Attribs.pDevice;
     PostFXAttribs.pDeviceContext      = Attribs.pDeviceContext;
-    PostFXAttribs.pCurrDepthBufferSRV = Attribs.pRenderTargets->GetDepthSRV();
+    PostFXAttribs.pCurrDepthBufferSRV = GetTAADepthSRV();
     PostFXAttribs.pPrevDepthBufferSRV = UsePrevious ?
         Attribs.pRenderTargets->GetPreviousDepthSRV() :
-        Attribs.pRenderTargets->GetDepthSRV();
-    PostFXAttribs.pMotionVectorsSRV   = Attribs.pRenderTargets->GetScreenMotionVectorsSRV();
+        GetTAADepthSRV();
+    PostFXAttribs.pMotionVectorsSRV   = GetTAAMotionSRV();
     PostFXAttribs.pCurrCamera         = &CurrentCamera;
     PostFXAttribs.pPrevCamera         = &PreviousCamera;
     m_PostFXContext->Execute(PostFXAttribs);
@@ -280,6 +557,9 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
         return false;
     }
 
+    if (!CopyCurrentDepthToPrevious(Attribs.pDevice, Attribs.pDeviceContext, *Attribs.pRenderTargets))
+        return false;
+
     PostFXContext::TextureOperationAttribs CopyAttribs;
     CopyAttribs.pDevice        = Attribs.pDevice;
     CopyAttribs.pDeviceContext = Attribs.pDeviceContext;
@@ -287,9 +567,6 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
                                       pTaaOutputSRV,
                                       Attribs.pRenderTargets->GetProcessedOutputColorRTV());
     m_Stats.LastCopyToProcessed = true;
-
-    if (!CopyCurrentDepthToPrevious(Attribs.pDevice, Attribs.pDeviceContext, *Attribs.pRenderTargets))
-        return false;
 
     m_Stats.DisabledReason.clear();
     m_Stats.LastExecute = true;

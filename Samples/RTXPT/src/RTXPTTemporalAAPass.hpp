@@ -20,10 +20,15 @@
 #include <string>
 
 #include "BasicMath.hpp"
+#include "Buffer.h"
 #include "DeviceContext.h"
+#include "PipelineState.h"
+#include "RefCntAutoPtr.hpp"
 #include "RenderDevice.h"
 #include "RTXPTFrameConstants.hpp"
 #include "RTXPTRenderTargets.hpp"
+#include "ShaderResourceBinding.h"
+#include "Texture.h"
 
 #include "PostFXContext.hpp"
 #include "TemporalAntiAliasing.hpp"
@@ -77,14 +82,28 @@ public:
     const RTXPTTemporalAAStats& GetStats() const { return m_Stats; }
 
 private:
-    bool PreparePostFX(const RTXPTTemporalAAFrameAttribs& Attribs);
-    bool CopyCurrentDepthToPrevious(IRenderDevice*            pDevice,
-                                    IDeviceContext*           pContext,
-                                    const RTXPTRenderTargets& RenderTargets);
+    bool          CreateInputConversionPipeline(IRenderDevice* pDevice);
+    bool          EnsureInputConversionResources(IRenderDevice* pDevice, const RTXPTRenderTargets& RenderTargets);
+    bool          ConvertInputs(const RTXPTTemporalAAFrameAttribs& Attribs);
+    bool          PreparePostFX(const RTXPTTemporalAAFrameAttribs& Attribs);
+    bool          CopyCurrentDepthToPrevious(IRenderDevice*            pDevice,
+                                             IDeviceContext*           pContext,
+                                             const RTXPTRenderTargets& RenderTargets);
+    ITextureView* GetTAADepthSRV() const;
+    ITextureView* GetTAADepthUAV() const;
+    ITextureView* GetTAAMotionSRV() const;
+    ITextureView* GetTAAMotionUAV() const;
 
 private:
     std::unique_ptr<PostFXContext>        m_PostFXContext;
     std::unique_ptr<TemporalAntiAliasing> m_TemporalAA;
+    RefCntAutoPtr<IPipelineState>         m_InputConversionPSO;
+    RefCntAutoPtr<IShaderResourceBinding> m_InputConversionSRB;
+    RefCntAutoPtr<IBuffer>                m_FrameConstantsBuffer;
+    RefCntAutoPtr<ITexture>               m_TAADepth;
+    RefCntAutoPtr<ITexture>               m_TAAMotion;
+    Uint32                                m_InputWidth  = 0;
+    Uint32                                m_InputHeight = 0;
     RTXPTTemporalAAStats                  m_Stats;
 };
 

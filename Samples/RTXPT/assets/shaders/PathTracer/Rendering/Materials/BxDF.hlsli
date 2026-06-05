@@ -477,8 +477,6 @@ struct SpecularReflectionTransmissionMicrofacet
             return float3(0.0, 0.0, 0.0);
 
         const float actualEta = (isThinSurface && !isReflection) ? 1.0 : eta;
-        if (!isReflection && abs(actualEta - 1.0) <= 1e-6)
-            return float3(0.0, 0.0, 0.0);
 
         const float3 hUnnormalized = wo + wi * (isReflection ? 1.0 : actualEta);
         const float  hLen2         = dot(hUnnormalized, hUnnormalized);
@@ -521,9 +519,8 @@ struct SpecularReflectionTransmissionMicrofacet
         const bool hasDeltaReflection     = hasLobe(kLobeTypeDeltaReflection);
         const bool hasRoughTransmission   = hasLobe(kLobeTypeSpecularTransmission);
         const bool hasDeltaTransmission   = hasLobe(kLobeTypeDeltaTransmission);
-        const bool transmissionMayBeDelta = delta || isThinSurface || abs(eta - 1.0) <= 1e-6;
         const bool canReflect             = delta ? hasDeltaReflection : hasRoughReflection;
-        const bool canTransmit            = delta ? hasDeltaTransmission : (hasRoughTransmission || (transmissionMayBeDelta && hasDeltaTransmission));
+        const bool canTransmit            = delta ? hasDeltaTransmission : hasRoughTransmission;
         if (!(canReflect || canTransmit))
             return false;
 
@@ -547,7 +544,7 @@ struct SpecularReflectionTransmissionMicrofacet
             fresnel   = evalFresnelDielectric(actualEta, wi.z, cosThetaT);
         }
 
-        const bool deltaEvent = delta || (!isReflection && abs(actualEta - 1.0) <= 1e-6);
+        const bool deltaEvent = delta;
         if (deltaEvent && !isReflection)
         {
             if (!hasDeltaTransmission)
@@ -613,8 +610,6 @@ struct SpecularReflectionTransmissionMicrofacet
             return 0.0;
 
         const float actualEta = (isThinSurface && !isReflection) ? 1.0 : eta;
-        if (!isReflection && abs(actualEta - 1.0) <= 1e-6)
-            return 0.0;
 
         const float3 hUnnormalized = wo + wi * (isReflection ? 1.0 : actualEta);
         const float  hLen2         = dot(hUnnormalized, hUnnormalized);

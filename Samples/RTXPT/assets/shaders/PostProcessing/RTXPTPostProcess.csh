@@ -13,7 +13,7 @@
 #define RTXPT_POST_PROCESS_REBLUR_FINAL_MERGE       7
 #define RTXPT_POST_PROCESS_NO_DENOISER_FINAL_MERGE  8
 
-// TODO(RTXPT-Realtime-DLSS-RR): DLSSRRDenoiserPrepareInputs is deferred to the DLSS-RR phase.
+// DLSSRRDenoiserPrepareInputs remains deferred to the DLSS-RR phase.
 
 #define NUM_COMPUTE_THREADS_PER_DIM 8
 

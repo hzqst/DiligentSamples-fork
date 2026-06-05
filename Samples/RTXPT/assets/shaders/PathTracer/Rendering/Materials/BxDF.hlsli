@@ -835,7 +835,7 @@ struct FalcorBSDF
         {
             float3 localSample = preGeneratedSample;
             localSample.z = clamp((uSelect - (pDiffuseReflection + pDiffuseTransmission + pSpecularReflection)) /
-                                      max(pSpecularReflectionTransmission, 1e-7),
+                                      pSpecularReflectionTransmission,
                                   0.0,
                                   0.99999994);
             valid = specularReflectionTransmission.sample(wi, wo, pdf, weight, lobe, lobeP, localSample);
@@ -866,7 +866,7 @@ float getSpecularProbability(StandardBSDFData bsdfData, float3 wo)
 }
 
 // Evaluate f(Wo,Wi) * NoL and the single-sample MIS pdf for the given unit directions.
-// specProb is the probability the sampler used to pick the specular lobe.
+// specProb is kept for compatibility and does not affect FalcorBSDF evaluation.
 void EvalBSDF(StandardBSDFData bsdfData, float3 wo, float3 wi, float specProb, out float3 f, out float pdf)
 {
     f   = float3(0.0, 0.0, 0.0);

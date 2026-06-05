@@ -121,7 +121,7 @@ Int32 GetFirstTemporalSuperResolutionVariantIdx(const RTXPTSuperResolutionPass& 
     return 0;
 }
 
-RTXPTSuperResolutionSettings MakeRealtimeSuperResolutionSettings(const RTXPTRealtimeSettings&      RealtimeUI,
+RTXPTSuperResolutionSettings MakeRealtimeSuperResolutionSettings(const RTXPTRealtimeSettings&    RealtimeUI,
                                                                  const RTXPTSuperResolutionPass& SuperResolutionPass)
 {
     RTXPTSuperResolutionSettings Settings;

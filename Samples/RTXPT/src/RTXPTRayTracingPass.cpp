@@ -477,11 +477,12 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             return Ok;
         };
 
-        const bool BuildStablePlanesVariant     = Variant == RTXPTPathTraceVariant::BuildStablePlanes;
-        const bool FillStablePlanesVariant      = Variant == RTXPTPathTraceVariant::FillStablePlanes;
+        const bool BuildStablePlanesVariant = Variant == RTXPTPathTraceVariant::BuildStablePlanes;
         const bool FrameConstantsBound =
             ScreenPatternDiagnostic || SetStaticForStages(ConstStages, "g_Const", pFrameConstants, "frame constants");
-        const bool MiniConstantsRequired = BuildStablePlanesVariant || FillStablePlanesVariant;
+        // BUILD always reads the current sub-sample from g_MiniConst. FILL may reflect it through
+        // hit shaders, but some Fill PSO resource tables omit it, so bind opportunistically there.
+        const bool MiniConstantsRequired = BuildStablePlanesVariant;
         const bool MiniConstantsBound =
             ScreenPatternDiagnostic ||
             SetStaticForStages(ConstStages | HitStages, "g_MiniConst", m_MiniConstantsCB, "mini constants", MiniConstantsRequired);

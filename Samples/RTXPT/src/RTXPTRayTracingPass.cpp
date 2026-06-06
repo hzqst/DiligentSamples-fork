@@ -477,10 +477,8 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             return Ok;
         };
 
-        const bool ReferenceVariant             = Variant == RTXPTPathTraceVariant::Reference;
         const bool BuildStablePlanesVariant     = Variant == RTXPTPathTraceVariant::BuildStablePlanes;
         const bool FillStablePlanesVariant      = Variant == RTXPTPathTraceVariant::FillStablePlanes;
-        const bool DirectLightResourcesRequired = ReferenceVariant || FillStablePlanesVariant;
         const bool FrameConstantsBound =
             ScreenPatternDiagnostic || SetStaticForStages(ConstStages, "g_Const", pFrameConstants, "frame constants");
         const bool MiniConstantsRequired = BuildStablePlanesVariant || FillStablePlanesVariant;
@@ -497,15 +495,27 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         {
             const bool MaterialBridgeBound = SetStaticForStages(MaterialStages, "t_PTMaterialData", pMaterialsView, "material buffer");
             const bool SubInstanceBound    = SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
+
+            bool       LightBridgeReflected = false;
             const bool LightBridgeBound =
-                SetStaticForStages(DirectLightStages, "t_Lights", pLightsView, "light buffer", DirectLightResourcesRequired);
+                SetStaticForStages(DirectLightStages, "t_Lights", pLightsView, "light buffer", false, &LightBridgeReflected);
+
+            bool       LightingControlFound      = false;
+            bool       LightProxyCountersFound   = false;
+            bool       LightSamplingProxiesFound = false;
+            bool       LocalSamplingBufferFound  = false;
+            bool       FeedbackTotalWeightFound  = false;
+            bool       FeedbackCandidatesFound   = false;
             const bool LightsBakerBridgeBound =
-                SetStaticForStages(DirectLightStages, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", DirectLightResourcesRequired) &&
-                SetStaticForStages(DirectLightStages, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", DirectLightResourcesRequired) &&
-                SetStaticForStages(DirectLightStages, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", DirectLightResourcesRequired) &&
-                SetStaticForStages(DirectLightStages, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", DirectLightResourcesRequired) &&
-                SetStaticForStages(DirectLightStages, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", DirectLightResourcesRequired) &&
-                SetStaticForStages(DirectLightStages, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", DirectLightResourcesRequired);
+                SetStaticForStages(DirectLightStages, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", false, &LightingControlFound) &&
+                SetStaticForStages(DirectLightStages, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", false, &LightProxyCountersFound) &&
+                SetStaticForStages(DirectLightStages, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", false, &LightSamplingProxiesFound) &&
+                SetStaticForStages(DirectLightStages, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", false, &LocalSamplingBufferFound) &&
+                SetStaticForStages(DirectLightStages, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", false, &FeedbackTotalWeightFound) &&
+                SetStaticForStages(DirectLightStages, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", false, &FeedbackCandidatesFound);
+            const bool LightsBakerBridgeReflected =
+                LightingControlFound || LightProxyCountersFound || LightSamplingProxiesFound ||
+                LocalSamplingBufferFound || FeedbackTotalWeightFound || FeedbackCandidatesFound;
             bool       EnvironmentMapFound               = false;
             bool       EnvironmentImportanceMapFound     = false;
             bool       EnvironmentRadianceMapFound       = false;
@@ -521,8 +531,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                 EnvironmentMapFound || EnvironmentImportanceMapFound || EnvironmentRadianceMapFound ||
                 EnvironmentSamplerFound || EnvironmentImportanceSamplerFound;
             EnvironmentBridgeReflectedAny = EnvironmentBridgeReflectedAny || EnvironmentBridgeReflected;
+            bool       EmissiveLightBridgeReflected = false;
             const bool EmissiveLightBridgeBound =
-                SetStaticForStages(DirectLightStages, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", DirectLightResourcesRequired);
+                SetStaticForStages(DirectLightStages, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", false, &EmissiveLightBridgeReflected);
             const bool VertexBufferBound = SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
             const bool SkinnedVertexBufferBound =
                 SetStaticForStages(HitStages, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
@@ -530,10 +541,10 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
             m_Stats.MaterialBridgeBound      = m_Stats.MaterialBridgeBound && MaterialBridgeBound;
             m_Stats.SubInstanceBound         = m_Stats.SubInstanceBound && SubInstanceBound;
-            m_Stats.LightBridgeBound         = m_Stats.LightBridgeBound && LightBridgeBound;
-            m_Stats.LightsBakerBridgeBound   = m_Stats.LightsBakerBridgeBound && LightsBakerBridgeBound;
+            m_Stats.LightBridgeBound         = m_Stats.LightBridgeBound && (!LightBridgeReflected || LightBridgeBound);
+            m_Stats.LightsBakerBridgeBound   = m_Stats.LightsBakerBridgeBound && (!LightsBakerBridgeReflected || LightsBakerBridgeBound);
             m_Stats.EnvironmentBridgeBound   = m_Stats.EnvironmentBridgeBound && (!EnvironmentBridgeReflected || EnvironmentBridgeOk);
-            m_Stats.EmissiveLightBridgeBound = m_Stats.EmissiveLightBridgeBound && EmissiveLightBridgeBound;
+            m_Stats.EmissiveLightBridgeBound = m_Stats.EmissiveLightBridgeBound && (!EmissiveLightBridgeReflected || EmissiveLightBridgeBound);
             m_Stats.VertexBufferBound        = m_Stats.VertexBufferBound && VertexBufferBound;
             m_Stats.SkinnedVertexBufferBound = m_Stats.SkinnedVertexBufferBound && SkinnedVertexBufferBound;
             m_Stats.IndexBufferBound         = m_Stats.IndexBufferBound && IndexBufferBound;

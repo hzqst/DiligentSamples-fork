@@ -71,6 +71,9 @@ RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string&    FilePat
     Ext.VolumeAttenuationDistance = ReadRTXPTOptionalFloat(Json, "VolumeAttenuationDistance", Ext.VolumeAttenuationDistance);
     Ext.NestedPriority            = std::clamp(Json.value("NestedPriority", Ext.NestedPriority), 0, 14);
     Ext.ShadowNoLFadeout          = ReadRTXPTOptionalFloat(Json, "ShadowNoLFadeout", Ext.ShadowNoLFadeout);
+    Ext.PSDDominantDeltaLobe      = std::clamp(Json.value("PSDDominantDeltaLobe", Ext.PSDDominantDeltaLobe), -1, 6);
+    Ext.PSDBlockMotionVectorsAtSurfaceType =
+        std::clamp(Json.value("PSDBlockMotionVectorsAtSurfaceType", Ext.PSDBlockMotionVectorsAtSurfaceType), 0, 3);
 
     float VolumeColor[3] = {Ext.VolumeAttenuationColor.x, Ext.VolumeAttenuationColor.y, Ext.VolumeAttenuationColor.z};
     if (ReadRTXPTFloatArray(Json, "VolumeAttenuationColor", VolumeColor, 3))
@@ -84,6 +87,8 @@ RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string&    FilePat
                                                              Ext.EnableOcclusionRoughnessMetallicTexture);
     Ext.EnableTransmission                      = Json.value("EnableTransmission", Ext.EnableTransmission);
     Ext.ThinSurface                             = Json.value("ThinSurface", Ext.ThinSurface);
+    Ext.PSDExclude                              = Json.value("PSDExclude", Ext.PSDExclude);
+    Ext.IgnoreMeshTangentSpace                  = Json.value("IgnoreMeshTangentSpace", Ext.IgnoreMeshTangentSpace);
     Ext.SkipRender                              = Json.value("SkipRender", Ext.SkipRender);
 
     return Ext;

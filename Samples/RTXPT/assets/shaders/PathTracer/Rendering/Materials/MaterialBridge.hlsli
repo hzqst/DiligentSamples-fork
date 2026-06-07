@@ -5,6 +5,10 @@
 #include "../../PathTracerShared.h"
 #include "../../Scene/Material/HomogeneousVolumeData.hlsli"
 
+#ifndef RTXPT_ENABLE_MATERIAL_PSD_BRIDGE
+#    define RTXPT_ENABLE_MATERIAL_PSD_BRIDGE 0
+#endif
+
 StructuredBuffer<MaterialPTData> t_PTMaterialData;
 
 #ifdef ENABLE_MATERIAL_TEXTURES
@@ -177,6 +181,49 @@ namespace Bridge
     bool isThinSurface(MaterialPTData material)
     {
         return (material.flags & kMaterialFlagThinSurface) != 0u || (material.flags & kMaterialFlagHasTransmission) == 0u;
+    }
+
+    bool isPSDExclude(MaterialPTData material)
+    {
+#if RTXPT_ENABLE_MATERIAL_PSD_BRIDGE
+        return (material.pathDecompositionFlags & kMaterialPathDecompositionFlagPSDExclude) != 0u;
+#else
+        return false;
+#endif
+    }
+
+    uint getPSDBlockMotionVectorsAtSurfaceType(MaterialPTData material)
+    {
+#if RTXPT_ENABLE_MATERIAL_PSD_BRIDGE
+        return (material.pathDecompositionFlags & kMaterialPathDecompositionFlagPSDBlockMotionVectorsAtSurfaceMask) >>
+            kMaterialPathDecompositionFlagPSDBlockMotionVectorsAtSurfaceShift;
+#else
+        return 0u;
+#endif
+    }
+
+    bool isPSDBlockMotionVectorsAtSurface(MaterialPTData material)
+    {
+        return getPSDBlockMotionVectorsAtSurfaceType(material) != 0u;
+    }
+
+    uint getPSDDominantDeltaLobeP1(MaterialPTData material)
+    {
+#if RTXPT_ENABLE_MATERIAL_PSD_BRIDGE
+        return (material.pathDecompositionFlags & kMaterialPathDecompositionFlagPSDDominantDeltaLobeP1Mask) >>
+            kMaterialPathDecompositionFlagPSDDominantDeltaLobeP1Shift;
+#else
+        return 0u;
+#endif
+    }
+
+    bool ignoreMeshTangentSpace(MaterialPTData material)
+    {
+#if RTXPT_ENABLE_MATERIAL_PSD_BRIDGE
+        return (material.pathDecompositionFlags & kMaterialPathDecompositionFlagIgnoreMeshTangentSpace) != 0u;
+#else
+        return false;
+#endif
     }
 } // namespace Bridge
 

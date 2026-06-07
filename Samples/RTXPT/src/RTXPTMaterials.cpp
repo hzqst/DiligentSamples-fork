@@ -376,6 +376,21 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
                 Data.volumeAttenuationDistance    = std::max(Ext.VolumeAttenuationDistance, 0.0f);
                 Data.nestedPriority               = static_cast<Uint32>(std::clamp(Ext.NestedPriority, 0, 14));
                 Data.shadowNoLFadeout             = std::clamp(Ext.ShadowNoLFadeout, 0.0f, 0.25f);
+                Data.pathDecompositionFlags       = 0;
+
+                if (Ext.PSDExclude)
+                    Data.pathDecompositionFlags |= kMaterialPathDecompositionFlag_PSDExclude;
+                if (Ext.IgnoreMeshTangentSpace)
+                    Data.pathDecompositionFlags |= kMaterialPathDecompositionFlag_IgnoreMeshTangentSpace;
+
+                Data.pathDecompositionFlags |=
+                    (static_cast<Uint32>(std::clamp(Ext.PSDBlockMotionVectorsAtSurfaceType, 0, 3)) <<
+                     kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceShift) &
+                    kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceMask;
+                Data.pathDecompositionFlags |=
+                    (static_cast<Uint32>(std::clamp(Ext.PSDDominantDeltaLobe + 1, 0, 7)) <<
+                     kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Shift) &
+                    kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Mask;
 
                 if (Ext.EnableTransmission || Data.transmissionFactor > 0.0f || Data.diffuseTransmissionFactor > 0.0f)
                     Data.flags |= kMaterialFlag_HasTransmission;

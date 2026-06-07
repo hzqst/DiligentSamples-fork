@@ -83,14 +83,26 @@ struct MaterialPTData
     float  thicknessTextureSlice    = 0.0f; // offset 124
 
     // RTXPT-fork authored priority: 0 is the special highest-priority value; 14 is the default/max authored value.
-    Uint32 nestedPriority   = 14;   // offset 128
-    Uint32 _paddingR7_0     = 0;    // offset 132
-    float  shadowNoLFadeout = 0.0f; // offset 136
-    float  _paddingR7_1     = 0.0f; // offset 140
+    Uint32 nestedPriority         = 14;   // offset 128
+    Uint32 pathDecompositionFlags = 0;    // offset 132
+    float  shadowNoLFadeout       = 0.0f; // offset 136
+    float  _paddingR7_1           = 0.0f; // offset 140
 };
 static_assert(sizeof(MaterialPTData) == 144, "MaterialPTData layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, baseColorFactor) == 0,
+              "MaterialPTData baseColorFactor offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, emissiveFactor) == 16,
+              "MaterialPTData emissiveFactor offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, alphaCutoff) == 28,
+              "MaterialPTData alphaCutoff offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, flags) == 32,
+              "MaterialPTData flags offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, roughnessFactor) == 48,
+              "MaterialPTData roughnessFactor offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, metallicRoughnessTextureIndex) == 60,
               "MaterialPTData metallicRoughnessTextureIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, metallicRoughnessTextureSlice) == 64,
+              "MaterialPTData metallicRoughnessTextureSlice offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, normalTextureIndex) == 68,
               "MaterialPTData normalTextureIndex offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, normalScale) == 76,
@@ -117,8 +129,12 @@ static_assert(offsetof(MaterialPTData, thicknessTextureSlice) == 124,
               "MaterialPTData thicknessTextureSlice offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, nestedPriority) == 128,
               "MaterialPTData nestedPriority offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, pathDecompositionFlags) == 132,
+              "MaterialPTData pathDecompositionFlags offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(MaterialPTData, shadowNoLFadeout) == 136,
               "MaterialPTData shadowNoLFadeout offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(MaterialPTData, _paddingR7_1) == 140,
+              "MaterialPTData final padding offset must match PathTracer/PathTracerShared.h");
 
 // Flag bits for MaterialPTData::flags. Keep in sync with kMaterialFlag* in PathTracer/PathTracerShared.h.
 constexpr Uint32 kMaterialFlag_HasBaseColorTexture         = 0x1u;
@@ -133,6 +149,14 @@ constexpr Uint32 kMaterialFlag_HasVolume                   = 0x100u;
 constexpr Uint32 kMaterialFlag_HasThicknessTexture         = 0x200u;
 constexpr Uint32 kMaterialFlag_ThinSurface                 = 0x400u;
 constexpr Uint32 kMaterialFlag_AlphaBlend                  = 0x800u;
+
+// Flag bits for MaterialPTData::pathDecompositionFlags. Keep in sync with PathTracer/PathTracerShared.h.
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDExclude                         = 0x1u;
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceMask = 0x6u;
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceShift = 1u;
+constexpr Uint32 kMaterialPathDecompositionFlag_IgnoreMeshTangentSpace             = 0x8u;
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Mask         = 0xF0u;
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Shift        = 4u;
 
 // A material is alpha tested only when it uses ALPHA_MODE_MASK and actually has a base-color texture to
 // sample the alpha from. This compatibility overload preserves the single-GLTF path behavior.

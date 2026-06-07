@@ -62,8 +62,8 @@ struct StablePlane
 #endif
 
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
-    void PackCustomPayload(const uint4 packed[5]);
-    void UnpackCustomPayload(inout uint4 packed[5]);
+    void PackCustomPayload(const uint4 packed[RTXPT_PATH_PAYLOAD_UINT4_COUNT]);
+    void UnpackCustomPayload(inout uint4 packed[RTXPT_PATH_PAYLOAD_UINT4_COUNT]);
 #endif
 };
 
@@ -241,7 +241,7 @@ struct StablePlanesContext
             StoreDominantIndex(pixelPos, planeIndex);
     }
 
-    void StoreExplorationStart(uint2 pixelPos, uint planeIndex, const uint4 pathPayload[5])
+    void StoreExplorationStart(uint2 pixelPos, uint planeIndex, const uint4 pathPayload[RTXPT_PATH_PAYLOAD_UINT4_COUNT])
     {
         uint address = PixelToAddress(pixelPos, planeIndex);
         StablePlane sp;
@@ -250,7 +250,7 @@ struct StablePlanesContext
         SetBranchID(pixelPos, planeIndex, cStablePlaneEnqueuedBranchID);
     }
 
-    void ExplorationStart(uint2 pixelPos, uint planeIndex, inout uint4 pathPayload[5])
+    void ExplorationStart(uint2 pixelPos, uint planeIndex, inout uint4 pathPayload[RTXPT_PATH_PAYLOAD_UINT4_COUNT])
     {
         uint address = PixelToAddress(pixelPos, planeIndex);
         StablePlane sp = StablePlanesUAV[address];
@@ -381,7 +381,7 @@ inline uint3 StablePlaneDebugVizFourWaySplitCoord(const int dbgPlaneIndex, const
 #endif
 
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
-void StablePlane::PackCustomPayload(const uint4 packed[5])
+void StablePlane::PackCustomPayload(const uint4 packed[RTXPT_PATH_PAYLOAD_UINT4_COUNT])
 {
     RayOrigin                     = asfloat(packed[0].xyz);
     LastRayTCurrent               = asfloat(packed[0].w);
@@ -396,7 +396,7 @@ void StablePlane::PackCustomPayload(const uint4 packed[5])
     PackedCounters                = packed[4].w;
 }
 
-void StablePlane::UnpackCustomPayload(inout uint4 packed[5])
+void StablePlane::UnpackCustomPayload(inout uint4 packed[RTXPT_PATH_PAYLOAD_UINT4_COUNT])
 {
     packed[0].xyz = asuint(RayOrigin);
     packed[0].w   = asuint(LastRayTCurrent);

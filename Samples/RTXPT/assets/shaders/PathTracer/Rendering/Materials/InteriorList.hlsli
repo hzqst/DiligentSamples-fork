@@ -39,6 +39,8 @@ struct InteriorList
 
     bool isTrueIntersection(uint nestedPriority)
     {
+        if (isEmpty())
+            return true;
         return nestedPriority == 0u || nestedPriority >= getTopNestedPriority();
     }
 

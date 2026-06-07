@@ -1,57 +1,5 @@
 #include "Config.h"
 
-#ifndef RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
-#    define RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC 0
-#endif
-
-#if RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
-
-struct DiagnosticPayload
-{
-    float3 color;
-    float  hitDistance;
-    uint   hit;
-};
-
-uint RTXPTDiagnosticHash(uint Value)
-{
-    Value ^= Value >> 16;
-    Value *= 0x7feb352du;
-    Value ^= Value >> 15;
-    Value *= 0x846ca68bu;
-    Value ^= Value >> 16;
-    return Value;
-}
-
-float3 RTXPTDiagnosticColor(uint Value)
-{
-    const uint Hash = RTXPTDiagnosticHash(Value);
-    return float3(float((Hash >> 0) & 0xffu),
-                  float((Hash >> 8) & 0xffu),
-                  float((Hash >> 16) & 0xffu)) /
-        255.0;
-}
-
-[shader("closesthit")]
-void main(inout DiagnosticPayload Payload,
-          in BuiltInTriangleIntersectionAttributes Attributes)
-{
-    const float3 barycentrics = float3(Attributes.barycentrics.x,
-                                       Attributes.barycentrics.y,
-                                       1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
-    const float  depthShade   = saturate(1.0 / (1.0 + RayTCurrent() * 0.01));
-    const uint   hitKey       = ((InstanceIndex() + 1u) * 0x9e3779b9u) ^
-        ((GeometryIndex() + 1u) * 0x85ebca6bu) ^
-        ((InstanceID() + 1u) * 0xc2b2ae35u);
-    const float3 objectColor = RTXPTDiagnosticColor(hitKey);
-
-    Payload.hit         = 1u;
-    Payload.hitDistance = RayTCurrent();
-    Payload.color       = lerp(objectColor, barycentrics, depthShade * 0.45);
-}
-
-#else
-
 #define ENABLE_HIT_BRIDGE 1
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
 #    include "PathTracerBridge.hlsli"
@@ -91,14 +39,17 @@ namespace PathTracer
         float  transmissionFactor        = 0.0;
         float  diffuseTransmissionFactor = 0.0;
         bool   thinSurface               = true;
-        float  shadowNoLFadeout          = 0.0;
-        float3 vertexNormal              = worldNormal;
-        uint   materialID   = 0u;
-        bool   frontFacing  = true;
-        float  ior          = 1.5;
-        uint   materialFlags = 0u;
-        uint   nestedPriority = 14u;
-        surfaceEmission     = float3(0.0, 0.0, 0.0);
+        float  shadowNoLFadeout                 = 0.0;
+        float3 vertexNormal                     = worldNormal;
+        uint   materialID                       = 0u;
+        bool   frontFacing                      = true;
+        float  ior                              = 1.5;
+        uint   materialFlags                    = 0u;
+        uint   nestedPriority                   = 14u;
+        uint   psdExclude                       = 0u;
+        uint   psdBlockMotionVectorsAtSurface   = 0u;
+        uint   psdDominantDeltaLobeP1           = 0u;
+        surfaceEmission                         = float3(0.0, 0.0, 0.0);
 
         if (Bridge::hasSubInstanceTable() && Bridge::hasMaterialTable())
         {
@@ -123,7 +74,8 @@ namespace PathTracer
             if (dot(worldNormal, faceNormal) < 0.0)
                 worldNormal = -worldNormal;
 
-            const float3 tangentNormal = Bridge::getTangentNormal(material, texCoord);
+            const float3 tangentNormal = Bridge::ignoreMeshTangentSpace(material) ? float3(0.0, 0.0, 1.0) :
+                Bridge::getTangentNormal(material, texCoord);
             if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
             {
                 const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, worldNormal);
@@ -157,6 +109,9 @@ namespace PathTracer
             ior                        = Bridge::loadIoR(materialID);
             materialFlags              = material.flags;
             nestedPriority             = min(material.nestedPriority, 14u);
+            psdExclude                     = Bridge::isPSDExclude(material) ? 1u : 0u;
+            psdBlockMotionVectorsAtSurface = Bridge::isPSDBlockMotionVectorsAtSurface(material) ? 1u : 0u;
+            psdDominantDeltaLobeP1         = Bridge::getPSDDominantDeltaLobeP1(material);
         }
 
         worldNormal = normalize(worldNormal);
@@ -166,9 +121,9 @@ namespace PathTracer
         mtl.flags                          = materialFlags;
         mtl.nestedPriority                 = nestedPriority;
         mtl.activeLobes                    = kLobeTypeAll;
-        mtl.psdExclude                     = 0u;
-        mtl.psdBlockMotionVectorsAtSurface = 0u;
-        mtl.psdDominantDeltaLobeP1         = 0u;
+        mtl.psdExclude                     = psdExclude;
+        mtl.psdBlockMotionVectorsAtSurface = psdBlockMotionVectorsAtSurface;
+        mtl.psdDominantDeltaLobeP1         = psdDominantDeltaLobeP1;
 
         StablePlaneShadingData shadingData;
         shadingData.posW        = worldPos;
@@ -280,7 +235,8 @@ void main(inout ActiveRayPayload Payload,
         VertexNormal = WorldNormal;
 
         // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
-        const float3 tangentNormal = Bridge::getTangentNormal(material, texCoord);
+        const float3 tangentNormal = Bridge::ignoreMeshTangentSpace(material) ? float3(0.0, 0.0, 1.0) :
+            Bridge::getTangentNormal(material, texCoord);
         if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
         {
             const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, WorldNormal);
@@ -355,5 +311,3 @@ void main(inout ActiveRayPayload Payload,
 
 // TODO(RTXPT-Port Phase R2): Emissive triangles feed area-light NEE + MIS (constant emitters only). Textured
 // emissive triangles stay BSDF-only, and emitters are two-sided rather than RTXPT-fork's one-sided TriangleLight.
-
-#endif

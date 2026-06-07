@@ -97,6 +97,10 @@ struct RTXPTMaterialExtension
     float  VolumeAttenuationDistance               = 3.402823466e+38f;
     int    NestedPriority                          = 14;
     float  ShadowNoLFadeout                        = 0.0f;
+    bool   PSDExclude                              = false;
+    int    PSDDominantDeltaLobe                    = -1;
+    int    PSDBlockMotionVectorsAtSurfaceType      = 0;
+    bool   IgnoreMeshTangentSpace                  = false;
     bool   SkipRender                              = false;
 };
 

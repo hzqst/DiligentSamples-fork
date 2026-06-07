@@ -208,6 +208,43 @@ float evalVisibilitySmithGGXCorrelated(float alpha, float cosThetaO, float cosTh
     return 0.5 / max(V + L, 1e-7);
 }
 
+float3 approxSpecularIntegralGGX(float3 specularReflectance, float alpha, float cosTheta)
+{
+    cosTheta = abs(cosTheta);
+
+    float4 X;
+    X.x = 1.0;
+    X.y = cosTheta;
+    X.z = cosTheta * cosTheta;
+    X.w = cosTheta * X.z;
+
+    float4 Y;
+    Y.x = 1.0;
+    Y.y = alpha;
+    Y.z = alpha * alpha;
+    Y.w = alpha * Y.z;
+
+    // Coefficients for the height-correlated Smith GGX masking function used by this file.
+    const float2x2 M1 = float2x2(0.995367, -1.38839,
+                                 -0.24751, 1.97442);
+    const float3x3 M2 = float3x3(1.0, 2.68132, 52.366,
+                                 16.0932, -3.98452, 59.3013,
+                                 -5.18731, 255.259, 2544.07);
+    const float2x2 M3 = float2x2(-0.0564526, 3.82901,
+                                 16.91, -11.0303);
+    const float3x3 M4 = float3x3(1.0, 4.11118, -1.37886,
+                                 19.3254, -28.9947, 16.9514,
+                                 0.545386, 96.0994, -79.4492);
+
+    float bias  = dot(mul(M1, X.xy), Y.xy) / max(dot(mul(M2, X.xyw), Y.xyw), 1e-7);
+    float scale = dot(mul(M3, X.xy), Y.xy) / max(dot(mul(M4, X.xzw), Y.xyw), 1e-7);
+
+    const float specularReflectanceLuma = dot(specularReflectance, float3(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0));
+    bias *= saturate(specularReflectanceLuma * 50.0);
+
+    return specularReflectance * max(0.0, scale) + max(0.0, bias);
+}
+
 float luminance(float3 C)
 {
     return dot(C, float3(0.2126, 0.7152, 0.0722));

@@ -147,7 +147,8 @@ namespace PathTracer
             return float3(0.0, 0.0, 0.0);
 
         const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bsdfData.N, envSample.Dir);
-        if (!TraceVisibilityRay(visibilityOrigin, envSample.Dir, kVisibilityRayTMax))
+        const bool visible = TraceVisibilityRay(visibilityOrigin, envSample.Dir, kVisibilityRayTMax);
+        if (!visible)
             return float3(0.0, 0.0, 0.0);
 
         const float misWeight = PowerHeuristic(1.0, envSample.Pdf, 1.0, bsdfPdf);
@@ -210,7 +211,8 @@ namespace PathTracer
             const float visibilityDistance =
                 picked.kind == kLightProxyKindEmissiveBucket ? picked.distance * 0.9985 : picked.distance;
             const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bsdfData.N, picked.dir);
-            if (!TraceVisibilityRay(visibilityOrigin, picked.dir, visibilityDistance))
+            const bool visible = TraceVisibilityRay(visibilityOrigin, picked.dir, visibilityDistance);
+            if (!visible)
                 continue;
 
             const float wrsScale   = 1.0 / (candidateProbability * float(candidateSamples));
@@ -324,6 +326,60 @@ namespace PathTracer
         return false;
     }
 
+    inline void UpdateSurfaceOutsideIoR(inout SurfaceData surfaceData, const float outsideIoR)
+    {
+        const float safeOutsideIoR  = max(outsideIoR, 1.0);
+        const float safeInteriorIoR = max(surfaceData.interiorIoR, 1.0);
+        surfaceData.bsdf.standardData.SetEta(surfaceData.shadingData.frontFacing ?
+                                                 safeOutsideIoR / safeInteriorIoR :
+                                                 safeInteriorIoR / safeOutsideIoR);
+    }
+
+    inline bool HandleNestedDielectrics(inout SurfaceData surfaceData,
+                                        inout PathState path,
+                                        const WorkingContext workingContext)
+    {
+#if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
+        const bool thinSurface = surfaceData.shadingData.mtl.isThinSurface();
+        if (thinSurface)
+            return true;
+
+        const uint nestedPriority = surfaceData.shadingData.mtl.getNestedPriority();
+
+        const bool trueIntersection = path.interiorList.isTrueIntersection(nestedPriority);
+
+        if (!trueIntersection)
+        {
+            const uint maxRejectedHits = GetMaxRejectedDielectricHits(RTXPT_NESTED_DIELECTRICS_QUALITY);
+            if (path.getCounter(PackedCounters::RejectedHits) < maxRejectedHits)
+            {
+                path.incrementCounter(PackedCounters::RejectedHits);
+                path.interiorList.handleIntersection(surfaceData.shadingData.materialID,
+                                                     nestedPriority,
+                                                     surfaceData.shadingData.frontFacing);
+                path.SetOrigin(ComputeRayOrigin(surfaceData.shadingData.posW,
+                                                -surfaceData.shadingData.faceNCorrected));
+                path.decrementVertexIndex();
+                return false;
+            }
+#if RTXPT_NESTED_DIELECTRICS_QUALITY == 2
+            else
+            {
+                path.terminate();
+                return false;
+            }
+#endif
+        }
+
+        const float outsideIoR = ComputeOutsideIoR(path.interiorList,
+                                                   surfaceData.shadingData.materialID,
+                                                   surfaceData.shadingData.frontFacing);
+
+        UpdateSurfaceOutsideIoR(surfaceData, outsideIoR);
+#endif
+        return true;
+    }
+
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES || defined(__INTELLISENSE__)
     inline BSDFSample MakeBSDFSample(uint lobe, float pdf, float lobeP, float3 weight, float3 wi)
     {
@@ -338,6 +394,20 @@ namespace PathTracer
         return bs;
     }
 
+    inline void UpdateNestedDielectricsOnScatterTransmission(const StablePlaneShadingData shadingData,
+                                                             inout PathState path,
+                                                             const WorkingContext workingContext)
+    {
+#if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
+        if (!shadingData.mtl.isThinSurface())
+        {
+            const uint nestedPriority = shadingData.mtl.getNestedPriority();
+            path.interiorList.handleIntersection(shadingData.materialID, nestedPriority, shadingData.frontFacing);
+            path.setInsideDielectricVolume(!path.interiorList.isEmpty());
+        }
+#endif
+    }
+
     inline NEEResult HandleNEE(const PathState preScatterPath,
                                const SurfaceData surfaceData,
                                inout SampleGenerator sgDirect,
@@ -346,12 +416,9 @@ namespace PathTracer
     {
         NEEResult result = NEEResult::empty();
 
-        const uint maxBounces    = max(workingContext.PtConsts.bounceCount, 1u);
-        const uint maxNEEBounces = min(workingContext.PtConsts.maxNEEBounceCount, maxBounces);
         const bool enableNEE     = workingContext.PtConsts.NEEEnabled != 0u;
-        const bool useNEE        = enableNEE && preScatterPath.getVertexIndex() <= maxNEEBounces;
         const uint fullSamples   = min(32u, workingContext.PtConsts.NEEFullSamples);
-        if (!useNEE || fullSamples == 0u)
+        if (!enableNEE || fullSamples == 0u)
             return result;
 
         result.BSDFMISInfo.LightSamplingEnabled = true;
@@ -438,10 +505,14 @@ namespace PathTracer
         path.setScatterDelta((lobe & kBSDFLobeDelta) != 0u);
         path.setDeltaOnlyPath(path.isDeltaOnlyPath() && ((lobe & kBSDFLobeDelta) != 0u));
 
+        if (isTransmission)
+            UpdateNestedDielectricsOnScatterTransmission(surfaceData.shadingData, path, workingContext);
+
         const bool isDiffuseBounce =
-            ((lobe & kBSDFLobeDiffuseReflection) != 0u) ||
-            (((lobe & kBSDFLobeTransmission) == 0u) && surfaceData.bsdf.standardData.roughness > kSpecularRoughnessThreshold);
-        if (isDiffuseBounce)
+            ((lobe & (kBSDFLobeDiffuseReflection | kBSDFLobeDiffuseTransmission)) != 0u) ||
+            surfaceData.bsdf.standardData.roughness > kSpecularRoughnessThreshold;
+        if (isDiffuseBounce &&
+            !(((lobe & kBSDFLobeDiffuseTransmission) != 0u) && ((path.getVertexIndex() % 2u) == 1u)))
             path.incrementCounter(PackedCounters::DiffuseBounces);
 
         bs = MakeBSDFSample(lobe, pdf, lobeP, weight, wi);
@@ -495,6 +566,32 @@ namespace PathTracer
 #else
 #    error Unsupported PATH_TRACER_MODE.
 #endif
+    }
+
+    inline void AccumulateNEERadiance(const WorkingContext workingContext,
+                                      inout PathState path,
+                                      const PathState preScatterPath,
+                                      const NEEResult neeResult)
+    {
+        float4 neeRadianceAndSpecAvg = neeResult.GetRadianceAndSpecAvg();
+        if (any(neeRadianceAndSpecAvg > 0.0))
+        {
+            const int bouncesFromStablePlane = preScatterPath.getCounter(PackedCounters::BouncesFromStablePlane) + 1;
+            float specRadianceAvg = 0.0;
+            if (!preScatterPath.hasFlag(PathFlags::stablePlaneBaseScatterDiff))
+            {
+                const bool pathIsDeltaOnlyPath = preScatterPath.isDeltaOnlyPath();
+                const bool specialCondition = (bouncesFromStablePlane == 1) || (pathIsDeltaOnlyPath && bouncesFromStablePlane <= 3);
+                specRadianceAvg = specialCondition ? neeRadianceAndSpecAvg.w : Average(neeRadianceAndSpecAvg.rgb);
+            }
+
+            AccumulatePathRadiance(workingContext,
+                                   path,
+                                   neeRadianceAndSpecAvg.rgb,
+                                   specRadianceAvg,
+                                   false,
+                                   ShouldCollectGISecondaryRadiance(preScatterPath));
+        }
     }
 
     inline void CommitPixel(const PathState path, const WorkingContext workingContext)
@@ -564,7 +661,7 @@ namespace PathTracer
     }
 
     inline void HandleHit(inout PathState path,
-                          const SurfaceData surfaceData,
+                          SurfaceData surfaceData,
                           const float3 surfaceEmission,
                           const float3 rayOrigin,
                           const float3 rayDir,
@@ -572,6 +669,27 @@ namespace PathTracer
                           const WorkingContext workingContext)
     {
         UpdatePathTravelled(path, rayOrigin, rayDir, rayTCurrent, workingContext);
+
+        float volumeAbsorption = 0.0;
+#if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
+        if (!path.interiorList.isEmpty())
+        {
+            const HomogeneousVolumeData volume = Bridge::loadHomogeneousVolumeData(path.interiorList.getTopMaterialID());
+            const float3 transmittance = HomogeneousVolumeSampler::evalTransmittance(volume, rayTCurrent);
+            volumeAbsorption = 1.0 - luminance(transmittance);
+            UpdatePathThroughput(path, transmittance);
+        }
+#endif
+
+        const bool rejectedFalseHit = !HandleNestedDielectrics(surfaceData, path, workingContext);
+        if (rejectedFalseHit)
+        {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
+            if (path.isTerminated())
+                StablePlanesHandleMiss(path, 0.0.xxx, rayOrigin, rayDir, rayTCurrent, workingContext);
+#endif
+            return;
+        }
 
         if (any(surfaceEmission > 0.0))
         {
@@ -585,20 +703,37 @@ namespace PathTracer
                                    path.hasFlag(PathFlags::stablePlaneOnBranch),
                                    ShouldCollectGISecondaryRadiance(path));
         }
-
-        bool pathStopping = path.isTerminatingAtNextBounce();
+        const bool pathStopping = path.isTerminatingAtNextBounce();
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
         StablePlanesHandleHit(path,
                               rayOrigin,
                               rayDir,
                               rayTCurrent,
                               workingContext,
                               surfaceData,
-                              0.0,
+                              volumeAbsorption,
                               surfaceEmission,
                               pathStopping);
+#endif
 
         if (pathStopping || !path.isActive())
         {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
+            if (pathStopping && path.isActive())
+            {
+                const PathState preScatterPath = path;
+                SampleGenerator sgDirect = SampleGenerator_makeStateless(preScatterPath.GetPixelPos(),
+                                                                         preScatterPath.getVertexIndex(),
+                                                                         Bridge::getSampleIndex(),
+                                                                         kSampleEffect_NEELightSampler);
+                SampleGenerator sgEnv = SampleGenerator_makeStateless(preScatterPath.GetPixelPos(),
+                                                                      preScatterPath.getVertexIndex(),
+                                                                      Bridge::getSampleIndex(),
+                                                                      kSampleEffect_NextEventEstimation);
+                const NEEResult neeResult = HandleNEE(preScatterPath, surfaceData, sgDirect, sgEnv, workingContext);
+                AccumulateNEERadiance(workingContext, path, preScatterPath, neeResult);
+            }
+#endif
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
             if (path.hasFlag(PathFlags::exportSpecHitTQueued))
             {
@@ -627,26 +762,7 @@ namespace PathTracer
                                                               kSampleEffect_NextEventEstimation);
         NEEResult neeResult = HandleNEE(preScatterPath, surfaceData, sgDirect, sgEnv, workingContext);
         path.SetPackedMISInfo_ThpRuRuCorrection(neeResult.BSDFMISInfo.Pack16bit(), path.GetThpRuRuCorrection());
-
-        float4 neeRadianceAndSpecAvg = neeResult.GetRadianceAndSpecAvg();
-        if (any(neeRadianceAndSpecAvg > 0.0))
-        {
-            const int bouncesFromStablePlane = preScatterPath.getCounter(PackedCounters::BouncesFromStablePlane) + 1;
-            float specRadianceAvg = 0.0;
-            if (!preScatterPath.hasFlag(PathFlags::stablePlaneBaseScatterDiff))
-            {
-                const bool pathIsDeltaOnlyPath = preScatterPath.isDeltaOnlyPath();
-                const bool specialCondition = (bouncesFromStablePlane == 1) || (pathIsDeltaOnlyPath && bouncesFromStablePlane <= 3);
-                specRadianceAvg = specialCondition ? neeRadianceAndSpecAvg.w : Average(neeRadianceAndSpecAvg.rgb);
-            }
-
-            AccumulatePathRadiance(workingContext,
-                                   path,
-                                   neeRadianceAndSpecAvg.rgb,
-                                   specRadianceAvg,
-                                   false,
-                                   ShouldCollectGISecondaryRadiance(preScatterPath));
-        }
+        AccumulateNEERadiance(workingContext, path, preScatterPath, neeResult);
 
         if (!scatterValid)
         {

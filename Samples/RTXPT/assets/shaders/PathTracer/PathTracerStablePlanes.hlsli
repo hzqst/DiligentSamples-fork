@@ -166,8 +166,11 @@ namespace PathTracer
                     PathState splitPath = PathTracer::SplitDeltaPath(
                         path, rayDir, surfaceData, deltaLobes[lobeToExplore], lobeToExplore, true, workingContext);
                     splitPath.setStablePlaneIndex(availablePlanes[i]);
+                    PathPayload splitPayload = PathPayload::pack(splitPath);
+                    uint4       splitPayloadPacked[RTXPT_PATH_PAYLOAD_UINT4_COUNT];
+                    PathPayload::toArray(splitPayload, splitPayloadPacked);
                     workingContext.StablePlanes.StoreExplorationStart(
-                        pixelPos, availablePlanes[i], PathPayload::pack(splitPath).packed);
+                        pixelPos, availablePlanes[i], splitPayloadPacked);
                 }
 
                 if (lobeForReuse != -1)
@@ -235,7 +238,8 @@ namespace PathTracer
         const uint2 pixelPos = path.GetPixelPos();
         const bool wasOnStablePlane = path.hasFlag(PathFlags::stablePlaneOnPlane);
         if (wasOnStablePlane)
-            path.setFlag(PathFlags::stablePlaneBaseScatterDiff, (bs.lobe & kBSDFLobeDiffuseReflection) != 0);
+            path.setFlag(PathFlags::stablePlaneBaseScatterDiff,
+                         (bs.lobe & (kBSDFLobeDiffuseReflection | kBSDFLobeDiffuseTransmission)) != 0);
         path.setFlag(PathFlags::stablePlaneOnPlane, false);
 
         const uint nextVertexIndex = path.getVertexIndex() + 1;

@@ -1,25 +1,5 @@
 #include "Config.h"
 
-#ifndef RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
-#    define RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC 0
-#endif
-
-#if RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC
-
-struct DiagnosticPayload
-{
-    float3 color;
-    float  hitDistance;
-    uint   hit;
-};
-
-[shader("anyhit")] void main(inout DiagnosticPayload                   Payload,
-                             in BuiltInTriangleIntersectionAttributes Attributes)
-{
-}
-
-#else
-
 #define ENABLE_HIT_BRIDGE 1
 #include "PathTracerBridge.hlsli"
 #include "Rendering/Materials/MaterialBridge.hlsli"
@@ -74,5 +54,3 @@ using ActiveRayPayload = PathPayload;
         }
     }
 }
-
-#endif

@@ -38,18 +38,6 @@ namespace Diligent
 namespace
 {
 
-enum class RTXPTDiagnosticMode
-{
-    FullPathTracer,
-    ScreenPattern,
-    MinimalTraceRay,
-};
-
-RTXPTDiagnosticMode GetRTXPTDiagnosticMode()
-{
-    return RTXPTDiagnosticMode::FullPathTracer;
-}
-
 const char* GetVariantName(RTXPTPathTraceVariant Variant)
 {
     switch (Variant)
@@ -149,25 +137,20 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         return false;
     }
 
-    const RTXPTDiagnosticMode DiagnosticMode            = GetRTXPTDiagnosticMode();
-    const bool                ScreenPatternDiagnostic   = DiagnosticMode == RTXPTDiagnosticMode::ScreenPattern;
-    const bool                MinimalTraceRayDiagnostic = DiagnosticMode == RTXPTDiagnosticMode::MinimalTraceRay;
-    const bool                FullPathTracer            = DiagnosticMode == RTXPTDiagnosticMode::FullPathTracer;
-
-    if (!ScreenPatternDiagnostic && (pFrameConstants == nullptr || pTLAS == nullptr))
+    if (pFrameConstants == nullptr || pTLAS == nullptr)
     {
         DEV_ERROR("RTXPT reference path tracer requires frame constants and TLAS");
         return false;
     }
 
-    if (FullPathTracer && (pVertexBuffer == nullptr || pSkinnedVertexBuffer == nullptr || pIndexBuffer == nullptr))
+    if (pVertexBuffer == nullptr || pSkinnedVertexBuffer == nullptr || pIndexBuffer == nullptr)
     {
         DEV_ERROR("RTXPT reference path tracer requires vertex, skinned vertex, and index buffers");
         return false;
     }
 
-    const bool UseTextures = FullPathTracer && EnableMaterialTextures && pMaterialTextures != nullptr && MaterialTextureCount > 0;
-    const bool UseAnyHit   = FullPathTracer && EnableAnyHit;
+    const bool UseTextures = EnableMaterialTextures && pMaterialTextures != nullptr && MaterialTextureCount > 0;
+    const bool UseAnyHit   = EnableAnyHit;
 
     m_TLAS = pTLAS;
 
@@ -200,39 +183,19 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     const SHADER_TYPE EnvStages         = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS | HitStages;
     const SHADER_TYPE ConstStages       = EnvStages | HitStages;
     const SHADER_TYPE DirectLightStages = ConstStages;
-    const SHADER_TYPE DynamicStages     = ScreenPatternDiagnostic ?
-        SHADER_TYPE_RAY_GEN :
-        (SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS | HitStages);
+    const SHADER_TYPE DynamicStages     = SHADER_TYPE_RAY_GEN | SHADER_TYPE_RAY_MISS | HitStages;
 
-    if (!FullPathTracer)
-    {
-        m_Stats.MaterialBridgeBound      = true;
-        m_Stats.SubInstanceBound         = true;
-        m_Stats.LightBridgeBound         = true;
-        m_Stats.LightsBakerBridgeBound   = true;
-        m_Stats.EnvironmentBridgeBound   = true;
-        m_Stats.EmissiveLightBridgeBound = true;
-        m_Stats.VertexBufferBound        = true;
-        m_Stats.SkinnedVertexBufferBound = true;
-        m_Stats.IndexBufferBound         = true;
-        m_Stats.MaterialTexturesBound    = true;
-        m_Stats.MaterialTextureCount     = 0;
-        m_Stats.AnyHitEnabled            = false;
-    }
-    else
-    {
-        m_Stats.MaterialBridgeBound      = true;
-        m_Stats.SubInstanceBound         = true;
-        m_Stats.LightBridgeBound         = true;
-        m_Stats.LightsBakerBridgeBound   = true;
-        m_Stats.EnvironmentBridgeBound   = true;
-        m_Stats.EmissiveLightBridgeBound = true;
-        m_Stats.VertexBufferBound        = true;
-        m_Stats.SkinnedVertexBufferBound = true;
-        m_Stats.IndexBufferBound         = true;
-        m_Stats.MaterialTexturesBound    = true;
-        m_Stats.MaterialTextureCount     = UseTextures ? MaterialTextureCount : 0;
-    }
+    m_Stats.MaterialBridgeBound      = true;
+    m_Stats.SubInstanceBound         = true;
+    m_Stats.LightBridgeBound         = true;
+    m_Stats.LightsBakerBridgeBound   = true;
+    m_Stats.EnvironmentBridgeBound   = true;
+    m_Stats.EmissiveLightBridgeBound = true;
+    m_Stats.VertexBufferBound        = true;
+    m_Stats.SkinnedVertexBufferBound = true;
+    m_Stats.IndexBufferBound         = true;
+    m_Stats.MaterialTexturesBound    = true;
+    m_Stats.MaterialTextureCount     = UseTextures ? MaterialTextureCount : 0;
 
     IDeviceObject* pMaterialsView = pMaterialBuffer != nullptr ? pMaterialBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pSubInstanceView =
@@ -254,30 +217,27 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
     IDeviceObject* pEmissiveView =
         pEmissiveTriangleBuffer != nullptr ? pEmissiveTriangleBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pVertexView =
-        FullPathTracer && pVertexBuffer != nullptr ? pVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+        pVertexBuffer != nullptr ? pVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
     IDeviceObject* pSkinnedVertexView =
-        FullPathTracer && pSkinnedVertexBuffer != nullptr ? pSkinnedVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
+        pSkinnedVertexBuffer != nullptr ? pSkinnedVertexBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE) : nullptr;
 
     // The GLTF loader creates the index buffer in BUFFER_MODE_FORMATTED but does not pre-create a typed view;
     // create one here so HLSL can declare it as Buffer<uint>.
-    if (FullPathTracer && IndexValueType != VT_UINT16 && IndexValueType != VT_UINT32)
+    if (IndexValueType != VT_UINT16 && IndexValueType != VT_UINT32)
     {
         LOG_ERROR_MESSAGE("Reference path tracer requires VT_UINT16 or VT_UINT32 indices");
         return false;
     }
-    if (FullPathTracer)
-    {
-        BufferViewDesc IndexViewDesc;
-        IndexViewDesc.Name                 = "RTXPT reference index buffer SRV";
-        IndexViewDesc.ViewType             = BUFFER_VIEW_SHADER_RESOURCE;
-        IndexViewDesc.Format.ValueType     = IndexValueType;
-        IndexViewDesc.Format.NumComponents = 1;
-        IndexViewDesc.Format.IsNormalized  = false;
-        pIndexBuffer->CreateView(IndexViewDesc, &m_IndexBufferView);
-        VERIFY(m_IndexBufferView, "Failed to create RTXPT index buffer view");
-        if (!m_IndexBufferView)
-            return false;
-    }
+    BufferViewDesc IndexViewDesc;
+    IndexViewDesc.Name                 = "RTXPT reference index buffer SRV";
+    IndexViewDesc.ViewType             = BUFFER_VIEW_SHADER_RESOURCE;
+    IndexViewDesc.Format.ValueType     = IndexValueType;
+    IndexViewDesc.Format.NumComponents = 1;
+    IndexViewDesc.Format.IsNormalized  = false;
+    pIndexBuffer->CreateView(IndexViewDesc, &m_IndexBufferView);
+    VERIFY(m_IndexBufferView, "Failed to create RTXPT index buffer view");
+    if (!m_IndexBufferView)
+        return false;
 
     bool EnvironmentBridgeReflectedAny = false;
 
@@ -294,10 +254,6 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
         ShaderMacroHelper Macros;
         Macros.Add("PATH_TRACER_MODE", GetVariantModeMacro(Variant));
-        if (ScreenPatternDiagnostic)
-            Macros.Add("RTXPT_SCREEN_PATTERN_DIAGNOSTIC", 1);
-        if (MinimalTraceRayDiagnostic)
-            Macros.Add("RTXPT_MINIMAL_TRACE_RAY_DIAGNOSTIC", 1);
         if (UseTextures)
         {
             Macros.Add("ENABLE_MATERIAL_TEXTURES", 1);
@@ -314,37 +270,28 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         pDevice->CreateShader(ShaderCI, &pRayGen);
 
         RefCntAutoPtr<IShader> pMiss;
-        if (!ScreenPatternDiagnostic)
-        {
-            ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
-            ShaderCI.Desc.Name       = "RTXPT path trace miss";
-            ShaderCI.FilePath        = "PathTracer/PathTracerMiss.rmiss";
-            ShaderCI.EntryPoint      = "main";
-            pDevice->CreateShader(ShaderCI, &pMiss);
-        }
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
+        ShaderCI.Desc.Name       = "RTXPT path trace miss";
+        ShaderCI.FilePath        = "PathTracer/PathTracerMiss.rmiss";
+        ShaderCI.EntryPoint      = "main";
+        pDevice->CreateShader(ShaderCI, &pMiss);
 
         RefCntAutoPtr<IShader> pVisibilityMiss;
-        if (!ScreenPatternDiagnostic)
-        {
-            ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
-            ShaderCI.Desc.Name       = "RTXPT path trace visibility miss";
-            ShaderCI.FilePath        = "PathTracer/PathTracerVisibilityMiss.rmiss";
-            ShaderCI.EntryPoint      = "main";
-            pDevice->CreateShader(ShaderCI, &pVisibilityMiss);
-        }
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
+        ShaderCI.Desc.Name       = "RTXPT path trace visibility miss";
+        ShaderCI.FilePath        = "PathTracer/PathTracerVisibilityMiss.rmiss";
+        ShaderCI.EntryPoint      = "main";
+        pDevice->CreateShader(ShaderCI, &pVisibilityMiss);
 
         RefCntAutoPtr<IShader> pClosestHit;
-        if (!ScreenPatternDiagnostic)
-        {
-            ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_CLOSEST_HIT;
-            ShaderCI.Desc.Name       = "RTXPT path trace closest hit";
-            ShaderCI.FilePath        = "PathTracer/PathTracerClosestHit.rchit";
-            ShaderCI.EntryPoint      = "main";
-            pDevice->CreateShader(ShaderCI, &pClosestHit);
-        }
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_CLOSEST_HIT;
+        ShaderCI.Desc.Name       = "RTXPT path trace closest hit";
+        ShaderCI.FilePath        = "PathTracer/PathTracerClosestHit.rchit";
+        ShaderCI.EntryPoint      = "main";
+        pDevice->CreateShader(ShaderCI, &pClosestHit);
 
         RefCntAutoPtr<IShader> pAnyHit;
-        if (!ScreenPatternDiagnostic && UseAnyHit)
+        if (UseAnyHit)
         {
             ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_ANY_HIT;
             ShaderCI.Desc.Name       = "RTXPT path trace any hit";
@@ -353,9 +300,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             pDevice->CreateShader(ShaderCI, &pAnyHit);
         }
 
-        VERIFY(pRayGen && (ScreenPatternDiagnostic || (pMiss && pVisibilityMiss && pClosestHit && (!UseAnyHit || pAnyHit))),
+        VERIFY(pRayGen && pMiss && pVisibilityMiss && pClosestHit && (!UseAnyHit || pAnyHit),
                "Failed to create RTXPT path tracing shaders");
-        if (!pRayGen || (!ScreenPatternDiagnostic && (!pMiss || !pVisibilityMiss || !pClosestHit || (UseAnyHit && !pAnyHit))))
+        if (!pRayGen || !pMiss || !pVisibilityMiss || !pClosestHit || (UseAnyHit && !pAnyHit))
         {
             DEV_ERROR("Failed to create RTXPT path tracing shaders for variant: ", GetVariantName(Variant));
             return false;
@@ -365,15 +312,12 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         PSOCreateInfo.PSODesc.Name         = "RTXPT path trace RT PSO";
         PSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_RAY_TRACING;
         PSOCreateInfo.AddGeneralShader("Main", pRayGen);
-        if (!ScreenPatternDiagnostic)
-        {
-            PSOCreateInfo.AddGeneralShader("PrimaryMiss", pMiss);
-            PSOCreateInfo.AddGeneralShader("VisibilityMiss", pVisibilityMiss);
-            if (UseAnyHit)
-                PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit, pAnyHit);
-            else
-                PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
-        }
+        PSOCreateInfo.AddGeneralShader("PrimaryMiss", pMiss);
+        PSOCreateInfo.AddGeneralShader("VisibilityMiss", pVisibilityMiss);
+        if (UseAnyHit)
+            PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit, pAnyHit);
+        else
+            PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
         PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth =
             Variant == RTXPTPathTraceVariant::FillStablePlanes ? 2 : 1;
         PSOCreateInfo.RayTracingPipeline.ShaderRecordSize = 0;
@@ -394,38 +338,30 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             .AddVariable(DynamicStages, "u_StablePlanesHeader", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
             .AddVariable(DynamicStages, "u_StablePlanesBuffer", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
 
-        if (!ScreenPatternDiagnostic)
-        {
-            ResourceLayout
-                .AddVariable(ConstStages, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(ConstStages, "g_MiniConst", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(ConstStages, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
-        }
+        ResourceLayout
+            .AddVariable(ConstStages, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(ConstStages, "g_MiniConst", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(ConstStages, "t_SceneBVH", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(MaterialStages, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(HitStages, "t_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(HitStages, "t_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(HitStages, "t_SkinnedVertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(HitStages, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(DirectLightStages, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(DirectLightStages, "t_LightingControl", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(DirectLightStages, "t_LightProxyCounters", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(DirectLightStages, "t_LightSamplingProxies", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(DirectLightStages, "t_LocalSamplingBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(DirectLightStages, "u_FeedbackTotalWeight", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(DirectLightStages, "u_FeedbackCandidates", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "t_EnvironmentMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "t_EnvironmentImportanceMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "t_EnvironmentRadianceMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "s_EnvironmentMapSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(EnvStages, "s_EnvironmentImportanceSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
+            .AddVariable(DirectLightStages, "t_EmissiveTriangles", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
 
-        if (FullPathTracer)
-        {
-            ResourceLayout
-                .AddVariable(MaterialStages, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(HitStages, "t_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(HitStages, "t_VertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(HitStages, "t_SkinnedVertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(HitStages, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(DirectLightStages, "t_Lights", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(DirectLightStages, "t_LightingControl", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(DirectLightStages, "t_LightProxyCounters", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(DirectLightStages, "t_LightSamplingProxies", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(DirectLightStages, "t_LocalSamplingBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(DirectLightStages, "u_FeedbackTotalWeight", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(DirectLightStages, "u_FeedbackCandidates", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(EnvStages, "t_EnvironmentMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(EnvStages, "t_EnvironmentImportanceMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(EnvStages, "t_EnvironmentRadianceMap", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(EnvStages, "s_EnvironmentMapSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(EnvStages, "s_EnvironmentImportanceSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-                .AddVariable(DirectLightStages, "t_EmissiveTriangles", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
-        }
-
-        if (!ScreenPatternDiagnostic && UseTextures)
+        if (UseTextures)
         {
             ResourceLayout.AddVariable(HitStages, "t_BindlessTextures", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
 
@@ -479,82 +415,78 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
 
         const bool BuildStablePlanesVariant = Variant == RTXPTPathTraceVariant::BuildStablePlanes;
         const bool FrameConstantsBound =
-            ScreenPatternDiagnostic || SetStaticForStages(ConstStages, "g_Const", pFrameConstants, "frame constants");
+            SetStaticForStages(ConstStages, "g_Const", pFrameConstants, "frame constants");
         // BUILD always reads the current sub-sample from g_MiniConst. FILL may reflect it through
         // hit shaders, but some Fill PSO resource tables omit it, so bind opportunistically there.
         const bool MiniConstantsRequired = BuildStablePlanesVariant;
         const bool MiniConstantsBound =
-            ScreenPatternDiagnostic ||
             SetStaticForStages(ConstStages | HitStages, "g_MiniConst", m_MiniConstantsCB, "mini constants", MiniConstantsRequired);
         const bool TLASBound =
-            ScreenPatternDiagnostic || SetStaticForStages(ConstStages, "t_SceneBVH", m_TLAS, "TLAS");
+            SetStaticForStages(ConstStages, "t_SceneBVH", m_TLAS, "TLAS");
 
         if (!FrameConstantsBound || !MiniConstantsBound || !TLASBound)
             return false;
 
-        if (FullPathTracer)
-        {
-            const bool MaterialBridgeBound = SetStaticForStages(MaterialStages, "t_PTMaterialData", pMaterialsView, "material buffer");
-            const bool SubInstanceBound    = SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
+        const bool MaterialBridgeBound = SetStaticForStages(MaterialStages, "t_PTMaterialData", pMaterialsView, "material buffer");
+        const bool SubInstanceBound    = SetStaticForStages(HitStages, "t_SubInstanceData", pSubInstanceView, "sub-instance buffer");
 
-            bool       LightBridgeReflected = false;
-            const bool LightBridgeBound =
-                SetStaticForStages(DirectLightStages, "t_Lights", pLightsView, "light buffer", false, &LightBridgeReflected);
+        bool       LightBridgeReflected = false;
+        const bool LightBridgeBound =
+            SetStaticForStages(DirectLightStages, "t_Lights", pLightsView, "light buffer", false, &LightBridgeReflected);
 
-            bool       LightingControlFound      = false;
-            bool       LightProxyCountersFound   = false;
-            bool       LightSamplingProxiesFound = false;
-            bool       LocalSamplingBufferFound  = false;
-            bool       FeedbackTotalWeightFound  = false;
-            bool       FeedbackCandidatesFound   = false;
-            const bool LightsBakerBridgeBound =
-                SetStaticForStages(DirectLightStages, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", false, &LightingControlFound) &&
-                SetStaticForStages(DirectLightStages, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", false, &LightProxyCountersFound) &&
-                SetStaticForStages(DirectLightStages, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", false, &LightSamplingProxiesFound) &&
-                SetStaticForStages(DirectLightStages, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", false, &LocalSamplingBufferFound) &&
-                SetStaticForStages(DirectLightStages, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", false, &FeedbackTotalWeightFound) &&
-                SetStaticForStages(DirectLightStages, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", false, &FeedbackCandidatesFound);
-            const bool LightsBakerBridgeReflected =
-                LightingControlFound || LightProxyCountersFound || LightSamplingProxiesFound ||
-                LocalSamplingBufferFound || FeedbackTotalWeightFound || FeedbackCandidatesFound;
-            bool       EnvironmentMapFound               = false;
-            bool       EnvironmentImportanceMapFound     = false;
-            bool       EnvironmentRadianceMapFound       = false;
-            bool       EnvironmentSamplerFound           = false;
-            bool       EnvironmentImportanceSamplerFound = false;
-            const bool EnvironmentBridgeOk =
-                SetStaticForStages(EnvStages, "t_EnvironmentMap", pEnvironmentMapView, "environment map", false, &EnvironmentMapFound) &&
-                SetStaticForStages(EnvStages, "t_EnvironmentImportanceMap", pEnvironmentImportanceMapView, "environment importance map", false, &EnvironmentImportanceMapFound) &&
-                SetStaticForStages(EnvStages, "t_EnvironmentRadianceMap", pEnvironmentRadianceMapView, "environment radiance map", false, &EnvironmentRadianceMapFound) &&
-                SetStaticForStages(EnvStages, "s_EnvironmentMapSampler", pEnvironmentSamplerView, "environment map sampler", false, &EnvironmentSamplerFound) &&
-                SetStaticForStages(EnvStages, "s_EnvironmentImportanceSampler", pEnvironmentImportanceSamplerView, "environment importance sampler", false, &EnvironmentImportanceSamplerFound);
-            const bool EnvironmentBridgeReflected =
-                EnvironmentMapFound || EnvironmentImportanceMapFound || EnvironmentRadianceMapFound ||
-                EnvironmentSamplerFound || EnvironmentImportanceSamplerFound;
-            EnvironmentBridgeReflectedAny = EnvironmentBridgeReflectedAny || EnvironmentBridgeReflected;
-            bool       EmissiveLightBridgeReflected = false;
-            const bool EmissiveLightBridgeBound =
-                SetStaticForStages(DirectLightStages, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", false, &EmissiveLightBridgeReflected);
-            const bool VertexBufferBound = SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
-            const bool SkinnedVertexBufferBound =
-                SetStaticForStages(HitStages, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
-            const bool IndexBufferBound = SetStaticForStages(HitStages, "t_IndexBuffer", m_IndexBufferView, "index buffer");
+        bool       LightingControlFound      = false;
+        bool       LightProxyCountersFound   = false;
+        bool       LightSamplingProxiesFound = false;
+        bool       LocalSamplingBufferFound  = false;
+        bool       FeedbackTotalWeightFound  = false;
+        bool       FeedbackCandidatesFound   = false;
+        const bool LightsBakerBridgeBound =
+            SetStaticForStages(DirectLightStages, "t_LightingControl", pLightingControlView, "LightsBaker control buffer", false, &LightingControlFound) &&
+            SetStaticForStages(DirectLightStages, "t_LightProxyCounters", pLightProxyCountersView, "LightsBaker proxy counters", false, &LightProxyCountersFound) &&
+            SetStaticForStages(DirectLightStages, "t_LightSamplingProxies", pLightSamplingProxiesView, "LightsBaker sampling proxies", false, &LightSamplingProxiesFound) &&
+            SetStaticForStages(DirectLightStages, "t_LocalSamplingBuffer", pLocalSamplingView, "LightsBaker local sampling buffer", false, &LocalSamplingBufferFound) &&
+            SetStaticForStages(DirectLightStages, "u_FeedbackTotalWeight", pFeedbackTotalWeightUAV, "LightsBaker feedback total weight", false, &FeedbackTotalWeightFound) &&
+            SetStaticForStages(DirectLightStages, "u_FeedbackCandidates", pFeedbackCandidatesUAV, "LightsBaker feedback candidates", false, &FeedbackCandidatesFound);
+        const bool LightsBakerBridgeReflected =
+            LightingControlFound || LightProxyCountersFound || LightSamplingProxiesFound ||
+            LocalSamplingBufferFound || FeedbackTotalWeightFound || FeedbackCandidatesFound;
+        bool       EnvironmentMapFound               = false;
+        bool       EnvironmentImportanceMapFound     = false;
+        bool       EnvironmentRadianceMapFound       = false;
+        bool       EnvironmentSamplerFound           = false;
+        bool       EnvironmentImportanceSamplerFound = false;
+        const bool EnvironmentBridgeOk =
+            SetStaticForStages(EnvStages, "t_EnvironmentMap", pEnvironmentMapView, "environment map", false, &EnvironmentMapFound) &&
+            SetStaticForStages(EnvStages, "t_EnvironmentImportanceMap", pEnvironmentImportanceMapView, "environment importance map", false, &EnvironmentImportanceMapFound) &&
+            SetStaticForStages(EnvStages, "t_EnvironmentRadianceMap", pEnvironmentRadianceMapView, "environment radiance map", false, &EnvironmentRadianceMapFound) &&
+            SetStaticForStages(EnvStages, "s_EnvironmentMapSampler", pEnvironmentSamplerView, "environment map sampler", false, &EnvironmentSamplerFound) &&
+            SetStaticForStages(EnvStages, "s_EnvironmentImportanceSampler", pEnvironmentImportanceSamplerView, "environment importance sampler", false, &EnvironmentImportanceSamplerFound);
+        const bool EnvironmentBridgeReflected =
+            EnvironmentMapFound || EnvironmentImportanceMapFound || EnvironmentRadianceMapFound ||
+            EnvironmentSamplerFound || EnvironmentImportanceSamplerFound;
+        EnvironmentBridgeReflectedAny = EnvironmentBridgeReflectedAny || EnvironmentBridgeReflected;
+        bool       EmissiveLightBridgeReflected = false;
+        const bool EmissiveLightBridgeBound =
+            SetStaticForStages(DirectLightStages, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", false, &EmissiveLightBridgeReflected);
+        const bool VertexBufferBound = SetStaticForStages(HitStages, "t_VertexBuffer", pVertexView, "vertex buffer");
+        const bool SkinnedVertexBufferBound =
+            SetStaticForStages(HitStages, "t_SkinnedVertexBuffer", pSkinnedVertexView, "skinned vertex buffer");
+        const bool IndexBufferBound = SetStaticForStages(HitStages, "t_IndexBuffer", m_IndexBufferView, "index buffer");
 
-            m_Stats.MaterialBridgeBound      = m_Stats.MaterialBridgeBound && MaterialBridgeBound;
-            m_Stats.SubInstanceBound         = m_Stats.SubInstanceBound && SubInstanceBound;
-            m_Stats.LightBridgeBound         = m_Stats.LightBridgeBound && (!LightBridgeReflected || LightBridgeBound);
-            m_Stats.LightsBakerBridgeBound   = m_Stats.LightsBakerBridgeBound && (!LightsBakerBridgeReflected || LightsBakerBridgeBound);
-            m_Stats.EnvironmentBridgeBound   = m_Stats.EnvironmentBridgeBound && (!EnvironmentBridgeReflected || EnvironmentBridgeOk);
-            m_Stats.EmissiveLightBridgeBound = m_Stats.EmissiveLightBridgeBound && (!EmissiveLightBridgeReflected || EmissiveLightBridgeBound);
-            m_Stats.VertexBufferBound        = m_Stats.VertexBufferBound && VertexBufferBound;
-            m_Stats.SkinnedVertexBufferBound = m_Stats.SkinnedVertexBufferBound && SkinnedVertexBufferBound;
-            m_Stats.IndexBufferBound         = m_Stats.IndexBufferBound && IndexBufferBound;
+        m_Stats.MaterialBridgeBound      = m_Stats.MaterialBridgeBound && MaterialBridgeBound;
+        m_Stats.SubInstanceBound         = m_Stats.SubInstanceBound && SubInstanceBound;
+        m_Stats.LightBridgeBound         = m_Stats.LightBridgeBound && (!LightBridgeReflected || LightBridgeBound);
+        m_Stats.LightsBakerBridgeBound   = m_Stats.LightsBakerBridgeBound && (!LightsBakerBridgeReflected || LightsBakerBridgeBound);
+        m_Stats.EnvironmentBridgeBound   = m_Stats.EnvironmentBridgeBound && (!EnvironmentBridgeReflected || EnvironmentBridgeOk);
+        m_Stats.EmissiveLightBridgeBound = m_Stats.EmissiveLightBridgeBound && (!EmissiveLightBridgeReflected || EmissiveLightBridgeBound);
+        m_Stats.VertexBufferBound        = m_Stats.VertexBufferBound && VertexBufferBound;
+        m_Stats.SkinnedVertexBufferBound = m_Stats.SkinnedVertexBufferBound && SkinnedVertexBufferBound;
+        m_Stats.IndexBufferBound         = m_Stats.IndexBufferBound && IndexBufferBound;
 
-            if (!MaterialBridgeBound || !SubInstanceBound || !LightBridgeBound || !LightsBakerBridgeBound ||
-                (EnvironmentBridgeReflected && !EnvironmentBridgeOk) || !EmissiveLightBridgeBound ||
-                !VertexBufferBound || !SkinnedVertexBufferBound || !IndexBufferBound)
-                return false;
-        }
+        if (!MaterialBridgeBound || !SubInstanceBound || !LightBridgeBound || !LightsBakerBridgeBound ||
+            (EnvironmentBridgeReflected && !EnvironmentBridgeOk) || !EmissiveLightBridgeBound ||
+            !VertexBufferBound || !SkinnedVertexBufferBound || !IndexBufferBound)
+            return false;
 
         State.PSO->CreateShaderResourceBinding(&State.SRB, true);
         VERIFY(State.SRB, "Failed to create RTXPT path trace RT SRB");
@@ -564,7 +496,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             return false;
         }
 
-        if (!ScreenPatternDiagnostic && UseTextures)
+        if (UseTextures)
         {
             IShaderResourceVariable* pClosestHitTexVar =
                 State.SRB->GetVariableByName(SHADER_TYPE_RAY_CLOSEST_HIT, "t_BindlessTextures");
@@ -594,13 +526,10 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         }
 
         State.SBT->BindRayGenShader("Main");
-        if (!ScreenPatternDiagnostic)
-        {
-            State.SBT->BindMissShader("PrimaryMiss", kRTXPTPrimaryRayIndex);
-            State.SBT->BindMissShader("VisibilityMiss", kRTXPTVisibilityRayIndex);
-            State.SBT->BindHitGroupForTLAS(m_TLAS, kRTXPTPrimaryRayIndex, "PrimaryHit");
-            State.SBT->BindHitGroupForTLAS(m_TLAS, kRTXPTVisibilityRayIndex, "PrimaryHit");
-        }
+        State.SBT->BindMissShader("PrimaryMiss", kRTXPTPrimaryRayIndex);
+        State.SBT->BindMissShader("VisibilityMiss", kRTXPTVisibilityRayIndex);
+        State.SBT->BindHitGroupForTLAS(m_TLAS, kRTXPTPrimaryRayIndex, "PrimaryHit");
+        State.SBT->BindHitGroupForTLAS(m_TLAS, kRTXPTVisibilityRayIndex, "PrimaryHit");
         pContext->UpdateSBT(State.SBT);
 
         State.Stats.Ready = true;
@@ -622,12 +551,9 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         }
     }
 
-    if (FullPathTracer)
-    {
-        m_Stats.EnvironmentBridgeBound = EnvironmentBridgeReflectedAny && m_Stats.EnvironmentBridgeBound;
-        if (!UseTextures)
-            m_Stats.MaterialTexturesBound = false;
-    }
+    m_Stats.EnvironmentBridgeBound = EnvironmentBridgeReflectedAny && m_Stats.EnvironmentBridgeBound;
+    if (!UseTextures)
+        m_Stats.MaterialTexturesBound = false;
     m_Stats.AnyHitEnabled = UseAnyHit;
     m_Stats.Ready         = true;
     return true;
@@ -733,14 +659,31 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
         return true;
     };
 
-    if (!SetDynamicForNamePair("u_OutputColor", "u_Output", DispatchInfo.pOutputColorUAV, FinalOutputRequired) ||
-        !SetDynamicForStages("u_Depth", DispatchInfo.pDepthUAV, SurfaceExportsRequired) ||
-        !SetDynamicForNamePair("u_MotionVectors", "u_ScreenMotionVectors", DispatchInfo.pMotionVectorsUAV, SurfaceExportsRequired) ||
-        !SetDynamicForStages("u_Throughput", DispatchInfo.pThroughputUAV, ThroughputRequired) ||
-        !SetDynamicForStages("u_SpecularHitT", DispatchInfo.pSpecularHitTUAV, SpecularHitTRequired) ||
-        !SetDynamicForStages("u_StableRadiance", DispatchInfo.pStableRadianceUAV, StableRadianceRequired) ||
-        !SetDynamicForStages("u_StablePlanesHeader", DispatchInfo.pStablePlanesHeaderUAV, StablePlanesRequired) ||
-        !SetDynamicForStages("u_StablePlanesBuffer", DispatchInfo.pStablePlanesBufferUAV, StablePlanesRequired))
+    const bool OutputBound =
+        SetDynamicForNamePair("u_OutputColor", "u_Output", DispatchInfo.pOutputColorUAV, FinalOutputRequired);
+    const bool DepthBound =
+        SetDynamicForStages("u_Depth", DispatchInfo.pDepthUAV, SurfaceExportsRequired);
+    const bool MotionVectorsBound =
+        SetDynamicForNamePair("u_MotionVectors", "u_ScreenMotionVectors", DispatchInfo.pMotionVectorsUAV, SurfaceExportsRequired);
+    const bool ThroughputBound =
+        SetDynamicForStages("u_Throughput", DispatchInfo.pThroughputUAV, ThroughputRequired);
+    const bool SpecularHitTBound =
+        SetDynamicForStages("u_SpecularHitT", DispatchInfo.pSpecularHitTUAV, SpecularHitTRequired);
+    const bool StableRadianceBound =
+        SetDynamicForStages("u_StableRadiance", DispatchInfo.pStableRadianceUAV, StableRadianceRequired);
+    const bool StablePlanesHeaderBound =
+        SetDynamicForStages("u_StablePlanesHeader", DispatchInfo.pStablePlanesHeaderUAV, StablePlanesRequired);
+    const bool StablePlanesBufferBound =
+        SetDynamicForStages("u_StablePlanesBuffer", DispatchInfo.pStablePlanesBufferUAV, StablePlanesRequired);
+
+    if (!OutputBound ||
+        !DepthBound ||
+        !MotionVectorsBound ||
+        !ThroughputBound ||
+        !SpecularHitTBound ||
+        !StableRadianceBound ||
+        !StablePlanesHeaderBound ||
+        !StablePlanesBufferBound)
     {
         return false;
     }

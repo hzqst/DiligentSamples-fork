@@ -134,10 +134,10 @@ struct RTXPTNrdRelaxUiSettings
 
 struct RTXPTRealtimeSettings
 {
-    bool                RealtimeMode            = false;
+    bool                RealtimeMode            = true;
     Int32               RealtimeSamplesPerPixel = 1;
     RTXPTRealtimeAAMode RealtimeAA              = RTXPTRealtimeAAMode::Disabled;
-    bool                StandaloneDenoiser      = false;
+    bool                StandaloneDenoiser      = true;
 
     bool  RealtimeFireflyFilterEnabled   = true;
     float RealtimeFireflyFilterThreshold = 0.10f;

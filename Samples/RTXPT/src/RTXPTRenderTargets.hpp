@@ -117,10 +117,16 @@ struct RTXPTStablePlaneData
     Uint32 PackedCounters                   = 0;
 };
 static_assert(sizeof(RTXPTStablePlaneData) == 80, "RTXPTStablePlaneData layout must match PathTracer/StablePlanes.hlsli StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, LastRayTCurrent) == 12, "RTXPTStablePlaneData LastRayTCurrent offset must match StablePlane");
 static_assert(offsetof(RTXPTStablePlaneData, RayDir) == 16, "RTXPTStablePlaneData RayDir offset must match StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, SceneLength) == 28, "RTXPTStablePlaneData SceneLength offset must match StablePlane");
 static_assert(offsetof(RTXPTStablePlaneData, PackedThpAndMVs) == 32, "RTXPTStablePlaneData PackedThpAndMVs offset must match StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, VertexIndexAndRoughness) == 44, "RTXPTStablePlaneData VertexIndexAndRoughness offset must match StablePlane");
 static_assert(offsetof(RTXPTStablePlaneData, DenoiserPackedBSDFEstimate) == 48, "RTXPTStablePlaneData DenoiserPackedBSDFEstimate offset must match StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, PackedNormal) == 60, "RTXPTStablePlaneData PackedNormal offset must match StablePlane");
 static_assert(offsetof(RTXPTStablePlaneData, PackedNoisyRadianceAndSpecAvg) == 64, "RTXPTStablePlaneData PackedNoisyRadianceAndSpecAvg offset must match StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, FlagsAndVertexIndex) == 72, "RTXPTStablePlaneData FlagsAndVertexIndex offset must match StablePlane");
+static_assert(offsetof(RTXPTStablePlaneData, PackedCounters) == 76, "RTXPTStablePlaneData PackedCounters offset must match StablePlane");
 
 struct RTXPTRenderTargetCreateInfo
 {

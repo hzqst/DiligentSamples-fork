@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 #include "Buffer.h"
@@ -48,6 +49,8 @@ struct RTXPTGeometryVertex
     float2 texCoord0 = float2{0, 0};
 };
 static_assert(sizeof(RTXPTGeometryVertex) == 32, "RTXPTGeometryVertex layout must match GeometryVertexData");
+static_assert(offsetof(RTXPTGeometryVertex, normal) == 12, "RTXPTGeometryVertex normal offset must match GeometryVertexData");
+static_assert(offsetof(RTXPTGeometryVertex, texCoord0) == 24, "RTXPTGeometryVertex texCoord0 offset must match GeometryVertexData");
 
 struct RTXPTSkinnedSceneNodeGeometry
 {

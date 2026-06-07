@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <limits>
 #include <vector>
@@ -48,6 +49,14 @@ constexpr Uint32 kMinProxyCount                     = 1u;
 constexpr Uint32 kLocalProxyCount                   = 128u;
 constexpr Uint32 kTileSize                          = 8u;
 constexpr float  kDistantVsLocalImportanceBaseScale = 0.0002f;
+constexpr Uint32 kLightingControlHeaderSizeBytes    = 112u;
+constexpr Uint32 kLightsBakerConstantsSizeBytes      = 464u;
+constexpr Uint32 kLightsBakerEnvMapParamsBaseWord    = 88u;
+constexpr Uint32 kLightsBakerEnvMapColorBaseWord     = kLightsBakerEnvMapParamsBaseWord + 24u;
+
+static_assert(kLightsBakerConstantsSizeBytes % sizeof(Uint32) == 0, "LightsBakerConstants size must be uint-addressable");
+static_assert(kLightsBakerEnvMapColorBaseWord + 4u <= kLightsBakerConstantsSizeBytes / sizeof(Uint32),
+              "EnvMapParams must fit inside LightsBakerConstants padding");
 
 struct RTXPTLightingControlDataCPU
 {
@@ -76,9 +85,30 @@ struct RTXPTLightingControlDataCPU
     Uint32 _padding1                          = 0;
     Uint32 _padding2                          = 0;
     Uint32 _padding3                          = 0;
-    Uint32 BakerPadding[464 / 4]              = {};
+    Uint32 BakerPadding[kLightsBakerConstantsSizeBytes / sizeof(Uint32)] = {};
 };
-static_assert(sizeof(RTXPTLightingControlDataCPU) == 112 + 464, "LightingControlData CPU mirror must match LightingTypes.hlsli");
+static_assert(sizeof(RTXPTLightingControlDataCPU) == kLightingControlHeaderSizeBytes + kLightsBakerConstantsSizeBytes,
+              "LightingControlData CPU mirror must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, AnalyticLightCount) == 8,
+              "LightingControlData AnalyticLightCount offset must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, SamplingProxyCount) == 16,
+              "LightingControlData SamplingProxyCount offset must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, ProxyBuildTaskCount) == 32,
+              "LightingControlData ProxyBuildTaskCount offset must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, TemporalFeedbackRequired) == 48,
+              "LightingControlData TemporalFeedbackRequired offset must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, TileBufferHeight) == 64,
+              "LightingControlData TileBufferHeight offset must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, LocalSamplingResolution) == 72,
+              "LightingControlData LocalSamplingResolution offset must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, LocalSamplingTileJitter) == 80,
+              "LightingControlData LocalSamplingTileJitter offset must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, ValidFeedbackCount) == 96,
+              "LightingControlData ValidFeedbackCount offset must match LightingTypes.hlsli");
+static_assert(offsetof(RTXPTLightingControlDataCPU, BakerPadding) == kLightingControlHeaderSizeBytes,
+              "LightingControlData BakerConstants offset must match LightingTypes.hlsli");
+static_assert(sizeof(RTXPTLightingControlDataCPU) - offsetof(RTXPTLightingControlDataCPU, BakerPadding) == kLightsBakerConstantsSizeBytes,
+              "LightingControlData BakerConstants payload size must match LightingTypes.hlsli");
 
 float EstimateAnalyticWeight(const PolymorphicLightInfo& Light)
 {
@@ -536,19 +566,17 @@ bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLi
         Control.BakerPadding[BaseIndex + 2] = FloatAsUint(Value.z);
         Control.BakerPadding[BaseIndex + 3] = FloatAsUint(Value.w);
     };
-    constexpr Uint32 EnvMapParamsBase = 88u;
-    constexpr Uint32 EnvMapColorBase  = EnvMapParamsBase + 24u;
     // EnvMapParams follows the scalar controls, frustum planes, and frustum corners in LightsBakerConstants.
-    WriteFloat4(EnvMapParamsBase + 0u, Settings.EnvMapParams.Transform.Row0);
-    WriteFloat4(EnvMapParamsBase + 4u, Settings.EnvMapParams.Transform.Row1);
-    WriteFloat4(EnvMapParamsBase + 8u, Settings.EnvMapParams.Transform.Row2);
-    WriteFloat4(EnvMapParamsBase + 12u, Settings.EnvMapParams.InvTransform.Row0);
-    WriteFloat4(EnvMapParamsBase + 16u, Settings.EnvMapParams.InvTransform.Row1);
-    WriteFloat4(EnvMapParamsBase + 20u, Settings.EnvMapParams.InvTransform.Row2);
-    Control.BakerPadding[EnvMapColorBase + 0u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.x);
-    Control.BakerPadding[EnvMapColorBase + 1u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.y);
-    Control.BakerPadding[EnvMapColorBase + 2u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.z);
-    Control.BakerPadding[EnvMapColorBase + 3u] = FloatAsUint(Settings.EnvMapParams.Enabled);
+    WriteFloat4(kLightsBakerEnvMapParamsBaseWord + 0u, Settings.EnvMapParams.Transform.Row0);
+    WriteFloat4(kLightsBakerEnvMapParamsBaseWord + 4u, Settings.EnvMapParams.Transform.Row1);
+    WriteFloat4(kLightsBakerEnvMapParamsBaseWord + 8u, Settings.EnvMapParams.Transform.Row2);
+    WriteFloat4(kLightsBakerEnvMapParamsBaseWord + 12u, Settings.EnvMapParams.InvTransform.Row0);
+    WriteFloat4(kLightsBakerEnvMapParamsBaseWord + 16u, Settings.EnvMapParams.InvTransform.Row1);
+    WriteFloat4(kLightsBakerEnvMapParamsBaseWord + 20u, Settings.EnvMapParams.InvTransform.Row2);
+    Control.BakerPadding[kLightsBakerEnvMapColorBaseWord + 0u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.x);
+    Control.BakerPadding[kLightsBakerEnvMapColorBaseWord + 1u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.y);
+    Control.BakerPadding[kLightsBakerEnvMapColorBaseWord + 2u] = FloatAsUint(Settings.EnvMapParams.ColorMultiplier.z);
+    Control.BakerPadding[kLightsBakerEnvMapColorBaseWord + 3u] = FloatAsUint(Settings.EnvMapParams.Enabled);
 
     BufferDesc Desc;
     Desc.Name              = "RTXPT LightsBaker control buffer";

@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,9 @@ struct SubInstanceData
     Uint32 _padding1              = 0;
 };
 static_assert(sizeof(SubInstanceData) == 32, "SubInstanceData layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SubInstanceData, IndexOffset) == 8, "SubInstanceData IndexOffset offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SubInstanceData, VertexOffset) == 16, "SubInstanceData VertexOffset offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SubInstanceData, EmissiveTriangleOffset) == 24, "SubInstanceData EmissiveTriangleOffset offset must match PathTracer/PathTracerShared.h");
 
 // Flag bits for SubInstanceData::Flags.
 constexpr Uint32 kSubInstanceFlag_Indexed = 0x1u;

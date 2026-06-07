@@ -3,13 +3,23 @@
 
 #include "Config.h"
 
-struct PathPayload
+#ifndef RTXPT_PATH_PAYLOAD_UINT4_COUNT
+#    define RTXPT_PATH_PAYLOAD_UINT4_COUNT 5
+#endif
+#ifndef RTXPT_PATH_PAYLOAD_SIZE_BYTES
+#    define RTXPT_PATH_PAYLOAD_SIZE_BYTES (RTXPT_PATH_PAYLOAD_UINT4_COUNT * 4 * 4)
+#endif
+
+// Packed and aligned representation of PathState in a pre-raytrace state.
+struct PAYLOAD_QUALIFIER PathPayload
 {
-    uint4 packed[5];
+    uint4 packed[5] PAYLOAD_FIELD_RW_ALL;
 
 #ifdef PATH_STATE_DEFINED
     static PathPayload pack(const PathState path);
     static PathState unpack(const PathPayload p);
+    static PathPayload fromArray(const uint4 packed[RTXPT_PATH_PAYLOAD_UINT4_COUNT]);
+    static void toArray(const PathPayload p, out uint4 packed[RTXPT_PATH_PAYLOAD_UINT4_COUNT]);
 #endif
 };
 
@@ -72,6 +82,26 @@ PathState PathPayload::unpack(const PathPayload p)
     path.flagsAndVertexIndex          = p.packed[4].w;
 
     return path;
+}
+
+PathPayload PathPayload::fromArray(const uint4 packed[RTXPT_PATH_PAYLOAD_UINT4_COUNT])
+{
+    PathPayload p;
+    p.packed[0] = packed[0];
+    p.packed[1] = packed[1];
+    p.packed[2] = packed[2];
+    p.packed[3] = packed[3];
+    p.packed[4] = packed[4];
+    return p;
+}
+
+void PathPayload::toArray(const PathPayload p, out uint4 packed[RTXPT_PATH_PAYLOAD_UINT4_COUNT])
+{
+    packed[0] = p.packed[0];
+    packed[1] = p.packed[1];
+    packed[2] = p.packed[2];
+    packed[3] = p.packed[3];
+    packed[4] = p.packed[4];
 }
 
 #endif

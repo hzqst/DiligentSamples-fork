@@ -26,4 +26,14 @@
 // ENABLE_MATERIAL_TEXTURES and MATERIAL_TEXTURE_COUNT are supplied by C++ when the
 // bindless material-texture table exists.
 
+#if NON_PATH_TRACING_PASS || defined(__cplusplus) || (__SHADER_TARGET_MAJOR < 6 || __SHADER_TARGET_MINOR < 6)
+#    define PAYLOAD_QUALIFIER
+#    define PAYLOAD_FIELD_RW_ALL
+#    define PAYLOAD_FIELD_READCALLER
+#else
+#    define PAYLOAD_QUALIFIER        [raypayload]
+#    define PAYLOAD_FIELD_RW_ALL     : read(caller, closesthit, anyhit, miss) : write(caller, closesthit, anyhit, miss)
+#    define PAYLOAD_FIELD_READCALLER : read(caller) : write(closesthit, anyhit, miss)
+#endif
+
 #endif // __CONFIG_H__

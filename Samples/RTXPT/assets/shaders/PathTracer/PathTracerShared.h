@@ -9,6 +9,15 @@ static const uint kSubInstanceFlagSkinned = 0x2u;
 // clamps the area->solid-angle conversion for near-grazing / very close emissive-triangle samples.
 static const float kMaxSolidAnglePdf = 1e10;
 
+// Realtime packed PathState/PathPayload wire format. Keep StablePlane::PackCustomPayload,
+// PathPayload::{from,to}Array, and the RT pipeline MaxPayloadSize audit in sync with this.
+#ifndef RTXPT_PATH_PAYLOAD_UINT4_COUNT
+#    define RTXPT_PATH_PAYLOAD_UINT4_COUNT 5
+#endif
+#ifndef RTXPT_PATH_PAYLOAD_SIZE_BYTES
+#    define RTXPT_PATH_PAYLOAD_SIZE_BYTES (RTXPT_PATH_PAYLOAD_UINT4_COUNT * 4 * 4)
+#endif
+
 struct PathTracerCameraData
 {
     float3 PosW;
@@ -263,9 +272,9 @@ struct MaterialPTData
     float thicknessTextureSlice;    // offset 124
 
     // RTXPT-fork authored priority: 0 is the special highest-priority value; 14 is the default/max authored value.
-    uint  nestedPriority; // offset 128
-    uint  _paddingR7_0;
-    float shadowNoLFadeout; // offset 136
+    uint  nestedPriority;         // offset 128
+    uint  pathDecompositionFlags; // offset 132
+    float shadowNoLFadeout;       // offset 136
     float _paddingR7_1;
 };
 
@@ -282,6 +291,13 @@ static const uint kMaterialFlagHasVolume                   = 0x100u;
 static const uint kMaterialFlagHasThicknessTexture         = 0x200u;
 static const uint kMaterialFlagThinSurface                 = 0x400u;
 static const uint kMaterialFlagAlphaBlend                  = 0x800u;
+
+static const uint kMaterialPathDecompositionFlagPSDExclude = 0x1u;
+static const uint kMaterialPathDecompositionFlagPSDBlockMotionVectorsAtSurfaceMask = 0x6u;
+static const uint kMaterialPathDecompositionFlagPSDBlockMotionVectorsAtSurfaceShift = 1u;
+static const uint kMaterialPathDecompositionFlagIgnoreMeshTangentSpace = 0x8u;
+static const uint kMaterialPathDecompositionFlagPSDDominantDeltaLobeP1Mask = 0xF0u;
+static const uint kMaterialPathDecompositionFlagPSDDominantDeltaLobeP1Shift = 4u;
 
 // Mirrors Diligent::PolymorphicLightInfo in RTXPTLights.hpp.
 struct PolymorphicLightInfo

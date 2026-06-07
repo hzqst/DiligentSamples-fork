@@ -52,6 +52,8 @@ struct PathState
     uint4 PackOriginId;
     uint4 PackDirSceneLength;
 
+    // Mode-specific payload lane: BuildStablePlanes stores imageXformPacked here,
+    // other modes store packed L. Both variants must remain uint2 to keep PathPayload 5xuint4.
     uint2 pack23;
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
     uint2 imageXformPacked;
@@ -186,13 +188,13 @@ struct PathState
 
     void setVertexIndex(uint index)
     {
-        flagsAndVertexIndex &= kPathFlagsBitMask;
-        flagsAndVertexIndex |= index;
+        flagsAndVertexIndex = (flagsAndVertexIndex & kPathFlagsBitMask) |
+            (index & kVertexIndexBitMask);
     }
 
     uint getVertexIndex() { return flagsAndVertexIndex & kVertexIndexBitMask; }
-    void incrementVertexIndex() { flagsAndVertexIndex += 1; }
-    void decrementVertexIndex() { flagsAndVertexIndex -= 1; }
+    void incrementVertexIndex() { setVertexIndex(getVertexIndex() + 1u); }
+    void decrementVertexIndex() { setVertexIndex(getVertexIndex() - 1u); }
 
     Ray getScatterRay()
     {

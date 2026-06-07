@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,9 @@ struct PolymorphicLightInfo
     float4 shaping        = float4{-1, 0, 0, 0};
 };
 static_assert(sizeof(PolymorphicLightInfo) == 64, "PolymorphicLightInfo layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PolymorphicLightInfo, positionRadius) == 16, "PolymorphicLightInfo positionRadius offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PolymorphicLightInfo, directionRange) == 32, "PolymorphicLightInfo directionRange offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PolymorphicLightInfo, shaping) == 48, "PolymorphicLightInfo shaping offset must match PathTracer/PathTracerShared.h");
 
 struct EmissiveTriangle
 {
@@ -56,6 +60,9 @@ struct EmissiveTriangle
     float4 radiance = float4{0, 0, 0, 0};
 };
 static_assert(sizeof(EmissiveTriangle) == 64, "EmissiveTriangle layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(EmissiveTriangle, edge1) == 16, "EmissiveTriangle edge1 offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(EmissiveTriangle, edge2) == 32, "EmissiveTriangle edge2 offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(EmissiveTriangle, radiance) == 48, "EmissiveTriangle radiance offset must match PathTracer/PathTracerShared.h");
 
 struct RTXPTLightStats
 {

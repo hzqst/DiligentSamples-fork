@@ -54,6 +54,10 @@ struct PathTracerCameraData
     float  _padding2            = 0.0f;
 };
 static_assert(sizeof(PathTracerCameraData) == 112, "PathTracerCameraData layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerCameraData, DirectionW) == 16, "PathTracerCameraData DirectionW offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerCameraData, CameraW) == 64, "PathTracerCameraData CameraW offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerCameraData, ViewportWidth) == 80, "PathTracerCameraData ViewportWidth offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerCameraData, Jitter) == 96, "PathTracerCameraData Jitter offset must match PathTracer/PathTracerShared.h");
 
 struct PathTracerViewData
 {
@@ -70,7 +74,9 @@ struct PathTracerViewData
     float2   ClipToWindowBias       = float2{0.5f, 0.5f};
 };
 static_assert(sizeof(PathTracerViewData) == 368, "PathTracerViewData layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerViewData, MatClipToWorldNoOffset) == 256, "PathTracerViewData MatClipToWorldNoOffset offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerViewData, ViewportOrigin) == 320, "PathTracerViewData ViewportOrigin offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerViewData, ViewportSizeInv) == 336, "PathTracerViewData ViewportSizeInv offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerViewData, ClipToWindowBias) == 360, "PathTracerViewData ClipToWindowBias offset must match PathTracer/PathTracerShared.h");
 
 struct PathTracerConstants
@@ -137,8 +143,12 @@ static_assert(sizeof(PathTracerConstants) == 400, "PathTracerConstants layout mu
 static_assert(offsetof(PathTracerConstants, sampleBaseIndex) == 8, "PathTracerConstants sampleBaseIndex offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerConstants, invSubSampleCount) == 32, "PathTracerConstants invSubSampleCount offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerConstants, frameIndex) == 48, "PathTracerConstants frameIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, resetAccumulation) == 60, "PathTracerConstants resetAccumulation offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, _activeStablePlaneCount) == 92, "PathTracerConstants active stable-plane count offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerConstants, genericTSLineStride) == 104, "PathTracerConstants genericTSLineStride offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerConstants, sampleIndex) == 128, "PathTracerConstants sampleIndex offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, environmentIntensity) == 140, "PathTracerConstants environmentIntensity offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(PathTracerConstants, nestedDielectricsQuality) == 160, "PathTracerConstants nestedDielectricsQuality offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerConstants, camera) == 176, "PathTracerConstants camera offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(PathTracerConstants, prevCamera) == 288, "PathTracerConstants prevCamera offset must match PathTracer/PathTracerShared.h");
 
@@ -154,6 +164,9 @@ struct RTXPTEnvMapConstants
     float4 ImportanceMetadata = float4{1, 1, 0, 0}; // xy = inv dim, z = base mip, w = importance enabled.
 };
 static_assert(sizeof(RTXPTEnvMapConstants) == 128, "RTXPTEnvMapConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(RTXPTEnvMapConstants, WorldToLocal0) == 48, "RTXPTEnvMapConstants WorldToLocal0 offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(RTXPTEnvMapConstants, ColorEnabled) == 96, "RTXPTEnvMapConstants ColorEnabled offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(RTXPTEnvMapConstants, ImportanceMetadata) == 112, "RTXPTEnvMapConstants ImportanceMetadata offset must match PathTracer/PathTracerShared.h");
 
 struct SampleConstants
 {
@@ -168,6 +181,8 @@ struct SampleConstants
     RTXPTEnvMapConstants envMap                    = {};
 };
 static_assert(sizeof(SampleConstants) == 1536, "SampleConstants layout must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SampleConstants, cameraPositionAndTime) == 128, "SampleConstants cameraPositionAndTime offset must match PathTracer/PathTracerShared.h");
+static_assert(offsetof(SampleConstants, viewportSizeAndFrameIndex) == 144, "SampleConstants viewportSizeAndFrameIndex offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(SampleConstants, view) == 160, "SampleConstants view offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(SampleConstants, previousView) == 528, "SampleConstants previousView offset must match PathTracer/PathTracerShared.h");
 static_assert(offsetof(SampleConstants, camera) == 896, "SampleConstants camera offset must match PathTracer/PathTracerShared.h");

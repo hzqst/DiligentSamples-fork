@@ -70,7 +70,12 @@ struct PathState
     RayCone rayCone;
     uint    pack0;
     uint    pack1;
-    uint    flagsAndVertexIndex;
+    // [PathState packing refactor — Gate 1] The flags bits and the vertex index used to share one
+    // packed word (flagsAndVertexIndex). They are split into two independent members so DXC no longer
+    // has to track them as sub-lanes of a single uint. The single 32-bit wire layout is unchanged:
+    // they are recombined only at the PathPayload::pack/unpack boundary.
+    uint    flags;        // PathFlags region, bit[10..31] (kPathFlagsBitMask); low 10 bits always 0
+    uint    vertexIndex;  // vertex index, low 10 bits (kVertexIndexBitMask)
 
     float3 GetOrigin() { return asfloat(PackOriginId.xyz); }
     void SetOrigin(float3 origin) { PackOriginId.xyz = asuint(origin); }
@@ -145,7 +150,7 @@ struct PathState
         const uint bits = (((uint)PathFlags::transmission) |
                            ((uint)PathFlags::specular) |
                            ((uint)PathFlags::delta)) << kVertexIndexBitCount;
-        flagsAndVertexIndex &= ~bits;
+        flags &= ~bits;
     }
 
     void setScatterTransmission(bool value = true) { setFlag(PathFlags::transmission, value); }
@@ -158,13 +163,13 @@ struct PathState
     bool hasFlag(PathFlags flag)
     {
         const uint bit = ((uint)flag) << kVertexIndexBitCount;
-        return (flagsAndVertexIndex & bit) != 0;
+        return (flags & bit) != 0;
     }
 
     void setFlag(PathFlags flag, bool value = true)
     {
         const uint bit = ((uint)flag) << kVertexIndexBitCount;
-        flagsAndVertexIndex = value ? (flagsAndVertexIndex | bit) : (flagsAndVertexIndex & ~bit);
+        flags = value ? (flags | bit) : (flags & ~bit);
     }
 
     uint getCounter(PackedCounters type)
@@ -186,15 +191,15 @@ struct PathState
 
     uint2 GetPixelPos() { return PathIDToPixel(GetId()); }
 
-    void setVertexIndex(uint index)
-    {
-        flagsAndVertexIndex = (flagsAndVertexIndex & kPathFlagsBitMask) |
-            (index & kVertexIndexBitMask);
-    }
-
-    uint getVertexIndex() { return flagsAndVertexIndex & kVertexIndexBitMask; }
-    void incrementVertexIndex() { setVertexIndex(getVertexIndex() + 1u); }
-    void decrementVertexIndex() { setVertexIndex(getVertexIndex() - 1u); }
+    // [PathState packing refactor — Gate 1, 2026-06-07] vertexIndex now lives in its own member, so
+    // these accessors operate on an isolated word instead of doing masked read-modify-write inside the
+    // shared flags word. This removes the intra-word aliasing that DXC miscompiles when realtime
+    // HandleHit contains nested-dielectric handling. getVertexIndex keeps the mask to stay bit-for-bit
+    // equivalent to the old combined form after a pack/unpack roundtrip.
+    void setVertexIndex(uint index) { vertexIndex = index; }
+    uint getVertexIndex() { return vertexIndex & kVertexIndexBitMask; }
+    void incrementVertexIndex() { vertexIndex += 1; }
+    void decrementVertexIndex() { vertexIndex -= 1; }
 
     Ray getScatterRay()
     {
@@ -203,13 +208,13 @@ struct PathState
 
     uint getStablePlaneIndex()
     {
-        return (flagsAndVertexIndex & kStablePlaneIndexBitMask) >> kStablePlaneIndexBitOffset;
+        return (flags & kStablePlaneIndexBitMask) >> kStablePlaneIndexBitOffset;
     }
 
     void setStablePlaneIndex(uint index)
     {
-        flagsAndVertexIndex &= ~kStablePlaneIndexBitMask;
-        flagsAndVertexIndex |= index << kStablePlaneIndexBitOffset;
+        flags &= ~kStablePlaneIndexBitMask;
+        flags |= index << kStablePlaneIndexBitOffset;
     }
 };
 

@@ -50,7 +50,8 @@ PathPayload PathPayload::pack(const PathState path)
     p.packed[4].x = path.rayCone.widthSpreadAngleFP16;
     p.packed[4].y = path.pack0;
     p.packed[4].z = path.pack1;
-    p.packed[4].w = path.flagsAndVertexIndex;
+    // Recombine the split flags / vertexIndex members into the single 32-bit wire word.
+    p.packed[4].w = path.flags | (path.vertexIndex & kVertexIndexBitMask);
 
     return p;
 }
@@ -79,7 +80,9 @@ PathState PathPayload::unpack(const PathPayload p)
     path.rayCone.widthSpreadAngleFP16 = p.packed[4].x;
     path.pack0                        = p.packed[4].y;
     path.pack1                        = p.packed[4].z;
-    path.flagsAndVertexIndex          = p.packed[4].w;
+    // Split the single 32-bit wire word back into the independent flags / vertexIndex members.
+    path.flags                        = p.packed[4].w & kPathFlagsBitMask;
+    path.vertexIndex                  = p.packed[4].w & kVertexIndexBitMask;
 
     return path;
 }

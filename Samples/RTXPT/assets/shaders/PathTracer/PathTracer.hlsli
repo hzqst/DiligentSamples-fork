@@ -263,7 +263,8 @@ namespace PathTracer
     {
         PathState path;
         path.SetId(PathIDFromPixel(pixelPos));
-        path.flagsAndVertexIndex = 0;
+        path.flags = 0;
+        path.vertexIndex = 0;
         path.SetSceneLength(0.0);
         path.packedCounters = 0;
 
@@ -385,8 +386,14 @@ namespace PathTracer
     {
         BSDFSample bs;
         bs.lobe           = lobe;
-        bs.deltaLobeIndex = (lobe & kBSDFLobeDeltaTransmission) != 0u ? 0u :
-            (((lobe & kBSDFLobeDeltaReflection) != 0u) ? 1u : 0u);
+        // Match upstream IBSDF::getDeltaLobeIndex(): a NON-delta lobe must map to the invalid sentinel
+        // (0xFFFFFFFF), not 0. StablePlanesOnScatter feeds this into StablePlanesAdvanceBranchID on every
+        // FILL scatter; for a non-delta bounce the advanced branchID must become cStablePlaneInvalidBranchID
+        // so the path cleanly leaves the stable-plane branch. The previous value (0) produced a valid-looking
+        // branchID on non-delta scatters, corrupting FILL branch tracking so transmission radiance was
+        // committed onto a mis-tracked plane and dropped (black glass).
+        bs.deltaLobeIndex = ((lobe & kBSDFLobeDelta) == 0u) ? 0xFFFFFFFFu :
+            (((lobe & kBSDFLobeTransmission) == 0u) ? 1u : 0u);
         bs.pdf            = pdf;
         bs.lobeP          = lobeP;
         bs.weight         = weight;
@@ -670,6 +677,12 @@ namespace PathTracer
     {
         UpdatePathTravelled(path, rayOrigin, rayDir, rayTCurrent, workingContext);
 
+        // [Packing refactor — Gate 2] Nested-dielectric handling restored to realtime HandleHit on top
+        // of the split flags/vertexIndex packing (Gate 1). Previously the mere presence of this block
+        // blacked out opaque primary hits via a DXC miscompilation of the shared flagsAndVertexIndex
+        // word, even though opaque hits execute none of it (thin surface / empty interior list). If
+        // opaque shading stays correct now, the de-aliasing resolved the miscompilation and realtime
+        // transmission through nested dielectrics is back.
         float volumeAbsorption = 0.0;
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
         if (!path.interiorList.isEmpty())

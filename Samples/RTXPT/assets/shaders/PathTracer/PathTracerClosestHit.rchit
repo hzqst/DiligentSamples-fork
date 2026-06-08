@@ -1,18 +1,9 @@
 #include "Config.h"
 
 #define ENABLE_HIT_BRIDGE 1
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-#    include "PathTracerBridge.hlsli"
-#else
-#    include "PathTracer.hlsli"
-#endif
+#include "PathTracer.hlsli"
 #include "Rendering/Materials/MaterialBridge.hlsli"
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-using ActiveRayPayload = RTXPTMaterialHitPayload;
-#else
-#    include "PathState.hlsli"
-#    include "PathPayload.hlsli"
 using ActiveRayPayload = PathPayload;
 
 namespace PathTracer
@@ -196,129 +187,15 @@ namespace PathTracer
                   workingContext);
     }
 }
-#endif
 
 [shader("closesthit")]
 void main(inout ActiveRayPayload Payload,
           in BuiltInTriangleIntersectionAttributes Attributes)
 {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-    Payload.hitFlag     = 1u;
-    Payload.hitDistance = RayTCurrent();
-    Payload.emission    = float3(0.0, 0.0, 0.0);
-    Payload.emissiveLightPdf = 0.0;
-
-    // Initialize outputs before material bridge data overwrites them below.
-    float3 BaseColor   = float3(Attributes.barycentrics.x,
-                                Attributes.barycentrics.y,
-                                1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
-    float3 WorldNormal = -WorldRayDirection();
-    float3 VertexNormal = WorldNormal;
-    float3 FaceNormal  = -WorldRayDirection();
-    float3 WorldPos    = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-    float  Metallic    = 0.0;
-    float  Roughness   = 1.0;
-    uint   MaterialID  = 0u;
-    bool   FrontFacing = true;
-
-    const SubInstanceData subInstance = Bridge::getSubInstanceData();
-    const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
-    MaterialID                        = subInstance.MaterialID;
-
-    GeometryVertexData V0;
-    GeometryVertexData V1;
-    GeometryVertexData V2;
-    Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
-
-    const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
-
-    const float3 RayDir          = WorldRayDirection();
-    const float3 geometricNormal = Bridge::computeGeometricNormal(V0, V1, V2);
-    const bool   frontFacing     = dot(-RayDir, geometricNormal) >= 0.0;
-    FrontFacing                  = frontFacing;
-    FaceNormal                   = frontFacing ? geometricNormal : -geometricNormal;
-    WorldPos                     = Bridge::computeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
-    WorldNormal                  = Bridge::interpolateNormal(V0, V1, V2, Attributes.barycentrics);
-    // Renormalize against the geometric normal if the interpolated normal is nearly zero
-    // (degenerate vertex data) - keeps the shader robust on bad assets.
-    if (dot(WorldNormal, WorldNormal) < 1e-6)
-        WorldNormal = FaceNormal;
-    if (dot(WorldNormal, FaceNormal) < 0.0)
-        WorldNormal = -WorldNormal;
-    VertexNormal = WorldNormal;
-
-    // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
-    const float3 tangentNormal = Bridge::ignoreMeshTangentSpace(material) ? float3(0.0, 0.0, 1.0) :
-        Bridge::getTangentNormal(material, texCoord);
-    if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
-    {
-        const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, WorldNormal);
-        const float3 T            = worldTangent.xyz;
-        const float3 B            = cross(WorldNormal, T) * worldTangent.w;
-        const float3 mappedNormal = T * tangentNormal.x + B * tangentNormal.y + WorldNormal * tangentNormal.z;
-        const float  lenSq        = dot(mappedNormal, mappedNormal);
-        if (lenSq > 1e-8)
-        {
-            WorldNormal = mappedNormal * rsqrt(lenSq);
-            if (dot(WorldNormal, FaceNormal) < 0.0)
-                WorldNormal = -WorldNormal;
-        }
-    }
-
-    const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
-    Metallic                = metalRough.x;
-    Roughness               = metalRough.y;
-
-    const float4 BaseColorWithAlpha = Bridge::getBaseColor(material, texCoord);
-    BaseColor                       = BaseColorWithAlpha.rgb;
-    Payload.emission                = Bridge::getEmission(material, texCoord);
-    Payload.ior                     = Bridge::loadIoR(MaterialID);
-    Payload.transmissionFactor      = Bridge::getTransmission(material, texCoord);
-    Payload.diffuseTransmissionFactor  = Bridge::getDiffuseTransmission(material, texCoord);
-    Payload.transmissionColor          = BaseColorWithAlpha.rgb;
-    Payload.volumeAttenuationDistance  = material.volumeAttenuationDistance;
-    Payload.volumeAttenuationColor     = material.volumeAttenuationColor;
-    Payload.materialFlags              = material.flags;
-    Payload.nestedPriority             = min(material.nestedPriority, 14u);
-    Payload.thinSurface                = Bridge::isThinSurface(material) ? 1u : 0u;
-    Payload.alpha                      = BaseColorWithAlpha.a;
-    Payload.shadowNoLFadeout           = Bridge::loadShadowNoLFadeout(MaterialID);
-
-    // Precompute the emissive triangle's area-light solid-angle pdf so raygen can MIS-weight
-    // the BSDF-hit emission against emissive-triangle NEE. Only NEE-eligible constant emitters
-    // get a non-zero pdf; textured emissive surfaces stay BSDF-only for now.
-    if ((material.flags & kMaterialFlagEmissiveAreaLight) != 0u)
-    {
-        const float3 wp0   = mul(ObjectToWorld3x4(), float4(V0.position, 1.0));
-        const float3 wp1   = mul(ObjectToWorld3x4(), float4(V1.position, 1.0));
-        const float3 wp2   = mul(ObjectToWorld3x4(), float4(V2.position, 1.0));
-        const float3 ng    = cross(wp1 - wp0, wp2 - wp0);
-        const float  ngLen = length(ng);
-        const float  area  = 0.5 * ngLen;
-        if (area > 1e-9)
-        {
-            const float3 normal  = ng / ngLen;
-            const float  cosTheta = abs(dot(normal, -RayDir));
-            if (cosTheta > 2e-9)
-                Payload.emissiveLightPdf = min(kMaxSolidAnglePdf, (1.0 / area) * (RayTCurrent() * RayTCurrent()) / cosTheta);
-        }
-    }
-
-    Payload.worldPos    = WorldPos;
-    Payload.worldNormal = normalize(WorldNormal);
-    Payload.faceNormal  = normalize(FaceNormal);
-    Payload.vertexNormal = normalize(VertexNormal);
-    Payload.materialID  = MaterialID;
-    Payload.frontFacing = FrontFacing ? 1u : 0u;
-    Payload.baseColor   = BaseColor;
-    Payload.metallic    = Metallic;
-    Payload.roughness   = Roughness;
-#else
     PathState path = PathPayload::unpack(Payload);
     PathTracer::WorkingContext workingContext = GetWorkingContext();
     PathTracer::HandleHit(path, Attributes, workingContext);
     Payload = PathPayload::pack(path);
-#endif
 }
 
 // TODO(RTXPT-Port Phase R2): Emissive triangles feed area-light NEE + MIS (constant emitters only). Textured

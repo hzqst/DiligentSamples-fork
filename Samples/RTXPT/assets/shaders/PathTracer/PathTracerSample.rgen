@@ -7,244 +7,6 @@
 #include "Utils/StatelessSampleGenerators.hlsli"
 #include "PathTracer.hlsli"
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-static const float kSpecularRoughnessThreshold = 0.25;
-
-[shader("raygeneration")]
-void main()
-{
-    const uint2 pixel      = DispatchRaysIndex().xy;
-    const uint2 dimensions = DispatchRaysDimensions().xy;
-
-    // G3: stateless per-(pixel, vertex, sample) seeding keyed by the active path-trace sample index.
-    // Each path vertex + effect gets its own decorrelated generator (full Sobol/Owen is Phase R5).
-    const uint sampleIndex = g_Const.ptConsts.sampleBaseIndex;
-
-    // RTXPT-fork-compatible jitter: reference uses a full per-pixel random offset, realtime uses
-    // zero jitter unless DLSS-RR reserves a small micro-jitter value.
-    SampleGenerator sgCamera = SampleGenerator_makeStateless(pixel, 0u, sampleIndex, kSampleEffect_Base);
-    const float2    randomJitter    = sampleNext2D(sgCamera) - 0.5.xx;
-    const float2    subPixelOffset  = g_Const.ptConsts.camera.Jitter + randomJitter * g_Const.ptConsts.perPixelJitterAAScale;
-    const float2    cameraDoFSample = sampleNext2D(sgCamera);
-    CameraRay       cameraRay       = ComputeRayThinlens(g_Const.ptConsts.camera, pixel, subPixelOffset, cameraDoFSample);
-
-    float3 rayOrigin = cameraRay.origin;
-    float3 rayDir    = cameraRay.dir;
-
-    float3 throughput   = float3(1.0, 1.0, 1.0);
-    float3 pathRadiance = float3(0.0, 0.0, 0.0);
-
-    // G1: per-path firefly-filter K starts at 1.0 and shrinks as the path spreads (set after each scatter).
-    float fireflyFilterK = 1.0;
-
-    float  prevBsdfPdf        = 0.0;
-    bool   prevDidEnvNEE      = false;
-    bool   prevDidEmissiveNEE = false;
-    const uint maxBounces     = max(g_Const.ptConsts.bounceCount, 1u);
-    const uint maxNEEBounces  = min(g_Const.ptConsts.maxNEEBounceCount, maxBounces);
-    const bool enableNEE      = g_Const.ptConsts.NEEEnabled != 0u;
-    const bool enableEnvNEE   = enableNEE && ((g_Const.ptConsts.environmentNEEEnabled & 1u) != 0u);
-    const uint fullSamples    = min(32u, g_Const.ptConsts.NEEFullSamples);
-    const float ffThreshold   = g_Const.ptConsts.fireflyFilterThreshold; // 0 disables the firefly filter.
-    uint diffuseBounces       = 0u;
-    bool terminateAtNextEndpoint = false;
-    uint bounce                   = 0u;
-    uint rejectedDielectricHits   = 0u;
-    InteriorList interiorList     = InteriorList::make();
-    float        primaryDepth     = g_Const.ptConsts.camera.FarZ;
-    bool         primaryDepthCaptured = false;
-
-    [loop]
-    while (bounce < maxBounces || terminateAtNextEndpoint)
-    {
-        const uint vertexIndex = bounce + 1u;
-
-        RayDesc ray;
-        ray.Origin    = rayOrigin;
-        ray.Direction = rayDir;
-        ray.TMin      = bounce == 0u ? cameraRay.tMin : 0.0;
-        ray.TMax      = bounce == 0u ? cameraRay.tMax : 10000.0;
-
-        RTXPTMaterialHitPayload payload = PathTracer::MakeEmptyPayload(0u);
-
-        // RAY_FLAG_NONE lets alpha-test and alpha-blend any-hit run for non-opaque geometry.
-        // Opaque geometry still skips any-hit via its BLAS RAYTRACING_GEOMETRY_FLAG_OPAQUE flag.
-        TraceRay(t_SceneBVH,
-                 RAY_FLAG_NONE,
-                 0xFF,
-                 RTXPT_PRIMARY_RAY_INDEX,
-                 RTXPT_HIT_GROUP_STRIDE,
-                 RTXPT_PRIMARY_RAY_INDEX,
-                 ray,
-                 payload);
-
-        if (bounce == 0u && !primaryDepthCaptured)
-        {
-            primaryDepth = payload.hitFlag != 0u ? payload.hitDistance : g_Const.ptConsts.camera.FarZ;
-            primaryDepthCaptured = true;
-        }
-
-        if (payload.hitFlag == 0u)
-        {
-            const float misWeight = PathTracer::ComputeBSDFEnvMISWeight(prevDidEnvNEE, prevBsdfPdf, rayDir);
-            float3      environmentEmission = payload.emission * misWeight;
-            if (ffThreshold != 0.0)
-                environmentEmission = FireflyFilter(environmentEmission, ffThreshold, fireflyFilterK);
-            pathRadiance += throughput * environmentEmission;
-            break;
-        }
-
-        if (!interiorList.isEmpty())
-        {
-            const HomogeneousVolumeData volume = Bridge::loadHomogeneousVolumeData(interiorList.getTopMaterialID());
-            throughput *= HomogeneousVolumeSampler::evalTransmittance(volume, payload.hitDistance);
-        }
-
-        float outsideIoR = 1.0;
-        const bool acceptedDielectricHit =
-            PathTracer::HandleNestedDielectrics(payload,
-                                                g_Const.ptConsts.nestedDielectricsQuality,
-                                                interiorList,
-                                                rejectedDielectricHits,
-                                                outsideIoR);
-        if (!acceptedDielectricHit)
-        {
-            if (g_Const.ptConsts.nestedDielectricsQuality == 2u &&
-                rejectedDielectricHits >= PathTracer::GetMaxRejectedDielectricHits(g_Const.ptConsts.nestedDielectricsQuality))
-                break;
-
-            rayOrigin = ComputeRayOrigin(payload.worldPos, -payload.faceNormal);
-            continue;
-        }
-
-        // Accumulate emissive surfaces hit by BSDF sampling, MIS-weighted against emissive-triangle NEE (G4).
-        float3     surfaceEmission = payload.emission;
-        if (prevDidEmissiveNEE && prevBsdfPdf > 0.0 && payload.emissiveLightPdf > 0.0)
-        {
-            surfaceEmission *= PathTracer::ComputeBSDFMISForEmissiveTriangle(pixel, prevBsdfPdf, payload.emissiveLightPdf, fullSamples);
-        }
-        if (ffThreshold != 0.0)
-            surfaceEmission = FireflyFilter(surfaceEmission, ffThreshold, fireflyFilterK);
-        pathRadiance += throughput * surfaceEmission;
-
-        if (terminateAtNextEndpoint)
-            break;
-
-        // Build the glTF metallic-roughness surface the closest-hit filled in, then add explicit direct lighting
-        // before importance-sampling the GGX BSDF for the next direction.
-        const float3 wo = -rayDir;
-        StandardBSDFData bsdfData =
-            MakeStandardBSDFData(payload.worldNormal,
-                                 payload.baseColor,
-                                 payload.metallic,
-                                 payload.roughness,
-                                 payload.ior,
-                                 outsideIoR,
-                                 payload.transmissionFactor,
-                                 payload.diffuseTransmissionFactor,
-                                 payload.thinSurface != 0u,
-                                 payload.frontFacing != 0u);
-
-        const bool useNEE = enableNEE && bounce < maxNEEBounces;
-        bool       sampledEmissiveNEE = false;
-        if (useNEE)
-        {
-            SampleGenerator sgNEELight = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NEELightSampler);
-            pathRadiance += throughput * PathTracer::SampleDirectLightNEE(bsdfData,
-                                                                          payload.worldPos,
-                                                                          payload.faceNormal,
-                                                                          payload.vertexNormal,
-                                                                          payload.shadowNoLFadeout,
-                                                                          wo,
-                                                                          pixel,
-                                                                          sgNEELight,
-                                                                          fireflyFilterK,
-                                                                          sampledEmissiveNEE);
-            if (enableEnvNEE)
-            {
-                SampleGenerator sgEnvNEE = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_NextEventEstimation);
-                pathRadiance += throughput * PathTracer::SampleEnvironmentNEE(bsdfData,
-                                                                              payload.worldPos,
-                                                                              payload.faceNormal,
-                                                                              payload.vertexNormal,
-                                                                              payload.shadowNoLFadeout,
-                                                                              wo,
-                                                                              sgEnvNEE,
-                                                                              fireflyFilterK);
-            }
-        }
-
-        float3          nextDir;
-        float3          weight;
-        float           pdf;
-        const SampleGeneratorVertexBase sgBase = SampleGeneratorVertexBase::make(pixel, vertexIndex, sampleIndex);
-        float3 preGeneratedSamples;
-
-#if RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF
-        [branch]
-        if (diffuseBounces < g_Const.ptConsts.diffuseBounceCount)
-            preGeneratedSamples = SampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
-        else
-#endif
-            preGeneratedSamples = UniformSampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
-
-        uint lobe;
-        float           lobeP;
-        if (!SampleBSDF(bsdfData, wo, preGeneratedSamples, nextDir, weight, pdf, lobe, lobeP))
-            break;
-
-        const bool   isTransmission = (lobe & kBSDFLobeTransmission) != 0u;
-        const float3 scatterOrigin  = ComputeRayOrigin(payload.worldPos, isTransmission ? -payload.faceNormal : payload.faceNormal);
-        throughput *= weight;
-        if (g_Const.ptConsts.nestedDielectricsQuality != 0u)
-            PathTracer::UpdateNestedDielectricsOnScatterTransmission(payload, lobe, interiorList);
-        const bool isDiffuseBounce =
-            ((lobe & kBSDFLobeDiffuseReflection) != 0u) ||
-            (((lobe & kBSDFLobeTransmission) == 0u) && bsdfData.roughness > kSpecularRoughnessThreshold);
-        if (isDiffuseBounce)
-        {
-            ++diffuseBounces;
-            if (diffuseBounces > g_Const.ptConsts.diffuseBounceCount)
-                terminateAtNextEndpoint = true;
-        }
-
-        // G1: shrink the firefly K by the spread implied by this scatter (pdf) and the sampled lobe (lobeP).
-        fireflyFilterK = ComputeNewScatterFireflyFilterK(fireflyFilterK, pdf, lobeP);
-
-        // Russian roulette once we are past minBounceCount - unbiased early termination of dim paths.
-        if (!terminateAtNextEndpoint && bounce >= g_Const.ptConsts.minBounceCount)
-        {
-            SampleGenerator sgRR    = SampleGenerator_makeStateless(pixel, vertexIndex, sampleIndex, kSampleEffect_RussianRoulette);
-            const float     survive = clamp(max(throughput.x, max(throughput.y, throughput.z)), 0.05, 1.0);
-            if (sampleNext1D(sgRR) > survive)
-                break;
-            throughput /= survive;
-        }
-
-        prevBsdfPdf        = pdf;
-        prevDidEnvNEE      = useNEE && enableEnvNEE;
-        // Emissive MIS should depend on whether emissive NEE was available at the previous vertex,
-        // not on whether the stochastic reservoir happened to pick an emissive proxy on that bounce.
-        prevDidEmissiveNEE = useNEE && fullSamples > 0u && Bridge::getEmissiveTriangleCount() > 0u;
-
-        rayOrigin = scatterOrigin;
-        rayDir    = nextDir;
-        ++bounce;
-    }
-
-    u_OutputColor[pixel]   = float4(pathRadiance, 1.0);
-    u_Depth[pixel]         = primaryDepth;
-    u_MotionVectors[pixel] = float4(0.0, 0.0, 0.0, 0.0);
-}
-
-#else
-
-#include "PathTracerTypes.hlsli"
-#include "PathPayload.hlsli"
-#include "PathState.hlsli"
-#include "StablePlanes.hlsli"
-#include "PathTracerStablePlanes.hlsli"
-
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES || defined(__INTELLISENSE__)
 float2 FirstHitFromVBuffer(inout PathState path,
                            const uint basePlaneIndex,
@@ -361,21 +123,41 @@ void main()
 {
     const uint2 pixelPos = DispatchRaysIndex().xy;
 
+    const Ray primaryRay = Bridge::computeCameraRay(pixelPos);
     PathState path = PathTracer::EmptyPathInitialize(pixelPos,
                                                      g_Const.ptConsts.camera.PixelConeSpreadAngle);
-    PathTracer::SetupPathPrimaryRay(path, Bridge::computeCameraRay(pixelPos));
+    PathTracer::SetupPathPrimaryRay(path, primaryRay);
 
     PathTracer::WorkingContext workingContext = GetWorkingContext();
     PathTracer::StartPixel(path, workingContext);
 
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
     float2 tMinMax = FirstHitFromVBuffer(path, 0u, workingContext);
+#elif PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+    float2 tMinMax = float2(primaryRay.tMin, primaryRay.tMax);
 #else
     float2 tMinMax = float2(0.0, kMaxRayTravel);
 #endif
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+    const uint referenceMaxLoopIterations =
+        max(2u,
+            max(workingContext.PtConsts.bounceCount, 1u) +
+            PathTracer::GetMaxRejectedDielectricHits(workingContext.PtConsts.nestedDielectricsQuality) +
+            2u);
+    uint referenceLoopIterations = 0u;
+#endif
+
     while (path.isActive())
     {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        if (referenceLoopIterations++ >= referenceMaxLoopIterations)
+        {
+            path.terminate();
+            break;
+        }
+#endif
+
         nextHit(path, tMinMax, workingContext);
         postProcessHit(path, workingContext);
     }
@@ -383,5 +165,3 @@ void main()
     ValidateNaNs(path, workingContext);
     PathTracer::CommitPixel(path, workingContext);
 }
-
-#endif

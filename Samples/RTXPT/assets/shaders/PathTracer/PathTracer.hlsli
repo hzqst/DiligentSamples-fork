@@ -57,7 +57,8 @@ namespace PathTracer
         payload.shadowNoLFadeout = 0.0;
         return payload;
     }
-#else
+#endif
+
     inline PathPayload MakeVisibilityPayload(uint2 pixelPos)
     {
         PathState visibilityPath = EmptyPathInitialize(pixelPos, 0.0);
@@ -69,7 +70,6 @@ namespace PathTracer
         visibilityPath.SetThp(float3(0.0, 0.0, 0.0));
         return PathPayload::pack(visibilityPath);
     }
-#endif
 
     bool TraceVisibilityRay(float3 origin, float3 dir, float tMax)
     {
@@ -82,18 +82,6 @@ namespace PathTracer
         ray.TMin      = kVisibilityRayTMin;
         ray.TMax      = tMax;
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        RTXPTMaterialHitPayload payload = MakeEmptyPayload(1u);
-        TraceRay(t_SceneBVH,
-                 RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
-                 0xFF,
-                 RTXPT_VISIBILITY_RAY_INDEX,
-                 RTXPT_HIT_GROUP_STRIDE,
-                 RTXPT_VISIBILITY_RAY_INDEX,
-                 ray,
-                 payload);
-        return payload.hitFlag == 0u;
-#else
         PathPayload payload = MakeVisibilityPayload(Bridge::getPixelPosition());
         TraceRay(t_SceneBVH,
                  RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
@@ -104,7 +92,6 @@ namespace PathTracer
                  ray,
                  payload);
         return !PathPayload::unpack(payload).isActive();
-#endif
     }
 
     float3 MakeVisibilityOrigin(float3 hitPos, float3 faceNormal, float3 shadingNormal, float3 dir)

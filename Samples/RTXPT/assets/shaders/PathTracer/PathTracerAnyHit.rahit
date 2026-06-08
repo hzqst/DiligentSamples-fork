@@ -4,14 +4,9 @@
 #include "PathTracerBridge.hlsli"
 #include "Rendering/Materials/MaterialBridge.hlsli"
 #include "Utils/SampleGenerators.hlsli"
+#include "PathPayload.hlsli"
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-using ActiveRayPayload = RTXPTMaterialHitPayload;
-#else
-#    include "PathState.hlsli"
-#    include "PathPayload.hlsli"
 using ActiveRayPayload = PathPayload;
-#endif
 
 // Alpha-test / alpha-blend any-hit. Only invoked for geometry whose BLAS geometry flag is RAYTRACING_GEOMETRY_FLAG_NONE.
 // Opaque geometry never reaches this shader.

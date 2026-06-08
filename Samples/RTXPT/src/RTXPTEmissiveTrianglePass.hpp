@@ -72,6 +72,7 @@ private:
     RefCntAutoPtr<IPipelineState>         m_PSO;
     RefCntAutoPtr<IShaderResourceBinding> m_SRB;
     RefCntAutoPtr<IBufferView>            m_IndexBufferView;
+    RefCntAutoPtr<IBuffer>                m_Constants;
     RTXPTEmissiveTrianglePassStats        m_Stats;
 };
 

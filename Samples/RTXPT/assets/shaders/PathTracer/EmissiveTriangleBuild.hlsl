@@ -3,6 +3,14 @@
 
 #include "PathTracerShared.h"
 
+struct EmissiveTriangleBuildConstants
+{
+    uint  SubInstanceCount;
+    uint3 Padding;
+};
+
+ConstantBuffer<EmissiveTriangleBuildConstants> g_EmissiveTriangleBuildConstants;
+
 StructuredBuffer<MaterialPTData>     t_PTMaterialData;
 StructuredBuffer<SubInstanceData>    t_SubInstanceData;
 StructuredBuffer<float4x4>           t_SubInstanceTransforms;
@@ -40,21 +48,12 @@ float3 transformPosition(float4x4 transform, float3 position)
 [numthreads(64, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
-    uint subInstanceCount = 0;
-    uint subInstanceStride = 0;
-    t_SubInstanceData.GetDimensions(subInstanceCount, subInstanceStride);
-    if (dispatchThreadId.x >= subInstanceCount)
-        return;
-
-    uint materialCount = 0;
-    uint materialStride = 0;
-    t_PTMaterialData.GetDimensions(materialCount, materialStride);
-    if (materialCount == 0u)
+    if (dispatchThreadId.x >= g_EmissiveTriangleBuildConstants.SubInstanceCount)
         return;
 
     const uint           subInstanceIndex = dispatchThreadId.x;
     const SubInstanceData subInstance     = t_SubInstanceData[subInstanceIndex];
-    const MaterialPTData  material        = t_PTMaterialData[min(subInstance.MaterialID, materialCount - 1u)];
+    const MaterialPTData  material        = t_PTMaterialData[subInstance.MaterialID];
     if ((material.flags & kMaterialFlagEmissiveAreaLight) == 0u)
         return;
 
@@ -62,7 +61,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (triangleCount == 0u)
         return;
 
-    const float4x4 transform = t_SubInstanceTransforms[min(subInstanceIndex, subInstanceCount - 1u)];
+    const float4x4 transform = t_SubInstanceTransforms[subInstanceIndex];
     const float3   emission  = material.emissiveFactor;
 
     [loop]

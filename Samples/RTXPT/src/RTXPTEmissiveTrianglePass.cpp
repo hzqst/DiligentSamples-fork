@@ -28,15 +28,29 @@
 
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
+#include "MapHelper.hpp"
 
 namespace Diligent
 {
+
+namespace
+{
+
+struct EmissiveTriangleBuildConstants
+{
+    Uint32 SubInstanceCount = 0;
+    Uint32 Padding[3]       = {};
+};
+static_assert(sizeof(EmissiveTriangleBuildConstants) == 16, "EmissiveTriangleBuildConstants must match EmissiveTriangleBuild.hlsl");
+
+} // namespace
 
 void RTXPTEmissiveTrianglePass::Reset()
 {
     m_PSO.Release();
     m_SRB.Release();
     m_IndexBufferView.Release();
+    m_Constants.Release();
     m_Stats = {};
 }
 
@@ -101,6 +115,7 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
+        .AddVariable(SHADER_TYPE_COMPUTE, "g_EmissiveTriangleBuildConstants", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_PTMaterialData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_SubInstanceData", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_SubInstanceTransforms", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
@@ -129,6 +144,17 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
     if (!m_IndexBufferView)
         return false;
 
+    BufferDesc ConstantsDesc;
+    ConstantsDesc.Name           = "RTXPT emissive triangle build constants";
+    ConstantsDesc.Size           = sizeof(EmissiveTriangleBuildConstants);
+    ConstantsDesc.BindFlags      = BIND_UNIFORM_BUFFER;
+    ConstantsDesc.Usage          = USAGE_DYNAMIC;
+    ConstantsDesc.CPUAccessFlags = CPU_ACCESS_WRITE;
+    pDevice->CreateBuffer(ConstantsDesc, nullptr, &m_Constants);
+    VERIFY(m_Constants, "Failed to create RTXPT emissive triangle build constants");
+    if (!m_Constants)
+        return false;
+
     auto SetStatic = [&](const char* Name, IDeviceObject* pObject) {
         if (pObject == nullptr)
         {
@@ -148,6 +174,7 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
     };
 
     const bool Bound =
+        SetStatic("g_EmissiveTriangleBuildConstants", m_Constants) &&
         SetStatic("t_PTMaterialData", pMaterialBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE)) &&
         SetStatic("t_SubInstanceData", pSubInstanceBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE)) &&
         SetStatic("t_SubInstanceTransforms", pSubInstanceTransformBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE)) &&
@@ -174,6 +201,14 @@ bool RTXPTEmissiveTrianglePass::Dispatch(IDeviceContext* pContext, Uint32 SubIns
 
     if (!IsReady() || pContext == nullptr || SubInstanceCount == 0)
         return false;
+
+    MapHelper<EmissiveTriangleBuildConstants> MappedConstants{pContext, m_Constants, MAP_WRITE, MAP_FLAG_DISCARD};
+    if (MappedConstants == nullptr)
+    {
+        DEV_ERROR("Failed to map RTXPT emissive triangle build constants");
+        return false;
+    }
+    MappedConstants->SubInstanceCount = SubInstanceCount;
 
     pContext->SetPipelineState(m_PSO);
     pContext->CommitShaderResources(m_SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

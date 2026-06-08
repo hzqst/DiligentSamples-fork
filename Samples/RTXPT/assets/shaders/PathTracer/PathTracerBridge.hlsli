@@ -228,7 +228,6 @@ namespace Bridge
         return t_EmissiveTriangles[index];
     }
 
-#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
     Ray computeCameraRay(const uint2 pixelPos)
     {
         SampleGenerator sg = SampleGenerator_makeStateless(pixelPos, 0u, getSampleIndex(), kSampleEffect_Base);
@@ -240,6 +239,7 @@ namespace Bridge
         return Ray::make(cameraRay.origin, cameraRay.dir, cameraRay.tMin, cameraRay.tMax);
     }
 
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
     float3 computeMotionVector(float3 posW, float3 prevPosW)
     {
         float4 clipPos = mul(float4(posW, 1.0), g_Const.view.MatWorldToClipNoOffset);

@@ -63,6 +63,7 @@ namespace PathTracer
             worldNormal = faceNormal;
         if (dot(worldNormal, faceNormal) < 0.0)
             worldNormal = -worldNormal;
+        vertexNormal = worldNormal;
 
         const float3 tangentNormal = Bridge::ignoreMeshTangentSpace(material) ? float3(0.0, 0.0, 1.0) :
             Bridge::getTangentNormal(material, texCoord);
@@ -94,7 +95,6 @@ namespace PathTracer
         diffuseTransmissionFactor       = Bridge::getDiffuseTransmission(material, texCoord);
         thinSurface                     = Bridge::isThinSurface(material);
         shadowNoLFadeout                = Bridge::loadShadowNoLFadeout(materialID);
-        vertexNormal                    = worldNormal;
         surfaceEmission                 = Bridge::getEmission(material, texCoord);
         if ((material.flags & kMaterialFlagEmissiveAreaLight) != 0u)
         {
@@ -169,7 +169,7 @@ namespace PathTracer
                                  ior,
                                  0xFFFFFFFFu,
                                  0xFFFFFFFFu,
-                                 emissiveLightPdf);
+                                  emissiveLightPdf);
     }
 
     inline void HandleHit(inout PathState path,
@@ -178,13 +178,103 @@ namespace PathTracer
     {
         float3 surfaceEmission;
         SurfaceData surfaceData = LoadCurrentSurfaceData(Attributes, surfaceEmission);
-        HandleHit(path,
-                  surfaceData,
-                  surfaceEmission,
-                  WorldRayOrigin(),
-                  WorldRayDirection(),
-                  RayTCurrent(),
-                  workingContext);
+        const float3 rayOrigin    = WorldRayOrigin();
+        const float3 rayDir       = WorldRayDirection();
+        const float  rayTCurrent  = RayTCurrent();
+
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        UpdatePathTravelled(path, rayOrigin, rayDir, rayTCurrent, workingContext);
+
+        path.CaptureReferencePrimaryDepth(rayTCurrent);
+
+#if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
+        if (workingContext.PtConsts.nestedDielectricsQuality != 0u &&
+            !path.interiorList.isEmpty())
+        {
+            const HomogeneousVolumeData volume = Bridge::loadHomogeneousVolumeData(path.interiorList.getTopMaterialID());
+            const float3 transmittance = HomogeneousVolumeSampler::evalTransmittance(volume, rayTCurrent);
+            UpdatePathThroughput(path, transmittance);
+        }
+#endif
+
+        const bool rejectedFalseHit = !HandleNestedDielectrics(surfaceData, path, workingContext);
+        if (rejectedFalseHit)
+            return;
+
+        float3 referenceSurfaceEmission = surfaceEmission;
+        const NEEBSDFMISInfo prevMISInfo = NEEBSDFMISInfo::Unpack16bit(path.GetPackedMISInfo());
+        const bool didEmissiveNEE =
+            prevMISInfo.LightSamplingEnabled &&
+            prevMISInfo.FullSamples > 0u &&
+            Bridge::getEmissiveTriangleCount() > 0u;
+        if (didEmissiveNEE && path.GetBsdfScatterPdf() > 0.0 && surfaceData.emissiveLightPdf > 0.0)
+        {
+            referenceSurfaceEmission *= ComputeBSDFMISForEmissiveTriangle(path.GetPixelPos(),
+                                                                          path.GetBsdfScatterPdf(),
+                                                                          surfaceData.emissiveLightPdf,
+                                                                          prevMISInfo.FullSamples);
+        }
+        referenceSurfaceEmission = ApplyReferenceFireflyFilter(referenceSurfaceEmission, path, workingContext);
+
+        if (any(referenceSurfaceEmission > 0.0))
+        {
+            const float3 radiance = path.GetThp() * referenceSurfaceEmission;
+            const float specRadianceAvg =
+                path.hasFlag(PathFlags::stablePlaneBaseScatterDiff) ? 0.0 : Average(radiance);
+            AccumulatePathRadiance(workingContext,
+                                   path,
+                                   radiance,
+                                   specRadianceAvg,
+                                   path.hasFlag(PathFlags::stablePlaneOnBranch),
+                                   ShouldCollectGISecondaryRadiance(path));
+        }
+
+        const bool pathStopping = path.isTerminatingAtNextBounce();
+
+        if (pathStopping)
+        {
+            path.terminate();
+            return;
+        }
+
+        UpdatePathThroughput(path, path.GetThpRuRuCorrection().xxx);
+
+        const PathState preScatterPath = path;
+        BSDFSample bs;
+        const bool scatterValid = GenerateScatterRay(surfaceData, path, workingContext, bs);
+
+        SampleGenerator sgDirect = SampleGenerator_makeStateless(preScatterPath.GetPixelPos(),
+                                                                 preScatterPath.getVertexIndex(),
+                                                                 Bridge::getSampleIndex(),
+                                                                 kSampleEffect_NEELightSampler);
+        SampleGenerator sgEnv = SampleGenerator_makeStateless(preScatterPath.GetPixelPos(),
+                                                              preScatterPath.getVertexIndex(),
+                                                              Bridge::getSampleIndex(),
+                                                              kSampleEffect_NextEventEstimation);
+        NEEResult neeResult = HandleNEE(preScatterPath, surfaceData, sgDirect, sgEnv, workingContext);
+        path.SetPackedMISInfo_ThpRuRuCorrection(neeResult.BSDFMISInfo.Pack16bit(), path.GetThpRuRuCorrection());
+        AccumulateNEERadiance(workingContext, path, preScatterPath, neeResult);
+
+        if (!scatterValid)
+        {
+            path.terminate();
+            return;
+        }
+
+        const bool shouldTerminate = HasFinishedSurfaceBounces(path.getVertexIndex() + 1,
+                                                               path.getCounter(PackedCounters::DiffuseBounces));
+        if (shouldTerminate)
+        {
+            path.setTerminateAtNextBounce();
+        }
+        else if (!HandleRussianRoulette(path, preScatterPath, workingContext))
+        {
+            return;
+        }
+#else
+        HandleHit(path, surfaceData, surfaceEmission, rayOrigin, rayDir, rayTCurrent, workingContext);
+        return;
+#endif
     }
 }
 

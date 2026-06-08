@@ -500,7 +500,7 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `Sample.cpp::PathTrace` BUILD pre-pass | `src/RTXPTSample.cpp::DispatchPathTracePrePass` | Realtime-only dispatch to `BuildStablePlanes`, then UAV barriers. |
 | `Sample.cpp::PathTrace` `LightsBaker.UpdateEnd(... Depth, MotionVectors)` | `src/RTXPTLightsBaker::UpdateEnd(... pDepthSRV, pMotionVectorsSRV)` | Call-order and data contract preserved; current Diligent feedback implementation accepts but does not yet consume the views. |
 | `Sample.cpp::PathTrace` FILL/REFERENCE sub-sample loop | `src/RTXPTSample.cpp::DispatchPathTraceLoop` | Uses `SampleMiniConstants.params.x` for sub-sample index. |
-| `Shaders/PathTracer/PathPayload.hlsli` | `assets/shaders/PathTracer/PathPayload.hlsli` | Packed path-state payload for realtime variants. |
+| `Shaders/PathTracer/PathPayload.hlsli` | `assets/shaders/PathTracer/PathPayload.hlsli` | Packed path-state payload for realtime variants; reference uses the same type with fp32 parity lanes. |
 | `Shaders/PathTracer/PathState.hlsli` | `assets/shaders/PathTracer/PathState.hlsli` | Stable-plane flags/counters and path state. |
 | `Shaders/PathTracer/StablePlanes.hlsli` | `assets/shaders/PathTracer/StablePlanes.hlsli` | Stable-plane buffer/header/radiance logic. |
 | `Shaders/PathTracer/PathTracerStablePlanes.hlsli` | `assets/shaders/PathTracer/PathTracerStablePlanes.hlsli` | Build/fill stable-plane hit/miss/scatter logic. |
@@ -526,7 +526,9 @@ Remaining intentional fork differences:
 - Reference raygen keeps a safety iteration ceiling in addition to normal path
   termination.
 - `RTXPTRayTracingPass.cpp` keeps the conservative 160-byte RT payload size
-  while `PathPayload` is 80 bytes.
+  while realtime BUILD/FILL `PathPayload` is 80 bytes. Reference `PathPayload`
+  uses 112 bytes to keep radiance, throughput, BSDF pdf, firefly K, and MIS
+  state in fp32 across ray calls.
 
 Parity notes:
 

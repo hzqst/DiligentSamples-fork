@@ -318,8 +318,11 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit, pAnyHit);
         else
             PSOCreateInfo.AddTriangleHitShader("PrimaryHit", pClosestHit);
+        const bool TracesVisibilityFromHit =
+            Variant == RTXPTPathTraceVariant::Reference ||
+            Variant == RTXPTPathTraceVariant::FillStablePlanes;
         PSOCreateInfo.RayTracingPipeline.MaxRecursionDepth =
-            Variant == RTXPTPathTraceVariant::FillStablePlanes ? 2 : 1;
+            TracesVisibilityFromHit ? 2 : 1;
         PSOCreateInfo.RayTracingPipeline.ShaderRecordSize = 0;
         PSOCreateInfo.MaxAttributeSize                    = static_cast<Uint32>(sizeof(float) * 2);
         PSOCreateInfo.MaxPayloadSize                      = static_cast<Uint32>(sizeof(float) * 40);
@@ -641,7 +644,7 @@ bool RTXPTRayTracingPass::Dispatch(IDeviceContext*                pContext,
         return Ok;
     };
 
-    // Compatibility bridge: Reference currently reflects legacy output names, while realtime variants use source-compatible names.
+    // Compatibility bridge: bind either the source-compatible names or the legacy output names.
     auto SetDynamicForNamePair = [&](const char* SourceName, const char* LegacyName, IDeviceObject* pObject, bool Required) {
         bool       SourceFound = false;
         bool       LegacyFound = false;

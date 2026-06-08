@@ -323,40 +323,38 @@ namespace PathTracer
                                         const WorkingContext workingContext)
     {
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
+        const uint nestedQuality = workingContext.PtConsts.nestedDielectricsQuality;
         const bool thinSurface = surfaceData.shadingData.mtl.isThinSurface();
-        if (thinSurface)
-            return true;
-
         const uint nestedPriority = surfaceData.shadingData.mtl.getNestedPriority();
-
-        const bool trueIntersection = path.interiorList.isTrueIntersection(nestedPriority);
-
-        if (!trueIntersection)
-        {
-            const uint maxRejectedHits = GetMaxRejectedDielectricHits(RTXPT_NESTED_DIELECTRICS_QUALITY);
-            if (path.getCounter(PackedCounters::RejectedHits) < maxRejectedHits)
-            {
-                path.incrementCounter(PackedCounters::RejectedHits);
-                path.interiorList.handleIntersection(surfaceData.shadingData.materialID,
-                                                     nestedPriority,
-                                                     surfaceData.shadingData.frontFacing);
-                path.SetOrigin(ComputeRayOrigin(surfaceData.shadingData.posW,
-                                                -surfaceData.shadingData.faceNCorrected));
-                path.decrementVertexIndex();
-                return false;
-            }
-#if RTXPT_NESTED_DIELECTRICS_QUALITY == 2
-            else
-            {
-                path.terminate();
-                return false;
-            }
-#endif
-        }
-
         const float outsideIoR = ComputeOutsideIoR(path.interiorList,
                                                    surfaceData.shadingData.materialID,
                                                    surfaceData.shadingData.frontFacing);
+
+        if (nestedQuality != 0u && !thinSurface)
+        {
+            const bool trueIntersection = path.interiorList.isTrueIntersection(nestedPriority);
+
+            if (!trueIntersection)
+            {
+                const uint maxRejectedHits = GetMaxRejectedDielectricHits(nestedQuality);
+                if (path.getCounter(PackedCounters::RejectedHits) < maxRejectedHits)
+                {
+                    path.incrementCounter(PackedCounters::RejectedHits);
+                    path.interiorList.handleIntersection(surfaceData.shadingData.materialID,
+                                                         nestedPriority,
+                                                         surfaceData.shadingData.frontFacing);
+                    path.SetOrigin(ComputeRayOrigin(surfaceData.shadingData.posW,
+                                                    -surfaceData.shadingData.faceNCorrected));
+                    path.decrementVertexIndex();
+                    return false;
+                }
+                else if (nestedQuality == 2u)
+                {
+                    path.terminate();
+                    return false;
+                }
+            }
+        }
 
         UpdateSurfaceOutsideIoR(surfaceData, outsideIoR);
 #endif
@@ -388,7 +386,8 @@ namespace PathTracer
                                                              const WorkingContext workingContext)
     {
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
-        if (!shadingData.mtl.isThinSurface())
+        if (workingContext.PtConsts.nestedDielectricsQuality != 0u &&
+            !shadingData.mtl.isThinSurface())
         {
             const uint nestedPriority = shadingData.mtl.getNestedPriority();
             path.interiorList.handleIntersection(shadingData.materialID, nestedPriority, shadingData.frontFacing);
@@ -641,6 +640,16 @@ namespace PathTracer
         return true;
     }
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+    inline void UpdatePathTravelledLengthOnly(inout PathState path, const float rayTCurrent)
+    {
+        const float rayConeSpreadAngle = path.rayCone.getSpreadAngle();
+        path.rayCone = RayCone::make(path.rayCone.getWidth() + rayConeSpreadAngle * rayTCurrent,
+                                     rayConeSpreadAngle);
+        path.SetSceneLength(min(path.GetSceneLength() + rayTCurrent, kMaxRayTravel));
+    }
+#endif
+
     inline void UpdatePathTravelled(inout PathState path,
                                     const float3 rayOrigin,
                                     const float3 rayDir,
@@ -722,7 +731,8 @@ namespace PathTracer
         // transmission through nested dielectrics is back.
         float volumeAbsorption = 0.0;
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
-        if (!path.interiorList.isEmpty())
+        if (workingContext.PtConsts.nestedDielectricsQuality != 0u &&
+            !path.interiorList.isEmpty())
         {
             const HomogeneousVolumeData volume = Bridge::loadHomogeneousVolumeData(path.interiorList.getTopMaterialID());
             const float3 transmittance = HomogeneousVolumeSampler::evalTransmittance(volume, rayTCurrent);

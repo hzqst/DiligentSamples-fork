@@ -52,8 +52,8 @@ struct PathState
     uint4 PackOriginId;
     uint4 PackDirSceneLength;
 
-    // Mode-specific payload lane: BuildStablePlanes stores imageXformPacked here,
-    // other modes store packed L. Both variants must remain uint2 to keep PathPayload 5xuint4.
+    // Realtime payload lanes: BuildStablePlanes stores imageXformPacked here,
+    // FillStablePlanes stores packed L. Reference keeps fp32 image-parity state below.
     uint2 pack23;
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
     uint2 imageXformPacked;
@@ -70,6 +70,14 @@ struct PathState
     RayCone rayCone;
     uint    pack0;
     uint    pack1;
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+    float3  referenceThp;
+    float4  referenceL;
+    float   referenceFireflyFilterK;
+    float   referenceBsdfScatterPdf;
+    uint    referencePackedMISInfo;
+    float   referenceThpRuRuCorrection;
+#endif
     // [PathState packing refactor — Gate 1] The flags bits and the vertex index used to share one
     // packed word (flagsAndVertexIndex). They are split into two independent members so DXC no longer
     // has to track them as sub-lanes of a single uint. The single 32-bit wire layout is unchanged:
@@ -110,32 +118,92 @@ struct PathState
 #else
     void SetFireflyFilterK_BsdfScatterPdf(float fireflyFilterK, float bsdfScatterPdf)
     {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        referenceFireflyFilterK = fireflyFilterK;
+        referenceBsdfScatterPdf = bsdfScatterPdf;
+#else
         pack0 = (f32tof16(clamp(fireflyFilterK, 0.0, HLF_MAX)) << 16) |
             f32tof16(clamp(bsdfScatterPdf, 0.0, HLF_MAX));
+#endif
     }
-    lpfloat GetFireflyFilterK() { return lpfloat(f16tof32(pack0 >> 16)); }
-    lpfloat GetBsdfScatterPdf() { return lpfloat(f16tof32(pack0 & 0xffff)); }
+    lpfloat GetFireflyFilterK()
+    {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        return lpfloat(referenceFireflyFilterK);
+#else
+        return lpfloat(f16tof32(pack0 >> 16));
+#endif
+    }
+    lpfloat GetBsdfScatterPdf()
+    {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        return lpfloat(referenceBsdfScatterPdf);
+#else
+        return lpfloat(f16tof32(pack0 & 0xffff));
+#endif
+    }
 
     void SetPackedMISInfo_ThpRuRuCorrection(uint packedMISInfo, float thpRuRuCorrection)
     {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        referencePackedMISInfo     = packedMISInfo;
+        referenceThpRuRuCorrection = thpRuRuCorrection;
+#else
         pack1 = (packedMISInfo << 16) | f32tof16(clamp(thpRuRuCorrection, 0.0, HLF_MAX));
+#endif
     }
-    lpuint GetPackedMISInfo() { return lpuint(pack1 >> 16); }
-    lpfloat GetThpRuRuCorrection() { return lpfloat(f16tof32(pack1 & 0xffff)); }
+    lpuint GetPackedMISInfo()
+    {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        return lpuint(referencePackedMISInfo);
+#else
+        return lpuint(pack1 >> 16);
+#endif
+    }
+    lpfloat GetThpRuRuCorrection()
+    {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        return lpfloat(referenceThpRuRuCorrection);
+#else
+        return lpfloat(f16tof32(pack1 & 0xffff));
+#endif
+    }
 #endif
 
     void SetThp(float3 thp)
     {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        referenceThp = thp;
+#else
         pack23 = Fp32ToFp16NoClamp(float4(clamp(thp, 0.xxx, HLF_MAX.xxx), 0.0));
+#endif
     }
-    float3 GetThp() { return Fp16ToFp32(pack23).xyz; }
+    float3 GetThp()
+    {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        return referenceThp;
+#else
+        return Fp16ToFp32(pack23).xyz;
+#endif
+    }
 
 #if PATH_TRACER_MODE != PATH_TRACER_MODE_BUILD_STABLE_PLANES
     void SetL(float4 l)
     {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        referenceL = l;
+#else
         pack45 = Fp32ToFp16NoClamp(clamp(l, 0.xxxx, HLF_MAX.xxxx));
+#endif
     }
-    float4 GetL() { return Fp16ToFp32(pack45); }
+    float4 GetL()
+    {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        return referenceL;
+#else
+        return Fp16ToFp32(pack45);
+#endif
+    }
 #endif
 
     bool isTerminated() { return !isActive(); }

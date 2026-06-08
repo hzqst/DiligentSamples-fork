@@ -177,6 +177,7 @@ namespace PathTracer
         lpfloat interiorIoR;
         uint    neeTriangleLightIndex;
         uint    neeAnalyticLightIndex;
+        float   emissiveLightPdf;
 
         static SurfaceData make(StablePlaneShadingData shadingData,
                                 ActiveBSDF bsdf,
@@ -185,7 +186,8 @@ namespace PathTracer
 #endif
                                 lpfloat interiorIoR,
                                 uint neeTriangleLightIndex,
-                                uint neeAnalyticLightIndex)
+                                uint neeAnalyticLightIndex,
+                                float emissiveLightPdf)
         {
             SurfaceData ret;
             ret.shadingData           = shadingData;
@@ -196,6 +198,7 @@ namespace PathTracer
             ret.interiorIoR           = interiorIoR;
             ret.neeTriangleLightIndex = neeTriangleLightIndex;
             ret.neeAnalyticLightIndex = neeAnalyticLightIndex;
+            ret.emissiveLightPdf      = emissiveLightPdf;
             return ret;
         }
     };

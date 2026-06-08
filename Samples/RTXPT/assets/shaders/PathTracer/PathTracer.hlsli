@@ -252,6 +252,27 @@ namespace PathTracer
     }
 #endif
 
+    inline bool ReferenceShouldRunNEE(const PathState preScatterPath, const WorkingContext workingContext)
+    {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        const uint maxBounces    = max(workingContext.PtConsts.bounceCount, 1u);
+        const uint maxNEEBounces = min(workingContext.PtConsts.maxNEEBounceCount, maxBounces);
+        return preScatterPath.getVertexIndex() <= maxNEEBounces;
+#else
+        return true;
+#endif
+    }
+
+    inline float3 ApplyReferenceFireflyFilter(float3 radiance, const PathState path, const WorkingContext workingContext)
+    {
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        const float ffThreshold = workingContext.PtConsts.fireflyFilterThreshold;
+        if (ffThreshold != 0.0)
+            radiance = FireflyFilter(radiance, ffThreshold, path.GetFireflyFilterK());
+#endif
+        return radiance;
+    }
+
     inline bool HasFinishedSurfaceBounces(uint vertexIndex, uint diffuseBounces)
     {
         if (g_Const.ptConsts.bounceCount < vertexIndex)
@@ -433,6 +454,8 @@ namespace PathTracer
         const uint fullSamples   = min(32u, workingContext.PtConsts.NEEFullSamples);
         if (!enableNEE || fullSamples == 0u)
             return result;
+        if (!ReferenceShouldRunNEE(preScatterPath, workingContext))
+            return result;
 
         result.BSDFMISInfo.LightSamplingEnabled = true;
         result.BSDFMISInfo.LightSamplingIsSSC   = false;
@@ -521,12 +544,21 @@ namespace PathTracer
         if (isTransmission)
             UpdateNestedDielectricsOnScatterTransmission(surfaceData.shadingData, path, workingContext);
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        const bool isDiffuseBounce =
+            ((lobe & kBSDFLobeDiffuseReflection) != 0u) ||
+            (((lobe & kBSDFLobeTransmission) == 0u) &&
+             surfaceData.bsdf.standardData.roughness > kSpecularRoughnessThreshold);
+        if (isDiffuseBounce)
+            path.incrementCounter(PackedCounters::DiffuseBounces);
+#else
         const bool isDiffuseBounce =
             ((lobe & (kBSDFLobeDiffuseReflection | kBSDFLobeDiffuseTransmission)) != 0u) ||
             surfaceData.bsdf.standardData.roughness > kSpecularRoughnessThreshold;
         if (isDiffuseBounce &&
             !(((lobe & kBSDFLobeDiffuseTransmission) != 0u) && ((path.getVertexIndex() % 2u) == 1u)))
             path.incrementCounter(PackedCounters::DiffuseBounces);
+#endif
 
         bs = MakeBSDFSample(lobe, pdf, lobeP, weight, wi);
 
@@ -630,10 +662,28 @@ namespace PathTracer
     }
 
     inline bool HandleRussianRoulette(inout PathState path,
-                                      inout UniformSampleSequenceGenerator sampleGenerator,
+                                      const PathState preScatterPath,
                                       const WorkingContext workingContext)
     {
-        return false;
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        if (preScatterPath.getVertexIndex() <= workingContext.PtConsts.minBounceCount)
+            return true;
+
+        SampleGenerator sgRR = SampleGenerator_makeStateless(preScatterPath.GetPixelPos(),
+                                                             preScatterPath.getVertexIndex(),
+                                                             Bridge::getSampleIndex(),
+                                                             kSampleEffect_RussianRoulette);
+        const float3 thp     = path.GetThp();
+        const float  survive = clamp(max(thp.x, max(thp.y, thp.z)), 0.05, 1.0);
+        if (sampleNext1D(sgRR) > survive)
+        {
+            path.terminate();
+            return false;
+        }
+
+        path.SetThp(thp / survive);
+#endif
+        return true;
     }
 
     inline void UpdatePathTravelled(inout PathState path,
@@ -664,6 +714,15 @@ namespace PathTracer
 
         EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
         float3 environmentEmission = envSampler.Eval(rayDir, 0.0);
+
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        const NEEBSDFMISInfo prevMISInfo = NEEBSDFMISInfo::Unpack16bit(path.GetPackedMISInfo());
+        const bool didEnvNEE =
+            prevMISInfo.LightSamplingEnabled &&
+            ((workingContext.PtConsts.environmentNEEEnabled & 1u) != 0u);
+        environmentEmission *= ComputeBSDFEnvMISWeight(didEnvNEE, path.GetBsdfScatterPdf(), rayDir);
+        environmentEmission = ApplyReferenceFireflyFilter(environmentEmission, path, workingContext);
+#endif
 
 #if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         StablePlanesHandleMiss(path, environmentEmission, rayOrigin, rayDir, rayTCurrent, workingContext);
@@ -696,6 +755,10 @@ namespace PathTracer
     {
         UpdatePathTravelled(path, rayOrigin, rayDir, rayTCurrent, workingContext);
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        path.CaptureReferencePrimaryDepth(rayTCurrent);
+#endif
+
         // [Packing refactor — Gate 2] Nested-dielectric handling restored to realtime HandleHit on top
         // of the split flags/vertexIndex packing (Gate 1). Previously the mere presence of this block
         // blacked out opaque primary hits via a DXC miscompilation of the shared flagsAndVertexIndex
@@ -723,9 +786,26 @@ namespace PathTracer
             return;
         }
 
-        if (any(surfaceEmission > 0.0))
+        float3 referenceSurfaceEmission = surfaceEmission;
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        const NEEBSDFMISInfo prevMISInfo = NEEBSDFMISInfo::Unpack16bit(path.GetPackedMISInfo());
+        const bool didEmissiveNEE =
+            prevMISInfo.LightSamplingEnabled &&
+            prevMISInfo.FullSamples > 0u &&
+            Bridge::getEmissiveTriangleCount() > 0u;
+        if (didEmissiveNEE && path.GetBsdfScatterPdf() > 0.0 && surfaceData.emissiveLightPdf > 0.0)
         {
-            const float3 radiance = path.GetThp() * surfaceEmission;
+            referenceSurfaceEmission *= ComputeBSDFMISForEmissiveTriangle(path.GetPixelPos(),
+                                                                          path.GetBsdfScatterPdf(),
+                                                                          surfaceData.emissiveLightPdf,
+                                                                          prevMISInfo.FullSamples);
+        }
+        referenceSurfaceEmission = ApplyReferenceFireflyFilter(referenceSurfaceEmission, path, workingContext);
+#endif
+
+        if (any(referenceSurfaceEmission > 0.0))
+        {
+            const float3 radiance = path.GetThp() * referenceSurfaceEmission;
             const float specRadianceAvg =
                 path.hasFlag(PathFlags::stablePlaneBaseScatterDiff) ? 0.0 : Average(radiance);
             AccumulatePathRadiance(workingContext,
@@ -812,7 +892,13 @@ namespace PathTracer
         const bool shouldTerminate = HasFinishedSurfaceBounces(path.getVertexIndex() + 1,
                                                                path.getCounter(PackedCounters::DiffuseBounces));
         if (shouldTerminate)
+        {
             path.setTerminateAtNextBounce();
+        }
+        else if (!HandleRussianRoulette(path, preScatterPath, workingContext))
+        {
+            return;
+        }
 #endif
     }
 } // namespace PathTracer

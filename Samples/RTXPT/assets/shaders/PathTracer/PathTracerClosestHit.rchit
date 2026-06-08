@@ -49,6 +49,7 @@ namespace PathTracer
         uint   psdExclude                       = 0u;
         uint   psdBlockMotionVectorsAtSurface   = 0u;
         uint   psdDominantDeltaLobeP1           = 0u;
+        float  emissiveLightPdf                 = 0.0;
         surfaceEmission                         = float3(0.0, 0.0, 0.0);
 
         const SubInstanceData subInstance = Bridge::getSubInstanceData();
@@ -104,6 +105,22 @@ namespace PathTracer
         shadowNoLFadeout                = Bridge::loadShadowNoLFadeout(materialID);
         vertexNormal                    = worldNormal;
         surfaceEmission                 = Bridge::getEmission(material, texCoord);
+        if ((material.flags & kMaterialFlagEmissiveAreaLight) != 0u)
+        {
+            const float3 wp0   = mul(ObjectToWorld3x4(), float4(V0.position, 1.0));
+            const float3 wp1   = mul(ObjectToWorld3x4(), float4(V1.position, 1.0));
+            const float3 wp2   = mul(ObjectToWorld3x4(), float4(V2.position, 1.0));
+            const float3 ng    = cross(wp1 - wp0, wp2 - wp0);
+            const float  ngLen = length(ng);
+            const float  area  = 0.5 * ngLen;
+            if (area > 1e-9)
+            {
+                const float3 normal   = ng / ngLen;
+                const float  cosTheta = abs(dot(normal, -rayDir));
+                if (cosTheta > 2e-9)
+                    emissiveLightPdf = min(kMaxSolidAnglePdf, (1.0 / area) * (RayTCurrent() * RayTCurrent()) / cosTheta);
+            }
+        }
         ior                             = Bridge::loadIoR(materialID);
         materialFlags                   = material.flags;
         nestedPriority                  = min(material.nestedPriority, 14u);
@@ -160,7 +177,8 @@ namespace PathTracer
 #endif
                                  ior,
                                  0xFFFFFFFFu,
-                                 0xFFFFFFFFu);
+                                 0xFFFFFFFFu,
+                                 emissiveLightPdf);
     }
 
     inline void HandleHit(inout PathState path,

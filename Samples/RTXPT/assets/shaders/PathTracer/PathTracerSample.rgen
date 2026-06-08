@@ -143,7 +143,7 @@ void main()
     const uint referenceMaxLoopIterations =
         max(2u,
             max(workingContext.PtConsts.bounceCount, 1u) +
-            PathTracer::GetMaxRejectedDielectricHits(workingContext.PtConsts.nestedDielectricsQuality) +
+            PathTracer::GetMaxRejectedDielectricHits() +
             2u);
     uint referenceLoopIterations = 0u;
 #endif

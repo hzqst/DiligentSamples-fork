@@ -323,21 +323,19 @@ namespace PathTracer
                                         const WorkingContext workingContext)
     {
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
-        const uint nestedQuality = workingContext.PtConsts.nestedDielectricsQuality;
         const bool thinSurface = surfaceData.shadingData.mtl.isThinSurface();
         const uint nestedPriority = surfaceData.shadingData.mtl.getNestedPriority();
         const float outsideIoR = ComputeOutsideIoR(path.interiorList,
                                                    surfaceData.shadingData.materialID,
                                                    surfaceData.shadingData.frontFacing);
 
-        if (nestedQuality != 0u && !thinSurface)
+        if (!thinSurface)
         {
             const bool trueIntersection = path.interiorList.isTrueIntersection(nestedPriority);
 
             if (!trueIntersection)
             {
-                const uint maxRejectedHits = GetMaxRejectedDielectricHits(nestedQuality);
-                if (path.getCounter(PackedCounters::RejectedHits) < maxRejectedHits)
+                if (path.getCounter(PackedCounters::RejectedHits) < kMaxRejectedDielectricHits)
                 {
                     path.incrementCounter(PackedCounters::RejectedHits);
                     path.interiorList.handleIntersection(surfaceData.shadingData.materialID,
@@ -348,11 +346,13 @@ namespace PathTracer
                     path.decrementVertexIndex();
                     return false;
                 }
-                else if (nestedQuality == 2u)
+#if !NESTED_DIELECTRICS_AVOID_TERMINATION
+                else
                 {
                     path.terminate();
                     return false;
                 }
+#endif
             }
         }
 
@@ -386,8 +386,7 @@ namespace PathTracer
                                                              const WorkingContext workingContext)
     {
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
-        if (workingContext.PtConsts.nestedDielectricsQuality != 0u &&
-            !shadingData.mtl.isThinSurface())
+        if (!shadingData.mtl.isThinSurface())
         {
             const uint nestedPriority = shadingData.mtl.getNestedPriority();
             path.interiorList.handleIntersection(shadingData.materialID, nestedPriority, shadingData.frontFacing);
@@ -731,8 +730,7 @@ namespace PathTracer
         // transmission through nested dielectrics is back.
         float volumeAbsorption = 0.0;
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
-        if (workingContext.PtConsts.nestedDielectricsQuality != 0u &&
-            !path.interiorList.isEmpty())
+        if (!path.interiorList.isEmpty())
         {
             const HomogeneousVolumeData volume = Bridge::loadHomogeneousVolumeData(path.interiorList.getTopMaterialID());
             const float3 transmittance = HomogeneousVolumeSampler::evalTransmittance(volume, rayTCurrent);

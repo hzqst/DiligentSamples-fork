@@ -6,6 +6,16 @@
 
 namespace PathTracer
 {
+#if RTXPT_NESTED_DIELECTRICS_QUALITY == 1
+    static const uint kMaxRejectedDielectricHits = 4u;
+#    define NESTED_DIELECTRICS_AVOID_TERMINATION 1
+#elif RTXPT_NESTED_DIELECTRICS_QUALITY == 2
+    static const uint kMaxRejectedDielectricHits = 16u;
+#    define NESTED_DIELECTRICS_AVOID_TERMINATION 0
+#else
+#    define NESTED_DIELECTRICS_AVOID_TERMINATION 0
+#endif
+
     float ComputeOutsideIoR(InteriorList interiorList, uint materialID, bool entering)
     {
         uint outsideMaterialID = interiorList.getTopMaterialID();
@@ -18,9 +28,13 @@ namespace PathTracer
         return Bridge::loadIoR(outsideMaterialID);
     }
 
-    uint GetMaxRejectedDielectricHits(uint nestedQuality)
+    uint GetMaxRejectedDielectricHits()
     {
-        return nestedQuality == 2u ? 16u : 4u;
+#if RTXPT_NESTED_DIELECTRICS_QUALITY > 0
+        return kMaxRejectedDielectricHits;
+#else
+        return 0u;
+#endif
     }
 
 } // namespace PathTracer

@@ -188,8 +188,7 @@ namespace PathTracer
         path.CaptureReferencePrimaryDepth(rayTCurrent);
 
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
-        if (workingContext.PtConsts.nestedDielectricsQuality != 0u &&
-            !path.interiorList.isEmpty())
+        if (!path.interiorList.isEmpty())
         {
             const HomogeneousVolumeData volume = Bridge::loadHomogeneousVolumeData(path.interiorList.getTopMaterialID());
             const float3 transmittance = HomogeneousVolumeSampler::evalTransmittance(volume, rayTCurrent);

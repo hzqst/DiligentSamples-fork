@@ -5,9 +5,7 @@
 #include "PathTracerShared.h"
 #include "Lighting/LightingTypes.hlsli"
 
-#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
-#    include "PathTracerTypes.hlsli"
-#endif
+#include "PathTracerTypes.hlsli"
 
 // Global shader resources used by the scene bridge. C++ binds these as static SRVs/UAVs.
 RaytracingAccelerationStructure     t_SceneBVH;
@@ -31,11 +29,11 @@ StructuredBuffer<GeometryVertexData>   t_VertexBuffer;
 StructuredBuffer<GeometryVertexData>   t_SkinnedVertexBuffer;
 Buffer<uint>                           t_IndexBuffer;
 
-#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
-// Task 5 binding contract: source-name realtime UAVs are not bound by the current reference RT pass.
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_OutputColor;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>        u_Depth;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_MotionVectors;
+
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
 VK_IMAGE_FORMAT("r32ui")   RWTexture2D<uint>         u_Throughput;
 VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>        u_SpecularHitT;
 VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>       u_StableRadiance;
@@ -304,18 +302,21 @@ namespace Bridge
 #endif
 } // namespace Bridge
 
-#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
 PathTracer::WorkingContext GetWorkingContext()
 {
     PathTracer::WorkingContext ret;
     ret.PtConsts      = g_Const.ptConsts;
+    ret.OutputColor   = u_OutputColor;
+    ret.Depth         = u_Depth;
+    ret.MotionVectors = u_MotionVectors;
+
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
     ret.StablePlanes  = StablePlanesContext::make(u_StablePlanesHeader,
                                                   u_StablePlanesBuffer,
                                                   u_StableRadiance,
                                                   g_Const.ptConsts);
-    ret.OutputColor   = u_OutputColor;
+#endif
     return ret;
 }
-#endif
 
 #endif // __PATH_TRACER_BRIDGE_HLSLI__

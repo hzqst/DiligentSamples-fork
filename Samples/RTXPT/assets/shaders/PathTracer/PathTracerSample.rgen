@@ -8,10 +8,6 @@
 #include "PathTracer.hlsli"
 
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_Output;
-VK_IMAGE_FORMAT("r32f")    RWTexture2D<float>   u_Depth;
-VK_IMAGE_FORMAT("rgba16f") RWTexture2D<float4>  u_ScreenMotionVectors;
-
 static const float kSpecularRoughnessThreshold = 0.25;
 
 [shader("raygeneration")]
@@ -236,9 +232,9 @@ void main()
         ++bounce;
     }
 
-    u_Output[pixel]              = float4(pathRadiance, 1.0);
-    u_Depth[pixel]               = primaryDepth;
-    u_ScreenMotionVectors[pixel] = float4(0.0, 0.0, 0.0, 0.0);
+    u_OutputColor[pixel]   = float4(pathRadiance, 1.0);
+    u_Depth[pixel]         = primaryDepth;
+    u_MotionVectors[pixel] = float4(0.0, 0.0, 0.0, 0.0);
 }
 
 #else

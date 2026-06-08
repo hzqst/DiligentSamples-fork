@@ -158,8 +158,13 @@ namespace PathTracer
     struct WorkingContext
     {
         RWTexture2D<float4> OutputColor;
+        RWTexture2D<float>  Depth;
+        RWTexture2D<float4> MotionVectors;
         PathTracerConstants PtConsts;
+
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         StablePlanesContext StablePlanes;
+#endif
     };
 
     struct SurfaceData

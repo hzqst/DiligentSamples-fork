@@ -535,6 +535,9 @@ Parity notes:
 
 - Reference, build, and fill variants now share the packed `PathPayload` /
   `PathState` transport spine.
+- `PathTracer::GenerateScatterRay` follows the upstream split-overload shape and
+  keeps the upstream non-delta ray-cone spread expansion plus thread-reorder flag
+  side effects.
 - Stable-plane material and BSDF handling is a Diligent-native shim/translation
   toward RTXPT-fork naming and data flow. It should not be read as full NRD,
   RTXDI final-shading, or final merge parity.

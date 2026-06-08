@@ -452,42 +452,22 @@ namespace PathTracer
         return result;
     }
 
-    inline bool GenerateScatterRay(const SurfaceData surfaceData,
+    inline bool GenerateScatterRay(const BSDFSample bs,
+                                   const SurfaceData surfaceData,
                                    inout PathState path,
-                                   const WorkingContext workingContext,
-                                   out BSDFSample bs)
+                                   const WorkingContext workingContext)
     {
-        bs = MakeBSDFSample(0u, 0.0, 0.0, 0.xxx, 0.xxx);
-
-        const float3 wo = surfaceData.shadingData.V;
-        const SampleGeneratorVertexBase sgBase = SampleGeneratorVertexBase::make(path.GetPixelPos(), path.getVertexIndex(), Bridge::getSampleIndex());
-        const uint diffuseBounces = path.getCounter(PackedCounters::DiffuseBounces);
-        float3 preGeneratedSamples;
-
-#if RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF
-        [branch]
-        if (diffuseBounces < workingContext.PtConsts.diffuseBounceCount)
-            preGeneratedSamples = SampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
-        else
-#endif
-            preGeneratedSamples = UniformSampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
-
-        float3 wi;
-        float3 weight;
-        float  pdf;
-        uint   lobe;
-        float  lobeP;
-        if (!SampleBSDF(surfaceData.bsdf.standardData, wo, preGeneratedSamples, wi, weight, pdf, lobe, lobeP))
-            return false;
-
-        const bool isTransmission = (lobe & kBSDFLobeTransmission) != 0u;
+        const uint  lobe           = bs.lobe;
+        const float pdf            = bs.pdf;
+        const float lobeP          = bs.lobeP;
+        const bool  isTransmission = (lobe & kBSDFLobeTransmission) != 0u;
         const float3 scatterOrigin = ComputeRayOrigin(surfaceData.shadingData.posW,
                                                       isTransmission ? -surfaceData.shadingData.faceNCorrected : surfaceData.shadingData.faceNCorrected);
 
         path.clearScatterEventFlags();
         path.SetOrigin(scatterOrigin);
-        path.SetDir(wi);
-        path.SetThp(path.GetThp() * weight);
+        path.SetDir(bs.wi);
+        path.SetThp(path.GetThp() * bs.weight);
         path.SetFireflyFilterK_BsdfScatterPdf(ComputeNewScatterFireflyFilterK(path.GetFireflyFilterK(), pdf, lobeP), pdf);
         path.setScatterTransmission(isTransmission);
         path.setScatterSpecular((lobe & (kBSDFLobeSpecularReflection | kBSDFLobeSpecularTransmission | kBSDFLobeDeltaReflection | kBSDFLobeDeltaTransmission)) != 0u);
@@ -504,7 +484,13 @@ namespace PathTracer
             !(((lobe & kBSDFLobeDiffuseTransmission) != 0u) && ((path.getVertexIndex() % 2u) == 1u)))
             path.incrementCounter(PackedCounters::DiffuseBounces);
 
-        bs = MakeBSDFSample(lobe, pdf, lobeP, weight, wi);
+        if ((lobe & kBSDFLobeDelta) == 0u)
+        {
+            path.rayCone = RayCone::make(path.rayCone.getWidth(),
+                                         min(path.rayCone.getSpreadAngle() +
+                                                 ComputeRayConeSpreadAngleExpansionByScatterPDF(pdf),
+                                             6.28318530717958647692));
+        }
 
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES || defined(__INTELLISENSE__)
         const bool onDominantDenoisingLayer = path.hasFlag(PathFlags::stablePlaneOnDominantBranch);
@@ -535,7 +521,41 @@ namespace PathTracer
 
         StablePlanesOnScatter(path, bs, workingContext);
 #endif
+        path.setFlag(PathFlags::enableThreadReorder, true);
+
         return true;
+    }
+
+    inline bool GenerateScatterRay(const SurfaceData surfaceData,
+                                   inout PathState path,
+                                   const WorkingContext workingContext,
+                                   out BSDFSample bs)
+    {
+        bs = MakeBSDFSample(0u, 0.0, 0.0, 0.xxx, 0.xxx);
+
+        const float3 wo = surfaceData.shadingData.V;
+        const SampleGeneratorVertexBase sgBase = SampleGeneratorVertexBase::make(path.GetPixelPos(), path.getVertexIndex(), Bridge::getSampleIndex());
+        const uint diffuseBounces = path.getCounter(PackedCounters::DiffuseBounces);
+        float3 preGeneratedSamples;
+
+#if RTXPT_ENABLE_LOW_DISCREPANCY_SAMPLER_FOR_BSDF
+        [branch]
+        if (diffuseBounces < workingContext.PtConsts.diffuseBounceCount)
+            preGeneratedSamples = SampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
+        else
+#endif
+            preGeneratedSamples = UniformSampleSequenceGenerator::Generate(3u, sgBase, kSampleEffect_ScatterBSDF).xyz;
+
+        float3 wi;
+        float3 weight;
+        float  pdf;
+        uint   lobe;
+        float  lobeP;
+        if (!SampleBSDF(surfaceData.bsdf.standardData, wo, preGeneratedSamples, wi, weight, pdf, lobe, lobeP))
+            return false;
+
+        bs = MakeBSDFSample(lobe, pdf, lobeP, weight, wi);
+        return GenerateScatterRay(bs, surfaceData, path, workingContext);
     }
 #endif
 

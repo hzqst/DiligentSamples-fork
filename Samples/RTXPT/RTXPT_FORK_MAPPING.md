@@ -15,10 +15,10 @@ math, CPU/GPU struct byte layouts, or sample-framework glue behavior.
 ## Naming Rule
 
 "Full alignment" does not mean copying RTXPT-fork's implementations or byte
-layouts. Our reference path tracer is a flattened raygen-loop subset, while
-several RTXPT-fork structs are realtime-track-shaped, such as packed
-`PathState`/`PathPayload` and `PathTracerConstants` with ReSTIR, stable-plane,
-and DLSS fields, with no field-level analog to ours.
+layouts. The local reference path tracer now uses the shared
+`PathState`/`PathPayload` transport spine, while several RTXPT-fork structs are
+still broader than the Diligent port, such as `PathTracerConstants` fields for
+ReSTIR, stable-plane, and DLSS features with no active Diligent analog yet.
 
 Full alignment means:
 
@@ -30,8 +30,8 @@ Full alignment means:
    is no exact analog. Style includes PascalCase types/functions,
    `m_`/`g_`/`t_`/`u_`/`s_`/`k`/`c_` prefixes, camelCase locals and
    parameters, HLSL `namespace` plus inline helpers, and traditional include
-   guards. Examples: our bespoke `RTXPTPathTracerSettings`, our flat
-   `RTXPTMaterialHitPayload`, and our hybrid `RTXPTSurface`.
+   guards. Examples: our bespoke `RTXPTPathTracerSettings`, legacy
+   compatibility payload structs, and our hybrid `RTXPTSurface`.
 3. Never rename a symbol to an RTXPT-fork name whose semantics differ. Example:
    our `RTXPTVisibilitySmithGGX` returns `G/(4*NoV*NoL)` as combined
    visibility, while RTXPT-fork's `evalMaskingSmithGGXCorrelated` returns the
@@ -161,7 +161,6 @@ Hard constraints:
 |---|---|---|
 | `RTXPTPowerHeuristic(PdfA, PdfB)` | `PowerHeuristic(nf, fPdf, ng, gPdf)` = RTXPT-fork | call with `(1, pdfA, 1, pdfB)` |
 | (R1/G1 new) | `ComputeNewScatterFireflyFilterK` / `FireflyFilter` / `FireflyFilterShort` / `Average` = RTXPT-fork | runtime-gated by `fireflyFilterThreshold==0` instead of RTXPT's compile-time `RTXPT_FIREFLY_FILTER`; uses `acos`/`sqrt` not `FastACos`/`FastSqrt` |
-| `RTXPTMakeDefaultPayload(HitFlag)` | `PathTracer::MakeEmptyPayload(hitFlag)` (style) | |
 | `RTXPTTraceVisibility(Origin, Dir, TMax)` | `PathTracer::TraceVisibilityRay(origin, dir, tMax)` (style) | |
 | `RTXPTSampleAnalyticNEE(...)` | `PathTracer::SampleAnalyticNEE(...)` (style) | |
 | `RTXPTSampleEnvNEE(...)` | `PathTracer::SampleEnvironmentNEE(...)` (style) | |
@@ -244,8 +243,8 @@ Raygen locals become camelCase:
 | `RTXPTSubInstanceData` | `SubInstanceData` = RTXPT-fork | `Shaders/SubInstanceData.h` |
 | `RTXPTPathTracerSettings` | `PathTracerConstants` = RTXPT-fork (name) | `PathTracerShared.h` (fields differ - divergent) |
 | `RTXPTFrameConstants` | `SampleConstants` (style) | RTXPT-fork `SampleConstantBuffer.h` |
-| `RTXPTMaterialHitPayload` | `RTXPTMaterialHitPayload` | Diligent material-hit ray payload, separate from realtime packed `PathPayload.hlsli` |
-| (Realtime G4/G5 new) | `PathPayload` / `PathState` = RTXPT-fork | Packed realtime path-state payload for stable-plane variants |
+| `RTXPTMaterialHitPayload` | `RTXPTMaterialHitPayload` | Legacy compatibility payload; reference primary and visibility rays now use packed `PathPayload.hlsli` |
+| (Realtime G4/G5 new, reference-unified) | `PathPayload` / `PathState` = RTXPT-fork | Shared path-state payload for reference, build, and fill variants |
 | `RTXPTPrimaryPayload` | `PrimaryPayload` (style) | compatibility-only |
 | `RTXPTMaterialData` | `MaterialPTData` = RTXPT-fork (name) | `Materials/MaterialPT.h` (fields differ - divergent) |
 | `RTXPTLightData` | `PolymorphicLightInfo` = RTXPT-fork (name) | `Lighting/PolymorphicLight.h` (ours is unpacked - divergent) |
@@ -316,7 +315,7 @@ Raygen locals become camelCase:
 |---|---|---|
 | `g_FrameConstants` | `g_Const` | `RTXPTRayTracingPass.cpp`, `RTXPTCommon.fxh`, all shaders |
 | `g_TLAS` | `t_SceneBVH` | `RTXPTRayTracingPass.cpp` |
-| `g_OutputColor` (rgen UAV) | `u_Output` | `RTXPTRayTracingPass.cpp` |
+| `g_OutputColor` (path-trace output UAV) | `u_OutputColor` | `RTXPTRayTracingPass.cpp` |
 | `g_AccumColor` | `u_AccumulationBuffer` | `RTXPTRayTracingPass.cpp` |
 | `g_Lights` | `t_Lights` | `RTXPTRayTracingPass.cpp` |
 | `g_EmissiveTriangles` | `t_EmissiveTriangles` | `RTXPTRayTracingPass.cpp`, `RTXPTLights.cpp` |
@@ -342,14 +341,13 @@ Raygen locals become camelCase:
   `Hash32ToFloat`. `sampleCosineHemisphere` still
   returns a basis-rotated world-space direction, unlike RTXPT-fork's local-frame
   helper.
-- Reference mode uses a raygen-flattened N-bounce loop. Realtime G4/G5 adds the
-  packed `PathState`/`PathPayload` state machine plus stable planes for the
-  BUILD/FILL variants.
-- `PathTracer::` helpers and raygen locals follow RTXPT-fork style, but they
-  remain wrappers around the flattened reference-mode loop.
-- The flattened loop now preserves endpoint emission at the diffuse limit.
-  Rough specular events (`roughness > 0.25`) count as diffuse-like for diffuse
-  bounce limiting to match R5 reference-mode behavior.
+- Reference mode uses the shared `PathState`/`PathPayload` loop and commits raw
+  HDR radiance through `PathTracer::CommitPixel`.
+- Reference-specific branches in shared spine functions preserve the local
+  estimator while BUILD/FILL stable-plane side effects remain mode-guarded.
+- Reference diffuse-bounce classification intentionally keeps the current local
+  semantics: rough specular events (`roughness > 0.25`) count as diffuse-like
+  only when the sampled lobe is not transmission.
 - `Bridge::` runs over Diligent structured buffers, not Donut/NVRHI. There is
   no `PathTracerBridgeDonut.hlsli` equivalent here.
 - `StandardBSDFData` carries the shading normal `N`, while R5 aligns the
@@ -369,11 +367,12 @@ Raygen locals become camelCase:
   material-buffer resource/global name backed by the local `MaterialPTData`
   type.
 - `MaterialPTData`, `PolymorphicLightInfo`, `GeometryVertexData`,
-  `RTXPTMaterialHitPayload`, `PathTracerConstants`, and `SampleConstants` reuse
-  RTXPT-fork names or style as local backing layouts. `MaterialPTData` remains
-  port-specific and is not field-compatible with upstream `PTMaterialData`; the
-  other local backing layouts also remain port-specific. Realtime `PathPayload`
-  is the separate packed path-state bridge documented in G4/G5.
+  legacy `RTXPTMaterialHitPayload`, `PathTracerConstants`, and
+  `SampleConstants` reuse RTXPT-fork names or style as local backing layouts.
+  `MaterialPTData` remains port-specific and is not field-compatible with
+  upstream `PTMaterialData`; the other local backing layouts also remain
+  port-specific. `PathPayload` is the shared packed path-state bridge documented
+  in G4/G5.
 - Shared struct fields follow T-H's upstream-style casing/alignment where
   applicable. Fields kept identical in T-H, such as `MaterialID`, `Flags`,
   `IndexCount`, and `VertexCount`, remain intentionally unchanged, and every
@@ -419,7 +418,7 @@ Raygen locals become camelCase:
 | `PathTracerHelpers.hlsli::ComputeRayOrigin` | `PathTracer/PathTracerHelpers.hlsli::ComputeRayOrigin` | Same robust offset algorithm, expressed without RTXPT-fork's `select()` helper |
 | `PathTracerHelpers.hlsli::ComputeLowGrazingAngleFalloff` | `PathTracer/PathTracerHelpers.hlsli::ComputeLowGrazingAngleFalloff` | Same direct-light shadow terminator fadeout formula |
 | `PathTracer::MakeVisibilityOrigin` | `PathTracer/PathTracerNEE.hlsli::ComputeVisibilityRay` | Diligent keeps visibility tracing in raygen helpers; face-normal side is still selected by the shading normal |
-| `RTXPTMaterialHitPayload.vertexNormal` | `Scene/ShadingData.hlsli::vertexN` | Closest-hit payload carries the corrected pre-normal-map vertex normal because Diligent does not materialize `ShadingData` |
+| `PathTracerClosestHit.rchit::LoadCurrentSurfaceData` vertex normal | `Scene/ShadingData.hlsli::vertexN` | Shared local surface construction carries the corrected pre-normal-map vertex normal because Diligent does not materialize upstream `ShadingData` |
 | `MaterialPTData.shadowNoLFadeout` | `Materials/MaterialPT.h::ShadowNoLFadeout` | Stored in existing Diligent padding at offset 136; material record stays 144 bytes |
 | `PathTracerCameraData` + `ComputeRayThinlens` | `PathTracerShared.h::PathTracerCameraData` + `PathTracerHelpers.hlsli::ComputeRayThinlens` | Same camera basis and thin-lens math; Diligent stores the camera block at top-level `SampleConstants.camera` |
 | `RTXPTSample` UI labels `Aperture` / `Focal Distance` | `SampleUI.cpp` camera section | Same labels, defaults, and clamp ranges; aperture 0 is the default pinhole path |
@@ -474,7 +473,7 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `Shaders/PathTracer/PathTracerShared.h::PathTracerConstants` | `assets/shaders/PathTracer/PathTracerShared.h`, `src/RTXPTFrameConstants.hpp` | Realtime G2 | C++ and HLSL field order is synchronized with `static_assert` layout guards on the C++ side. Diligent reference compatibility fields are retained after the RTXPT-fork realtime fields. |
 | `Sample.cpp` realtime `m_sampleIndex` semantics | `src/RTXPTSample.cpp::UpdateFrameConstants` | Realtime G2 | Reference mode keeps accumulation sample indexing. Realtime mode derives the active sample from `frameIndex % 8192` and uploads `sampleBaseIndex = realtimeSampleIndex * ActualSamplesPerPixel()`. |
 | `Shaders/SampleConstantBuffer.h::view/previousView` | `src/RTXPTFrameConstants.hpp::PathTracerViewData`, `assets/shaders/PathTracer/PathTracerShared.h::PathTracerViewData` | Realtime G2 | Current and previous view constants are available for future motion-vector, denoiser guide, and NRD common-settings ports. |
-| `Shaders/PathTracer/PathTracer.hlsli::CommitPixel` | `assets/shaders/PathTracer/PathTracerSample.rgen` | P2 | Diligent raygen writes raw `pathRadiance` to `u_Output` in reference mode. Accumulation and tone mapping are not raygen responsibilities. |
+| `Shaders/PathTracer/PathTracer.hlsli::CommitPixel` | `assets/shaders/PathTracer/PathTracer.hlsli` | P2 | Reference mode commits raw `PathState::GetL().rgb` to `u_OutputColor`; accumulation and tone mapping are not raygen responsibilities. |
 
 ## Realtime G3 Render Target Map
 
@@ -508,10 +507,31 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `Sample.cpp::PathTrace` RTXDI final hooks | status UI only | Disabled in G4/G5; not silently treated as implemented. |
 | `Sample.cpp::Denoise` | G8/G9 plans | Excluded from this plan. |
 
+### Reference Unified PathState Spine
+
+Local reference mode is intentionally routed through `PathState`,
+`PathPayload`, `PathTracer::HandleHit`, and `PathTracer::HandleMiss`.
+
+Remaining intentional fork differences:
+
+- `PathTracerBridge.hlsli` uses Diligent resources and scene adapters instead
+  of upstream Donut bridge calls.
+- Reference `CommitPixel` writes raw HDR output, primary depth, and zero screen
+  motion vectors; it does not write stable planes.
+- Reference branches inside `HandleHit`, `HandleMiss`, `GenerateScatterRay`,
+  `HandleRussianRoulette`, and `HandleNEE` preserve the local reference
+  estimator: full-sample NEE, emissive/environment MIS, firefly filtering,
+  camera jitter, current diffuse-bounce classification, `minBounceCount`
+  Russian roulette, volumes, and nested dielectrics.
+- Reference raygen keeps a safety iteration ceiling in addition to normal path
+  termination.
+- `RTXPTRayTracingPass.cpp` keeps the conservative 160-byte RT payload size
+  while `PathPayload` is 80 bytes.
+
 Parity notes:
 
-- Task 2 moved the old material-hit ray payload to `RTXPTMaterialHitPayload`.
-  `PathPayload` is now reserved for the realtime packed `PathState` bridge.
+- Reference, build, and fill variants now share the packed `PathPayload` /
+  `PathState` transport spine.
 - Stable-plane material and BSDF handling is a Diligent-native shim/translation
   toward RTXPT-fork naming and data flow. It should not be read as full NRD,
   RTXDI final-shading, or final merge parity.
@@ -533,7 +553,7 @@ Parity notes:
 
 ### Phase 6 Behavioral Contracts
 
-- `PathTracerSample.rgen` writes one raw HDR sample or debug radiance value to `u_Output`.
+- `PathTracer::CommitPixel` writes one raw HDR reference sample to `u_OutputColor`.
 - `PathTracerSample.rgen` must not write `u_AccumulationBuffer` after P2.
 - `PathTracerSample.rgen` must not call `ToneMapACES` after P3.
 - `PathTracerConstants::exposureScale` remains a temporary bridge until P3, then tone-mapping exposure data moves into tone-map pass state.

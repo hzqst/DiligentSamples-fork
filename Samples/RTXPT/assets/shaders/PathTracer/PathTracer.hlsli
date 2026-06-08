@@ -27,38 +27,6 @@ namespace PathTracer
 
     inline PathState EmptyPathInitialize(uint2 pixelPos, float pixelConeSpreadAngle);
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-    RTXPTMaterialHitPayload MakeEmptyPayload(uint hitFlag)
-    {
-        RTXPTMaterialHitPayload payload;
-        payload.worldPos    = float3(0.0, 0.0, 0.0);
-        payload.hitDistance = -1.0;
-        payload.worldNormal = float3(0.0, 1.0, 0.0);
-        payload.hitFlag     = hitFlag;
-        payload.faceNormal  = float3(0.0, 1.0, 0.0);
-        payload.materialID  = 0u;
-        payload.baseColor   = float3(0.0, 0.0, 0.0);
-        payload.emission    = float3(0.0, 0.0, 0.0);
-        payload.metallic    = 0.0;
-        payload.roughness   = 1.0;
-        payload.emissiveLightPdf = 0.0;
-        payload.ior = 1.5;
-        payload.transmissionFactor = 0.0;
-        payload.diffuseTransmissionFactor = 0.0;
-        payload.transmissionColor = float3(1.0, 1.0, 1.0);
-        payload.volumeAttenuationDistance = 3.402823466e+38;
-        payload.volumeAttenuationColor = float3(1.0, 1.0, 1.0);
-        payload.materialFlags = 0u;
-        payload.nestedPriority = 14u;
-        payload.frontFacing = 1u;
-        payload.thinSurface = 1u;
-        payload.alpha = 1.0;
-        payload.vertexNormal = payload.worldNormal;
-        payload.shadowNoLFadeout = 0.0;
-        return payload;
-    }
-#endif
-
     inline PathPayload MakeVisibilityPayload(uint2 pixelPos)
     {
         PathState visibilityPath = EmptyPathInitialize(pixelPos, 0.0);

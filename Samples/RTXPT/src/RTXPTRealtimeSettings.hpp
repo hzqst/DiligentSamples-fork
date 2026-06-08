@@ -155,7 +155,7 @@ struct RTXPTRealtimeSettings
 
     RTXPTDenoisingGuideDebugView DenoisingGuideDebugView = RTXPTDenoisingGuideDebugView::Disabled;
 
-    RTXPTNrdMethod           NRDMethod                               = RTXPTNrdMethod::REBLUR;
+    RTXPTNrdMethod           NRDMethod                               = RTXPTNrdMethod::RELAX;
     float                    NRDDisocclusionThreshold                = 0.03f;
     bool                     NRDUseAlternateDisocclusionThresholdMix = true;
     float                    NRDDisocclusionThresholdAlternate       = 0.2f;

@@ -226,6 +226,33 @@ struct PathState
     {
         stablePlaneIndex = index;
     }
+
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
+    void InitReferencePrimaryDepth(float depth)
+    {
+        stableBranchID   = asuint(depth);
+        stablePlaneIndex = 0u;
+    }
+
+    bool HasReferencePrimaryDepth()
+    {
+        return stablePlaneIndex != 0u;
+    }
+
+    void CaptureReferencePrimaryDepth(float depth)
+    {
+        if (!HasReferencePrimaryDepth())
+        {
+            stableBranchID   = asuint(depth);
+            stablePlaneIndex = 1u;
+        }
+    }
+
+    float GetReferencePrimaryDepth()
+    {
+        return asfloat(stableBranchID);
+    }
+#endif
 };
 
 #endif // __PATH_STATE_HLSLI__

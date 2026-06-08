@@ -11,9 +11,10 @@
 #include "Rendering/Volumes/HomogeneousVolumeSampler.hlsli"
 #include "PathTracerNestedDielectrics.hlsli"
 
-#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE
-#    include "PathState.hlsli"
-#    include "StablePlanes.hlsli"
+#include "PathState.hlsli"
+#include "PathPayload.hlsli"
+
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
 #    include "PathTracerStablePlanes.hlsli"
 #endif
 
@@ -24,9 +25,7 @@ namespace PathTracer
 {
     static const float kSpecularRoughnessThreshold = 0.25;
 
-#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE
     inline PathState EmptyPathInitialize(uint2 pixelPos, float pixelConeSpreadAngle);
-#endif
 
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
     RTXPTMaterialHitPayload MakeEmptyPayload(uint hitFlag)
@@ -251,7 +250,8 @@ namespace PathTracer
 
         return PowerHeuristic(1.0, prevBsdfPdf, 1.0, envPdf);
     }
-#else
+#endif
+
     inline bool HasFinishedSurfaceBounces(uint vertexIndex, uint diffuseBounces)
     {
         if (g_Const.ptConsts.bounceCount < vertexIndex)
@@ -293,7 +293,11 @@ namespace PathTracer
 #endif
 
         path.setStablePlaneIndex(0);
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        path.InitReferencePrimaryDepth(g_Const.ptConsts.camera.FarZ);
+#else
         path.stableBranchID = 1u;
+#endif
 
         if (HasFinishedSurfaceBounces(path.getVertexIndex() + 1,
                                       path.getCounter(PackedCounters::DiffuseBounces)))
@@ -304,7 +308,9 @@ namespace PathTracer
 
     inline void StartPixel(const PathState path, const WorkingContext workingContext)
     {
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         workingContext.StablePlanes.StartPixel(path.GetPixelPos());
+#endif
 
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
         Bridge::ExportSurfaceInit(path.GetPixelPos());
@@ -381,7 +387,7 @@ namespace PathTracer
         return true;
     }
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES || defined(__INTELLISENSE__)
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_BUILD_STABLE_PLANES || defined(__INTELLISENSE__)
     inline BSDFSample MakeBSDFSample(uint lobe, float pdf, float lobeP, float3 weight, float3 wi)
     {
         BSDFSample bs;
@@ -524,6 +530,7 @@ namespace PathTracer
 
         bs = MakeBSDFSample(lobe, pdf, lobeP, weight, wi);
 
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES || defined(__INTELLISENSE__)
         const bool onDominantDenoisingLayer = path.hasFlag(PathFlags::stablePlaneOnDominantBranch);
         const bool isDiffuseForSpecHitT =
             ((lobe & (kBSDFLobeDiffuseReflection | kBSDFLobeDiffuseTransmission)) != 0u) ||
@@ -551,6 +558,7 @@ namespace PathTracer
         }
 
         StablePlanesOnScatter(path, bs, workingContext);
+#endif
         return true;
     }
 #endif
@@ -564,6 +572,10 @@ namespace PathTracer
     {
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
         workingContext.StablePlanes.AccumulateStableRadiance(path.GetPixelPos(), radiance);
+#elif PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        float4 newL = path.GetL();
+        newL.rgb += radiance;
+        path.SetL(newL);
 #elif PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
         if (!stablePlaneOnBranch)
         {
@@ -605,6 +617,11 @@ namespace PathTracer
     {
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
         // Stable radiance and stable-plane data are committed incrementally while tracing.
+#elif PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        const uint2 pixelPos = path.GetPixelPos();
+        workingContext.OutputColor[pixelPos]   = float4(path.GetL().rgb, 1.0);
+        workingContext.Depth[pixelPos]         = path.GetReferencePrimaryDepth();
+        workingContext.MotionVectors[pixelPos] = float4(0.0, 0.0, 0.0, 0.0);
 #elif PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
         workingContext.StablePlanes.CommitDenoiserRadiance(path);
 #else
@@ -648,7 +665,9 @@ namespace PathTracer
         EnvMapSampler envSampler = RTXPTCreateEnvMapSampler(Bridge::getEnvMapConstants());
         float3 environmentEmission = envSampler.Eval(rayDir, 0.0);
 
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         StablePlanesHandleMiss(path, environmentEmission, rayOrigin, rayDir, rayTCurrent, workingContext);
+#endif
 
         if (any(environmentEmission > 0.0))
         {
@@ -796,7 +815,6 @@ namespace PathTracer
             path.setTerminateAtNextBounce();
 #endif
     }
-#endif
 } // namespace PathTracer
 
 #endif // __PATH_TRACER_HLSLI__

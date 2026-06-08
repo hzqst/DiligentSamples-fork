@@ -497,21 +497,12 @@ namespace PathTracer
         if (isTransmission)
             UpdateNestedDielectricsOnScatterTransmission(surfaceData.shadingData, path, workingContext);
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        const bool isDiffuseBounce =
-            ((lobe & kBSDFLobeDiffuseReflection) != 0u) ||
-            (((lobe & kBSDFLobeTransmission) == 0u) &&
-             surfaceData.bsdf.standardData.roughness > kSpecularRoughnessThreshold);
-        if (isDiffuseBounce)
-            path.incrementCounter(PackedCounters::DiffuseBounces);
-#else
         const bool isDiffuseBounce =
             ((lobe & (kBSDFLobeDiffuseReflection | kBSDFLobeDiffuseTransmission)) != 0u) ||
             surfaceData.bsdf.standardData.roughness > kSpecularRoughnessThreshold;
         if (isDiffuseBounce &&
             !(((lobe & kBSDFLobeDiffuseTransmission) != 0u) && ((path.getVertexIndex() % 2u) == 1u)))
             path.incrementCounter(PackedCounters::DiffuseBounces);
-#endif
 
         bs = MakeBSDFSample(lobe, pdf, lobeP, weight, wi);
 

@@ -345,9 +345,10 @@ Raygen locals become camelCase:
   HDR radiance through `PathTracer::CommitPixel`.
 - Reference-specific branches in shared spine functions preserve the local
   estimator while BUILD/FILL stable-plane side effects remain mode-guarded.
-- Reference diffuse-bounce classification intentionally keeps the current local
-  semantics: rough specular events (`roughness > 0.25`) count as diffuse-like
-  only when the sampled lobe is not transmission.
+- Reference diffuse-bounce classification is aligned with upstream/realtime:
+  diffuse reflection, diffuse transmission, or roughness above
+  `kSpecularRoughnessThreshold` count as diffuse-like, with diffuse transmission
+  incrementing the counter only every other vertex.
 - `Bridge::` runs over Diligent structured buffers, not Donut/NVRHI. There is
   no `PathTracerBridgeDonut.hlsli` equivalent here.
 - `StandardBSDFData` carries the shading normal `N`, while R5 aligns the
@@ -521,7 +522,7 @@ Remaining intentional fork differences:
 - Reference branches inside `HandleHit`, `HandleMiss`, `GenerateScatterRay`,
   `HandleRussianRoulette`, and `HandleNEE` preserve the local reference
   estimator: full-sample NEE, emissive/environment MIS, firefly filtering,
-  camera jitter, current diffuse-bounce classification, `minBounceCount`
+  camera jitter, aligned diffuse-bounce classification, `minBounceCount`
   Russian roulette, volumes, and nested dielectrics.
 - Reference raygen keeps a safety iteration ceiling in addition to normal path
   termination.

@@ -20,28 +20,9 @@ SamplerState   s_MaterialSampler;
 
 namespace Bridge
 {
-    bool hasMaterialTable()
-    {
-        uint count  = 0;
-        uint stride = 0;
-        t_PTMaterialData.GetDimensions(count, stride);
-        return count > 0;
-    }
-
-    uint getMaterialCount()
-    {
-        uint count  = 0;
-        uint stride = 0;
-        t_PTMaterialData.GetDimensions(count, stride);
-        return count;
-    }
-
-    // Out-of-range indices clamp to the last material so a bad materialID never UB-reads.
     MaterialPTData getMaterial(uint materialID)
     {
-        const uint lastIndex = max(getMaterialCount(), 1u) - 1u;
-        const uint index     = min(materialID, lastIndex);
-        return t_PTMaterialData[index];
+        return t_PTMaterialData[materialID];
     }
 
 #ifdef ENABLE_MATERIAL_TEXTURES
@@ -139,20 +120,12 @@ namespace Bridge
 
     float loadIoR(uint materialID)
     {
-        const uint count = getMaterialCount();
-        if (materialID >= count)
-            return 1.0;
-
         MaterialPTData material = getMaterial(materialID);
         return max(material.ior, 1.0);
     }
 
     float loadShadowNoLFadeout(uint materialID)
     {
-        const uint count = getMaterialCount();
-        if (materialID >= count)
-            return 0.0;
-
         MaterialPTData material = getMaterial(materialID);
         return clamp(material.shadowNoLFadeout, 0.0, 0.25);
     }
@@ -163,10 +136,6 @@ namespace Bridge
         volume.sigmaS = float3(0.0, 0.0, 0.0);
         volume.sigmaA = float3(0.0, 0.0, 0.0);
         volume.g      = 0.0;
-
-        const uint count = getMaterialCount();
-        if (materialID >= count)
-            return volume;
 
         MaterialPTData material = getMaterial(materialID);
         if ((material.flags & kMaterialFlagHasVolume) == 0u)

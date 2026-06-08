@@ -17,9 +17,6 @@ using ActiveRayPayload = PathPayload;
 // Opaque geometry never reaches this shader.
 [shader("anyhit")] void main(inout ActiveRayPayload                  Payload,
                              in BuiltInTriangleIntersectionAttributes Attributes) {
-    if (!Bridge::hasSubInstanceTable() || !Bridge::hasMaterialTable())
-        return; // No material data - accept the hit.
-
     const SubInstanceData subInstance = Bridge::getSubInstanceData();
     const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
 

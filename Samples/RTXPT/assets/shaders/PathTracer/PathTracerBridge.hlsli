@@ -70,20 +70,9 @@ namespace Bridge
     }
 
     // Returns the SubInstanceData entry for the current hit.
-    // The caller is responsible for guarding against an empty/unbound table via hasSubInstanceTable().
     SubInstanceData getSubInstanceData()
     {
         return t_SubInstanceData[getSubInstanceIndex()];
-    }
-
-    // True when t_SubInstanceData has at least one entry. The C++ side guarantees a dummy entry
-    // is bound when the scene has no real geometry so that this helper still returns a defined value.
-    bool hasSubInstanceTable()
-    {
-        uint count  = 0;
-        uint stride = 0;
-        t_SubInstanceData.GetDimensions(count, stride);
-        return count > 0;
     }
 
     // Fetch the 3 vertex indices for triangle `localPrimitiveIndex` within the geometry

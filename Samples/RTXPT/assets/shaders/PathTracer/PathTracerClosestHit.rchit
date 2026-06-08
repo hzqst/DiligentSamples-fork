@@ -51,68 +51,65 @@ namespace PathTracer
         uint   psdDominantDeltaLobeP1           = 0u;
         surfaceEmission                         = float3(0.0, 0.0, 0.0);
 
-        if (Bridge::hasSubInstanceTable() && Bridge::hasMaterialTable())
+        const SubInstanceData subInstance = Bridge::getSubInstanceData();
+        const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
+        materialID                        = subInstance.MaterialID;
+
+        GeometryVertexData V0;
+        GeometryVertexData V1;
+        GeometryVertexData V2;
+        Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
+
+        const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
+
+        const float3 geometricNormal = Bridge::computeGeometricNormal(V0, V1, V2);
+        frontFacing                  = dot(-rayDir, geometricNormal) >= 0.0;
+        faceNormal                   = frontFacing ? geometricNormal : -geometricNormal;
+        worldPos                     = Bridge::computeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
+        worldNormal                  = Bridge::interpolateNormal(V0, V1, V2, Attributes.barycentrics);
+        if (dot(worldNormal, worldNormal) < 1e-6)
+            worldNormal = faceNormal;
+        if (dot(worldNormal, faceNormal) < 0.0)
+            worldNormal = -worldNormal;
+
+        const float3 tangentNormal = Bridge::ignoreMeshTangentSpace(material) ? float3(0.0, 0.0, 1.0) :
+            Bridge::getTangentNormal(material, texCoord);
+        if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
         {
-            const SubInstanceData subInstance = Bridge::getSubInstanceData();
-            const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
-            materialID                       = subInstance.MaterialID;
-
-            GeometryVertexData V0;
-            GeometryVertexData V1;
-            GeometryVertexData V2;
-            Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
-
-            const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
-
-            const float3 geometricNormal = Bridge::computeGeometricNormal(V0, V1, V2);
-            frontFacing                  = dot(-rayDir, geometricNormal) >= 0.0;
-            faceNormal                   = frontFacing ? geometricNormal : -geometricNormal;
-            worldPos                     = Bridge::computeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
-            worldNormal                  = Bridge::interpolateNormal(V0, V1, V2, Attributes.barycentrics);
-            if (dot(worldNormal, worldNormal) < 1e-6)
-                worldNormal = faceNormal;
-            if (dot(worldNormal, faceNormal) < 0.0)
-                worldNormal = -worldNormal;
-
-            const float3 tangentNormal = Bridge::ignoreMeshTangentSpace(material) ? float3(0.0, 0.0, 1.0) :
-                Bridge::getTangentNormal(material, texCoord);
-            if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
-            {
-                const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, worldNormal);
-                const float3 T            = worldTangent.xyz;
-                const float3 B            = cross(worldNormal, T) * worldTangent.w;
-                const float3 mappedNormal = T * tangentNormal.x + B * tangentNormal.y + worldNormal * tangentNormal.z;
-                const float  lenSq        = dot(mappedNormal, mappedNormal);
-                if (lenSq > 1e-8)
-                {
-                    worldNormal = mappedNormal * rsqrt(lenSq);
-                    if (dot(worldNormal, faceNormal) < 0.0)
-                        worldNormal = -worldNormal;
-                }
-            }
-
             const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, worldNormal);
-            tangent                   = worldTangent.xyz;
-            tangentSign               = worldTangent.w;
-
-            const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
-            metallic                  = metalRough.x;
-            roughness                  = metalRough.y;
-            const float4 baseColorWithAlpha = Bridge::getBaseColor(material, texCoord);
-            baseColor                  = baseColorWithAlpha.rgb;
-            transmissionFactor         = Bridge::getTransmission(material, texCoord);
-            diffuseTransmissionFactor  = Bridge::getDiffuseTransmission(material, texCoord);
-            thinSurface                = Bridge::isThinSurface(material);
-            shadowNoLFadeout           = Bridge::loadShadowNoLFadeout(materialID);
-            vertexNormal               = worldNormal;
-            surfaceEmission            = Bridge::getEmission(material, texCoord);
-            ior                        = Bridge::loadIoR(materialID);
-            materialFlags              = material.flags;
-            nestedPriority             = min(material.nestedPriority, 14u);
-            psdExclude                     = Bridge::isPSDExclude(material) ? 1u : 0u;
-            psdBlockMotionVectorsAtSurface = Bridge::isPSDBlockMotionVectorsAtSurface(material) ? 1u : 0u;
-            psdDominantDeltaLobeP1         = Bridge::getPSDDominantDeltaLobeP1(material);
+            const float3 T            = worldTangent.xyz;
+            const float3 B            = cross(worldNormal, T) * worldTangent.w;
+            const float3 mappedNormal = T * tangentNormal.x + B * tangentNormal.y + worldNormal * tangentNormal.z;
+            const float  lenSq        = dot(mappedNormal, mappedNormal);
+            if (lenSq > 1e-8)
+            {
+                worldNormal = mappedNormal * rsqrt(lenSq);
+                if (dot(worldNormal, faceNormal) < 0.0)
+                    worldNormal = -worldNormal;
+            }
         }
+
+        const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, worldNormal);
+        tangent                   = worldTangent.xyz;
+        tangentSign               = worldTangent.w;
+
+        const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
+        metallic                = metalRough.x;
+        roughness               = metalRough.y;
+        const float4 baseColorWithAlpha = Bridge::getBaseColor(material, texCoord);
+        baseColor                       = baseColorWithAlpha.rgb;
+        transmissionFactor              = Bridge::getTransmission(material, texCoord);
+        diffuseTransmissionFactor       = Bridge::getDiffuseTransmission(material, texCoord);
+        thinSurface                     = Bridge::isThinSurface(material);
+        shadowNoLFadeout                = Bridge::loadShadowNoLFadeout(materialID);
+        vertexNormal                    = worldNormal;
+        surfaceEmission                 = Bridge::getEmission(material, texCoord);
+        ior                             = Bridge::loadIoR(materialID);
+        materialFlags                   = material.flags;
+        nestedPriority                  = min(material.nestedPriority, 14u);
+        psdExclude                      = Bridge::isPSDExclude(material) ? 1u : 0u;
+        psdBlockMotionVectorsAtSurface  = Bridge::isPSDBlockMotionVectorsAtSurface(material) ? 1u : 0u;
+        psdDominantDeltaLobeP1          = Bridge::getPSDDominantDeltaLobeP1(material);
 
         worldNormal = normalize(worldNormal);
         tangent     = normalize(tangent);
@@ -193,7 +190,7 @@ void main(inout ActiveRayPayload Payload,
     Payload.emission    = float3(0.0, 0.0, 0.0);
     Payload.emissiveLightPdf = 0.0;
 
-    // Default to a barycentric debug color so we still see something if the bridge tables are unbound.
+    // Initialize outputs before material bridge data overwrites them below.
     float3 BaseColor   = float3(Attributes.barycentrics.x,
                                 Attributes.barycentrics.y,
                                 1.0 - Attributes.barycentrics.x - Attributes.barycentrics.y);
@@ -206,89 +203,86 @@ void main(inout ActiveRayPayload Payload,
     uint   MaterialID  = 0u;
     bool   FrontFacing = true;
 
-    if (Bridge::hasSubInstanceTable() && Bridge::hasMaterialTable())
+    const SubInstanceData subInstance = Bridge::getSubInstanceData();
+    const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
+    MaterialID                        = subInstance.MaterialID;
+
+    GeometryVertexData V0;
+    GeometryVertexData V1;
+    GeometryVertexData V2;
+    Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
+
+    const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
+
+    const float3 RayDir          = WorldRayDirection();
+    const float3 geometricNormal = Bridge::computeGeometricNormal(V0, V1, V2);
+    const bool   frontFacing     = dot(-RayDir, geometricNormal) >= 0.0;
+    FrontFacing                  = frontFacing;
+    FaceNormal                   = frontFacing ? geometricNormal : -geometricNormal;
+    WorldPos                     = Bridge::computeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
+    WorldNormal                  = Bridge::interpolateNormal(V0, V1, V2, Attributes.barycentrics);
+    // Renormalize against the geometric normal if the interpolated normal is nearly zero
+    // (degenerate vertex data) - keeps the shader robust on bad assets.
+    if (dot(WorldNormal, WorldNormal) < 1e-6)
+        WorldNormal = FaceNormal;
+    if (dot(WorldNormal, FaceNormal) < 0.0)
+        WorldNormal = -WorldNormal;
+    VertexNormal = WorldNormal;
+
+    // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
+    const float3 tangentNormal = Bridge::ignoreMeshTangentSpace(material) ? float3(0.0, 0.0, 1.0) :
+        Bridge::getTangentNormal(material, texCoord);
+    if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
     {
-        const SubInstanceData subInstance = Bridge::getSubInstanceData();
-        const MaterialPTData  material    = Bridge::getMaterial(subInstance.MaterialID);
-        MaterialID                        = subInstance.MaterialID;
-
-        GeometryVertexData V0;
-        GeometryVertexData V1;
-        GeometryVertexData V2;
-        Bridge::getTriangleVertices(subInstance, PrimitiveIndex(), V0, V1, V2);
-
-        const float2 texCoord = Bridge::interpolateTexCoord(V0, V1, V2, Attributes.barycentrics);
-
-        const float3 RayDir = WorldRayDirection();
-        const float3 geometricNormal = Bridge::computeGeometricNormal(V0, V1, V2);
-        const bool   frontFacing     = dot(-RayDir, geometricNormal) >= 0.0;
-        FrontFacing                  = frontFacing;
-        FaceNormal                   = frontFacing ? geometricNormal : -geometricNormal;
-        WorldPos    = Bridge::computeWorldHitPosition(V0, V1, V2, Attributes.barycentrics);
-        WorldNormal = Bridge::interpolateNormal(V0, V1, V2, Attributes.barycentrics);
-        // Renormalize against the geometric normal if the interpolated normal is nearly zero
-        // (degenerate vertex data) - keeps the shader robust on bad assets.
-        if (dot(WorldNormal, WorldNormal) < 1e-6)
-            WorldNormal = FaceNormal;
-        if (dot(WorldNormal, FaceNormal) < 0.0)
-            WorldNormal = -WorldNormal;
-        VertexNormal = WorldNormal;
-
-        // Perturb the shading normal with the tangent-space normal map (tangent derived from UV gradients).
-        const float3 tangentNormal = Bridge::ignoreMeshTangentSpace(material) ? float3(0.0, 0.0, 1.0) :
-            Bridge::getTangentNormal(material, texCoord);
-        if (abs(tangentNormal.x) + abs(tangentNormal.y) > 1e-5)
+        const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, WorldNormal);
+        const float3 T            = worldTangent.xyz;
+        const float3 B            = cross(WorldNormal, T) * worldTangent.w;
+        const float3 mappedNormal = T * tangentNormal.x + B * tangentNormal.y + WorldNormal * tangentNormal.z;
+        const float  lenSq        = dot(mappedNormal, mappedNormal);
+        if (lenSq > 1e-8)
         {
-            const float4 worldTangent = Bridge::computeWorldTangent(V0, V1, V2, WorldNormal);
-            const float3 T            = worldTangent.xyz;
-            const float3 B            = cross(WorldNormal, T) * worldTangent.w;
-            const float3 mappedNormal = T * tangentNormal.x + B * tangentNormal.y + WorldNormal * tangentNormal.z;
-            const float  lenSq        = dot(mappedNormal, mappedNormal);
-            if (lenSq > 1e-8)
-            {
-                WorldNormal = mappedNormal * rsqrt(lenSq);
-                if (dot(WorldNormal, FaceNormal) < 0.0)
-                    WorldNormal = -WorldNormal;
-            }
+            WorldNormal = mappedNormal * rsqrt(lenSq);
+            if (dot(WorldNormal, FaceNormal) < 0.0)
+                WorldNormal = -WorldNormal;
         }
+    }
 
-        const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
-        Metallic                = metalRough.x;
-        Roughness               = metalRough.y;
+    const float2 metalRough = Bridge::getMetallicRoughness(material, texCoord);
+    Metallic                = metalRough.x;
+    Roughness               = metalRough.y;
 
-        const float4 BaseColorWithAlpha = Bridge::getBaseColor(material, texCoord);
-        BaseColor                       = BaseColorWithAlpha.rgb;
-        Payload.emission                = Bridge::getEmission(material, texCoord);
-        Payload.ior                     = Bridge::loadIoR(MaterialID);
-        Payload.transmissionFactor      = Bridge::getTransmission(material, texCoord);
-        Payload.diffuseTransmissionFactor = Bridge::getDiffuseTransmission(material, texCoord);
-        Payload.transmissionColor       = BaseColorWithAlpha.rgb;
-        Payload.volumeAttenuationDistance = material.volumeAttenuationDistance;
-        Payload.volumeAttenuationColor  = material.volumeAttenuationColor;
-        Payload.materialFlags           = material.flags;
-        Payload.nestedPriority          = min(material.nestedPriority, 14u);
-        Payload.thinSurface             = Bridge::isThinSurface(material) ? 1u : 0u;
-        Payload.alpha                   = BaseColorWithAlpha.a;
-        Payload.shadowNoLFadeout        = Bridge::loadShadowNoLFadeout(MaterialID);
+    const float4 BaseColorWithAlpha = Bridge::getBaseColor(material, texCoord);
+    BaseColor                       = BaseColorWithAlpha.rgb;
+    Payload.emission                = Bridge::getEmission(material, texCoord);
+    Payload.ior                     = Bridge::loadIoR(MaterialID);
+    Payload.transmissionFactor      = Bridge::getTransmission(material, texCoord);
+    Payload.diffuseTransmissionFactor  = Bridge::getDiffuseTransmission(material, texCoord);
+    Payload.transmissionColor          = BaseColorWithAlpha.rgb;
+    Payload.volumeAttenuationDistance  = material.volumeAttenuationDistance;
+    Payload.volumeAttenuationColor     = material.volumeAttenuationColor;
+    Payload.materialFlags              = material.flags;
+    Payload.nestedPriority             = min(material.nestedPriority, 14u);
+    Payload.thinSurface                = Bridge::isThinSurface(material) ? 1u : 0u;
+    Payload.alpha                      = BaseColorWithAlpha.a;
+    Payload.shadowNoLFadeout           = Bridge::loadShadowNoLFadeout(MaterialID);
 
-        // Precompute the emissive triangle's area-light solid-angle pdf so raygen can MIS-weight
-        // the BSDF-hit emission against emissive-triangle NEE. Only NEE-eligible constant emitters
-        // get a non-zero pdf; textured emissive surfaces stay BSDF-only for now.
-        if ((material.flags & kMaterialFlagEmissiveAreaLight) != 0u)
+    // Precompute the emissive triangle's area-light solid-angle pdf so raygen can MIS-weight
+    // the BSDF-hit emission against emissive-triangle NEE. Only NEE-eligible constant emitters
+    // get a non-zero pdf; textured emissive surfaces stay BSDF-only for now.
+    if ((material.flags & kMaterialFlagEmissiveAreaLight) != 0u)
+    {
+        const float3 wp0   = mul(ObjectToWorld3x4(), float4(V0.position, 1.0));
+        const float3 wp1   = mul(ObjectToWorld3x4(), float4(V1.position, 1.0));
+        const float3 wp2   = mul(ObjectToWorld3x4(), float4(V2.position, 1.0));
+        const float3 ng    = cross(wp1 - wp0, wp2 - wp0);
+        const float  ngLen = length(ng);
+        const float  area  = 0.5 * ngLen;
+        if (area > 1e-9)
         {
-            const float3 wp0   = mul(ObjectToWorld3x4(), float4(V0.position, 1.0));
-            const float3 wp1   = mul(ObjectToWorld3x4(), float4(V1.position, 1.0));
-            const float3 wp2   = mul(ObjectToWorld3x4(), float4(V2.position, 1.0));
-            const float3 ng    = cross(wp1 - wp0, wp2 - wp0);
-            const float  ngLen = length(ng);
-            const float  area  = 0.5 * ngLen;
-            if (area > 1e-9)
-            {
-                const float3 normal   = ng / ngLen;
-                const float  cosTheta  = abs(dot(normal, -RayDir));
-                if (cosTheta > 2e-9)
-                    Payload.emissiveLightPdf = min(kMaxSolidAnglePdf, (1.0 / area) * (RayTCurrent() * RayTCurrent()) / cosTheta);
-            }
+            const float3 normal  = ng / ngLen;
+            const float  cosTheta = abs(dot(normal, -RayDir));
+            if (cosTheta > 2e-9)
+                Payload.emissiveLightPdf = min(kMaxSolidAnglePdf, (1.0 / area) * (RayTCurrent() * RayTCurrent()) / cosTheta);
         }
     }
 

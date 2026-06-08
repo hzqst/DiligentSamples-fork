@@ -299,12 +299,12 @@ static const uint kMaterialFlagHasThicknessTexture         = 0x200u;
 static const uint kMaterialFlagThinSurface                 = 0x400u;
 static const uint kMaterialFlagAlphaBlend                  = 0x800u;
 
-static const uint kMaterialPathDecompositionFlagPSDExclude = 0x1u;
-static const uint kMaterialPathDecompositionFlagPSDBlockMotionVectorsAtSurfaceMask = 0x6u;
+static const uint kMaterialPathDecompositionFlagPSDExclude                          = 0x1u;
+static const uint kMaterialPathDecompositionFlagPSDBlockMotionVectorsAtSurfaceMask  = 0x6u;
 static const uint kMaterialPathDecompositionFlagPSDBlockMotionVectorsAtSurfaceShift = 1u;
-static const uint kMaterialPathDecompositionFlagIgnoreMeshTangentSpace = 0x8u;
-static const uint kMaterialPathDecompositionFlagPSDDominantDeltaLobeP1Mask = 0xF0u;
-static const uint kMaterialPathDecompositionFlagPSDDominantDeltaLobeP1Shift = 4u;
+static const uint kMaterialPathDecompositionFlagIgnoreMeshTangentSpace              = 0x8u;
+static const uint kMaterialPathDecompositionFlagPSDDominantDeltaLobeP1Mask          = 0xF0u;
+static const uint kMaterialPathDecompositionFlagPSDDominantDeltaLobeP1Shift         = 4u;
 
 // Mirrors Diligent::PolymorphicLightInfo in RTXPTLights.hpp.
 struct PolymorphicLightInfo

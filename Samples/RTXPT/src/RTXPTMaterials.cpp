@@ -384,12 +384,10 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
                     Data.pathDecompositionFlags |= kMaterialPathDecompositionFlag_IgnoreMeshTangentSpace;
 
                 Data.pathDecompositionFlags |=
-                    (static_cast<Uint32>(std::clamp(Ext.PSDBlockMotionVectorsAtSurfaceType, 0, 3)) <<
-                     kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceShift) &
+                    (static_cast<Uint32>(std::clamp(Ext.PSDBlockMotionVectorsAtSurfaceType, 0, 3)) << kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceShift) &
                     kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceMask;
                 Data.pathDecompositionFlags |=
-                    (static_cast<Uint32>(std::clamp(Ext.PSDDominantDeltaLobe + 1, 0, 7)) <<
-                     kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Shift) &
+                    (static_cast<Uint32>(std::clamp(Ext.PSDDominantDeltaLobe + 1, 0, 7)) << kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Shift) &
                     kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Mask;
 
                 if (Ext.EnableTransmission || Data.transmissionFactor > 0.0f || Data.diffuseTransmissionFactor > 0.0f)

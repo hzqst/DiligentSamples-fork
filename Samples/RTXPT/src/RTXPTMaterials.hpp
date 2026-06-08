@@ -151,12 +151,12 @@ constexpr Uint32 kMaterialFlag_ThinSurface                 = 0x400u;
 constexpr Uint32 kMaterialFlag_AlphaBlend                  = 0x800u;
 
 // Flag bits for MaterialPTData::pathDecompositionFlags. Keep in sync with PathTracer/PathTracerShared.h.
-constexpr Uint32 kMaterialPathDecompositionFlag_PSDExclude                         = 0x1u;
-constexpr Uint32 kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceMask = 0x6u;
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDExclude                          = 0x1u;
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceMask  = 0x6u;
 constexpr Uint32 kMaterialPathDecompositionFlag_PSDBlockMotionVectorsAtSurfaceShift = 1u;
-constexpr Uint32 kMaterialPathDecompositionFlag_IgnoreMeshTangentSpace             = 0x8u;
-constexpr Uint32 kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Mask         = 0xF0u;
-constexpr Uint32 kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Shift        = 4u;
+constexpr Uint32 kMaterialPathDecompositionFlag_IgnoreMeshTangentSpace              = 0x8u;
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Mask          = 0xF0u;
+constexpr Uint32 kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Shift         = 4u;
 
 // A material is alpha tested only when it uses ALPHA_MODE_MASK and actually has a base-color texture to
 // sample the alpha from. This compatibility overload preserves the single-GLTF path behavior.

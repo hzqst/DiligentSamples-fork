@@ -50,9 +50,9 @@ constexpr Uint32 kLocalProxyCount                   = 128u;
 constexpr Uint32 kTileSize                          = 8u;
 constexpr float  kDistantVsLocalImportanceBaseScale = 0.0002f;
 constexpr Uint32 kLightingControlHeaderSizeBytes    = 112u;
-constexpr Uint32 kLightsBakerConstantsSizeBytes      = 464u;
-constexpr Uint32 kLightsBakerEnvMapParamsBaseWord    = 88u;
-constexpr Uint32 kLightsBakerEnvMapColorBaseWord     = kLightsBakerEnvMapParamsBaseWord + 24u;
+constexpr Uint32 kLightsBakerConstantsSizeBytes     = 464u;
+constexpr Uint32 kLightsBakerEnvMapParamsBaseWord   = 88u;
+constexpr Uint32 kLightsBakerEnvMapColorBaseWord    = kLightsBakerEnvMapParamsBaseWord + 24u;
 
 static_assert(kLightsBakerConstantsSizeBytes % sizeof(Uint32) == 0, "LightsBakerConstants size must be uint-addressable");
 static_assert(kLightsBakerEnvMapColorBaseWord + 4u <= kLightsBakerConstantsSizeBytes / sizeof(Uint32),
@@ -60,31 +60,31 @@ static_assert(kLightsBakerEnvMapColorBaseWord + 4u <= kLightsBakerConstantsSizeB
 
 struct RTXPTLightingControlDataCPU
 {
-    Uint32 TotalLightCount                    = 0;
-    Uint32 EnvmapQuadNodeCount                = 0;
-    Uint32 AnalyticLightCount                 = 0;
-    Uint32 TriangleLightCount                 = 0;
-    Uint32 SamplingProxyCount                 = 0;
-    Uint32 HistoricTotalLightCount            = 0;
-    Uint32 LastFrameTemporalFeedbackAvailable = 0;
-    Uint32 LastFrameLocalSamplesAvailable     = 0;
-    Uint32 ProxyBuildTaskCount                = 0;
-    Uint32 WeightsSumUINT                     = 0;
-    Uint32 ImportanceSamplingType             = 1;
-    Uint32 _padding0                          = 0;
-    Uint32 TemporalFeedbackRequired           = 0;
-    Uint32 TotalMaxFeedbackCount              = 0;
-    float  GlobalFeedbackUseWeight            = 0.75f;
-    float  LocalToGlobalSampleRatio           = 0.65f;
-    Uint32 TileBufferHeight                   = 0;
-    float  ScreenSpaceVsWorldSpaceThreshold   = 0.3f;
-    Uint32 LocalSamplingResolution[2]         = {};
-    Uint32 LocalSamplingTileJitter[2]         = {};
-    Uint32 LocalSamplingTileJitterPrev[2]     = {};
-    Uint32 ValidFeedbackCount                 = 0;
-    Uint32 _padding1                          = 0;
-    Uint32 _padding2                          = 0;
-    Uint32 _padding3                          = 0;
+    Uint32 TotalLightCount                                               = 0;
+    Uint32 EnvmapQuadNodeCount                                           = 0;
+    Uint32 AnalyticLightCount                                            = 0;
+    Uint32 TriangleLightCount                                            = 0;
+    Uint32 SamplingProxyCount                                            = 0;
+    Uint32 HistoricTotalLightCount                                       = 0;
+    Uint32 LastFrameTemporalFeedbackAvailable                            = 0;
+    Uint32 LastFrameLocalSamplesAvailable                                = 0;
+    Uint32 ProxyBuildTaskCount                                           = 0;
+    Uint32 WeightsSumUINT                                                = 0;
+    Uint32 ImportanceSamplingType                                        = 1;
+    Uint32 _padding0                                                     = 0;
+    Uint32 TemporalFeedbackRequired                                      = 0;
+    Uint32 TotalMaxFeedbackCount                                         = 0;
+    float  GlobalFeedbackUseWeight                                       = 0.75f;
+    float  LocalToGlobalSampleRatio                                      = 0.65f;
+    Uint32 TileBufferHeight                                              = 0;
+    float  ScreenSpaceVsWorldSpaceThreshold                              = 0.3f;
+    Uint32 LocalSamplingResolution[2]                                    = {};
+    Uint32 LocalSamplingTileJitter[2]                                    = {};
+    Uint32 LocalSamplingTileJitterPrev[2]                                = {};
+    Uint32 ValidFeedbackCount                                            = 0;
+    Uint32 _padding1                                                     = 0;
+    Uint32 _padding2                                                     = 0;
+    Uint32 _padding3                                                     = 0;
     Uint32 BakerPadding[kLightsBakerConstantsSizeBytes / sizeof(Uint32)] = {};
 };
 static_assert(sizeof(RTXPTLightingControlDataCPU) == kLightingControlHeaderSizeBytes + kLightsBakerConstantsSizeBytes,

@@ -31,7 +31,7 @@
 #    define PAYLOAD_FIELD_RW_ALL
 #    define PAYLOAD_FIELD_READCALLER
 #else
-#    define PAYLOAD_QUALIFIER        [raypayload]
+#    define PAYLOAD_QUALIFIER [raypayload]
 #    define PAYLOAD_FIELD_RW_ALL     : read(caller, closesthit, anyhit, miss) : write(caller, closesthit, anyhit, miss)
 #    define PAYLOAD_FIELD_READCALLER : read(caller) : write(closesthit, anyhit, miss)
 #endif

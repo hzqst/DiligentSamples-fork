@@ -467,7 +467,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         const bool EnvironmentBridgeReflected =
             EnvironmentMapFound || EnvironmentImportanceMapFound || EnvironmentRadianceMapFound ||
             EnvironmentSamplerFound || EnvironmentImportanceSamplerFound;
-        EnvironmentBridgeReflectedAny = EnvironmentBridgeReflectedAny || EnvironmentBridgeReflected;
+        EnvironmentBridgeReflectedAny           = EnvironmentBridgeReflectedAny || EnvironmentBridgeReflected;
         bool       EmissiveLightBridgeReflected = false;
         const bool EmissiveLightBridgeBound =
             SetStaticForStages(DirectLightStages, "t_EmissiveTriangles", pEmissiveView, "emissive triangle buffer", false, &EmissiveLightBridgeReflected);

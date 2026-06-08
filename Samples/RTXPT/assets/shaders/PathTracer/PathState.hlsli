@@ -76,6 +76,15 @@ struct PathState
     // they are recombined only at the PathPayload::pack/unpack boundary.
     uint    flags;        // PathFlags region, bit[10..31] (kPathFlagsBitMask); low 10 bits always 0
     uint    vertexIndex;  // vertex index, low 10 bits (kVertexIndexBitMask)
+    // [PathState packing refactor — Gate 3, 2026-06-07] stablePlaneIndex used to live as a 2-bit
+    // subfield (bits 24..25) inside the shared flags word. The FILL plane transition
+    // (StablePlanesOnScatter) is the only site that writes it with a non-zero value, and it does so
+    // interleaved with several setFlag() read-modify-writes on that same flags word — the exact
+    // intra-word aliasing pattern DXC miscompiles (cf. the vertexIndex split in Gate 1, which fixed the
+    // opaque path). It is split into its own member so the masked RMW no longer aliases the flag writes.
+    // The single 32-bit wire layout is unchanged: it is recombined into packed[4].w bits 24..25 only at
+    // the PathPayload::pack/unpack boundary.
+    uint    stablePlaneIndex;
 
     float3 GetOrigin() { return asfloat(PackOriginId.xyz); }
     void SetOrigin(float3 origin) { PackOriginId.xyz = asuint(origin); }
@@ -206,15 +215,16 @@ struct PathState
         return Ray::make(GetOrigin(), GetDir(), 0.0, kMaxRayTravel);
     }
 
+    // [Gate 3] stablePlaneIndex now lives in its own member instead of bits 24..25 of the flags word,
+    // removing the intra-word aliasing that DXC miscompiles during the FILL plane transition.
     uint getStablePlaneIndex()
     {
-        return (flags & kStablePlaneIndexBitMask) >> kStablePlaneIndexBitOffset;
+        return stablePlaneIndex;
     }
 
     void setStablePlaneIndex(uint index)
     {
-        flags &= ~kStablePlaneIndexBitMask;
-        flags |= index << kStablePlaneIndexBitOffset;
+        stablePlaneIndex = index;
     }
 };
 

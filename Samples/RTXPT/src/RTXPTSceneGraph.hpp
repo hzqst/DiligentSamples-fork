@@ -14,6 +14,13 @@
 #include "GLTFLoader.hpp"
 #include "json.hpp"
 
+// Master switch for the RTXPT .material.json material extension (scalar overrides, enable switches, and
+// external material textures). Define as 0 (e.g. via CMake target_compile_definitions) to ignore
+// .material.json entirely and render with pure glTF material behavior. Default: enabled.
+#ifndef RTXPT_ENABLE_MATERIAL_EXTENSION
+#    define RTXPT_ENABLE_MATERIAL_EXTENSION 1
+#endif
+
 namespace Diligent
 {
 
@@ -68,6 +75,16 @@ struct RTXPTModelInstance
     GLTF::ModelTransforms Transforms;
 };
 
+// One RTXPT .material.json texture object (BaseTexture, NormalTexture, etc.). Path is stored verbatim after
+// slash normalization; resolution against the assets root happens later in RTXPTMaterials::Upload.
+struct RTXPTMaterialTextureDesc
+{
+    std::string LocalPath;
+    bool        HasPath   = false;
+    bool        SRGB      = false;
+    bool        NormalMap = false;
+};
+
 struct RTXPTMaterialExtension
 {
     std::string    FilePath;
@@ -102,6 +119,15 @@ struct RTXPTMaterialExtension
     int    PSDBlockMotionVectorsAtSurfaceType      = 0;
     bool   IgnoreMeshTangentSpace                  = false;
     bool   SkipRender                              = false;
+
+    bool                     EnableTransmissionTexture = true;
+    float                    NormalTextureScale        = 1.0f;
+    bool                     HasNormalTextureScale     = false;
+    RTXPTMaterialTextureDesc BaseTexture;
+    RTXPTMaterialTextureDesc OcclusionRoughnessMetallicTexture;
+    RTXPTMaterialTextureDesc NormalTexture;
+    RTXPTMaterialTextureDesc EmissiveTexture;
+    RTXPTMaterialTextureDesc TransmissionTexture;
 };
 
 struct RTXPTSceneLightMetadata

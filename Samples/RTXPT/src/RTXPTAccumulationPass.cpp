@@ -90,6 +90,7 @@ bool RTXPTAccumulationPass::Initialize(IRenderDevice* pDevice, IEngineFactory* p
     ShaderCI.SourceLanguage             = SHADER_SOURCE_LANGUAGE_HLSL;
     ShaderCI.ShaderCompiler             = SHADER_COMPILER_DXC;
     ShaderCI.CompileFlags               = SHADER_COMPILE_FLAG_PACK_MATRIX_ROW_MAJOR;
+    ShaderCI.ShaderOptimizationLevel    = SHADER_OPTIMIZATION_LEVEL_3;
     ShaderCI.FilePath                   = "PostProcessing/RTXPTAccumulation.csh";
     ShaderCI.EntryPoint                 = "main";
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;

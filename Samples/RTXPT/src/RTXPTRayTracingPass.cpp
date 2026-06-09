@@ -249,6 +249,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         ShaderCI.SourceLanguage                  = SHADER_SOURCE_LANGUAGE_HLSL;
         ShaderCI.ShaderCompiler                  = SHADER_COMPILER_DXC;
         ShaderCI.CompileFlags                    = SHADER_COMPILE_FLAG_PACK_MATRIX_ROW_MAJOR;
+        ShaderCI.ShaderOptimizationLevel         = SHADER_OPTIMIZATION_LEVEL_3;
         ShaderCI.HLSLVersion                     = {6, 5};
         ShaderCI.pShaderSourceStreamFactory      = pShaderSourceFactory;
 

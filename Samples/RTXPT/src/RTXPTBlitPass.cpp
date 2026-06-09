@@ -50,6 +50,7 @@ bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFa
     ShaderCI.SourceLanguage             = SHADER_SOURCE_LANGUAGE_HLSL;
     ShaderCI.ShaderCompiler             = SHADER_COMPILER_DXC;
     ShaderCI.CompileFlags               = SHADER_COMPILE_FLAG_PACK_MATRIX_ROW_MAJOR;
+    ShaderCI.ShaderOptimizationLevel    = SHADER_OPTIMIZATION_LEVEL_3;
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pVS;

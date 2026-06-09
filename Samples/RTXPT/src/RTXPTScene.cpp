@@ -908,6 +908,7 @@ bool RTXPTScene::LoadScene(IRenderDevice*     pDevice,
             Ext.ModelName    = Asset.ModelName;
             Ext.MaterialName = MaterialName;
 
+#if RTXPT_ENABLE_MATERIAL_EXTENSION
             for (const std::string& Candidate : GetRTXPTMaterialCandidates(m_AssetsRoot, SceneName, Asset.ModelName, MaterialName))
             {
                 if (!FileSystem::FileExists(Candidate.c_str()))
@@ -920,6 +921,7 @@ bool RTXPTScene::LoadScene(IRenderDevice*     pDevice,
                     break;
                 }
             }
+#endif
 
             Asset.MaterialRemap[MatIdx] = static_cast<Uint32>(NewData.MaterialExtensions.size());
             NewData.MaterialExtensions.emplace_back(std::move(Ext));

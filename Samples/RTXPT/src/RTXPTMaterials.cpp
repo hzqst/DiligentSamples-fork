@@ -273,6 +273,7 @@ const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphDat
                                                         const RTXPTModelAsset&     Asset,
                                                         Uint32                     MaterialId)
 {
+#if RTXPT_ENABLE_MATERIAL_EXTENSION
     if (MaterialId >= Asset.MaterialRemap.size())
         return nullptr;
 
@@ -281,6 +282,12 @@ const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphDat
         return nullptr;
 
     return &SceneData.MaterialExtensions[ExtensionIdx];
+#else
+    (void)SceneData;
+    (void)Asset;
+    (void)MaterialId;
+    return nullptr;
+#endif
 }
 
 bool RTXPTMaterialHasBaseColorTexture(const GLTF::Model&            Model,

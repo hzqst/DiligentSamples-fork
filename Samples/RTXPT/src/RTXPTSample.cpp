@@ -686,7 +686,7 @@ bool RTXPTSample::RebuildSceneDependentResources()
         m_Scene.Update(0.0, 0.0);
     }
 
-    ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData);
+    ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData, m_Scene.GetAssetsRoot());
     ResourcesReady &= m_Lights.Upload(m_pDevice, SceneData);
     ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData);
 

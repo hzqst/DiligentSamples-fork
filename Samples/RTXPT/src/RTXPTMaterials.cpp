@@ -28,8 +28,13 @@
 #include "RTXPTSceneGraph.hpp"
 
 #include "DebugUtilities.hpp"
+#include "FileSystem.hpp"
+#include "TextureUtilities.h"
 
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -172,6 +177,83 @@ void RemapMaterialTextureIndices(MaterialPTData& Data, const std::vector<Uint32>
 
     if ((Data.flags & kMaterialFlag_HasBaseColorTexture) == 0u)
         Data.flags &= ~kMaterialFlag_AlphaTested;
+}
+
+// Resolves an authored material-texture path against the assets root, normalizing slashes and preferring a
+// neighboring .dds when a .png is authored (matching RTXPT-fork).
+std::string ResolveExternalTexturePath(const std::string& AssetsRoot, const std::string& LocalPath)
+{
+    std::string Resolved = (std::filesystem::path{AssetsRoot} / LocalPath).string();
+    FileSystem::CorrectSlashes(Resolved);
+    Resolved = FileSystem::SimplifyPath(Resolved.c_str());
+
+    std::filesystem::path PathObj{Resolved};
+    std::string           Ext = PathObj.extension().string();
+    std::transform(Ext.begin(), Ext.end(), Ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (Ext == ".png")
+    {
+        std::string DdsCandidate = PathObj.replace_extension(".dds").string();
+        FileSystem::CorrectSlashes(DdsCandidate);
+        DdsCandidate = FileSystem::SimplifyPath(DdsCandidate.c_str());
+        if (FileSystem::FileExists(DdsCandidate.c_str()))
+            return DdsCandidate;
+    }
+    return Resolved;
+}
+
+struct ExternalTextureBinding
+{
+    Uint32 Index;
+    bool   SRGB;
+    bool   NormalMap;
+};
+using ExternalTextureCache = std::unordered_map<std::string, ExternalTextureBinding>;
+
+// Loads (or reuses) an external material texture and appends its SRV to the bindless table. Returns the
+// bindless index, or InvalidTextureIndex on failure. Deduplicates by resolved path; conflicting sRGB/NormalMap
+// metadata for the same path warns and keeps the first binding.
+Uint32 AppendExternalTexture(IRenderDevice*                            pDevice,
+                             const RTXPTMaterialTextureDesc&           Desc,
+                             const std::string&                        AssetsRoot,
+                             std::vector<RefCntAutoPtr<ITextureView>>& TextureViews,
+                             std::vector<IDeviceObject*>&              TextureBindings,
+                             ExternalTextureCache&                     Cache)
+{
+    const std::string ResolvedPath = ResolveExternalTexturePath(AssetsRoot, Desc.LocalPath);
+
+    const auto CacheIt = Cache.find(ResolvedPath);
+    if (CacheIt != Cache.end())
+    {
+        if (CacheIt->second.SRGB != Desc.SRGB || CacheIt->second.NormalMap != Desc.NormalMap)
+            LOG_WARNING_MESSAGE("RTXPT material texture '", ResolvedPath,
+                                "' requested with conflicting sRGB/NormalMap metadata; keeping the first binding");
+        return CacheIt->second.Index;
+    }
+
+    TextureLoadInfo LoadInfo{"RTXPT material texture"};
+    LoadInfo.IsSRGB = Desc.SRGB;
+
+    RefCntAutoPtr<ITexture> pTexture;
+    CreateTextureFromFile(ResolvedPath.c_str(), LoadInfo, pDevice, &pTexture);
+    if (!pTexture)
+    {
+        LOG_WARNING_MESSAGE("Failed to load RTXPT material texture: ", ResolvedPath);
+        return InvalidTextureIndex;
+    }
+
+    RefCntAutoPtr<ITextureView> pSRV = CreateMaterialTextureView(pTexture.RawPtr());
+    if (!pSRV)
+    {
+        LOG_WARNING_MESSAGE("Failed to create SRV for RTXPT material texture: ", ResolvedPath);
+        return InvalidTextureIndex;
+    }
+
+    const Uint32 BindingIndex = static_cast<Uint32>(TextureBindings.size());
+    TextureViews.emplace_back(std::move(pSRV));
+    TextureBindings.push_back(TextureViews.back().RawPtr<IDeviceObject>());
+    Cache.emplace(ResolvedPath, ExternalTextureBinding{BindingIndex, Desc.SRGB, Desc.NormalMap});
+    return BindingIndex;
 }
 
 } // namespace
@@ -331,7 +413,7 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
     return CreateMaterialBuffer(pDevice, MaterialData);
 }
 
-bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData)
+bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData, const std::string& AssetsRoot)
 {
     Reset();
 
@@ -342,7 +424,8 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
         if (Asset.Model)
             AppendTextureViews(*Asset.Model, TextureRemaps[AssetIdx]);
     }
-    m_Stats.TextureCount = static_cast<Uint32>(m_TextureBindings.size());
+
+    ExternalTextureCache ExternalCache;
 
     std::vector<MaterialPTData> MaterialData;
     for (Uint32 AssetIdx = 0; AssetIdx < SceneData.ModelAssets.size(); ++AssetIdx)
@@ -422,6 +505,51 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
                     Data.flags &= ~kMaterialFlag_HasNormalTexture;
                 if (!Ext.EnableOcclusionRoughnessMetallicTexture)
                     Data.flags &= ~kMaterialFlag_HasMetallicRoughnessTexture;
+
+                // Apply external .material.json textures after scalar overrides and enable-switch clears, so
+                // MaterialPTData reflects the final texture state before flag recomputation. An external texture
+                // overrides the glTF binding for its slot; if the external load fails but a glTF binding exists,
+                // the glTF binding is kept (fail-safe for shipped scenes), otherwise the slot falls back to factors.
+                const auto ApplyExternalTexture = [&](const RTXPTMaterialTextureDesc& Desc, bool Enable,
+                                                      Uint32 Flag, Uint32& TexIndex, float& TexSlice) {
+                    if (!Enable || !Desc.HasPath)
+                        return;
+
+                    const Uint32 ExtIndex = AppendExternalTexture(pDevice, Desc, AssetsRoot,
+                                                                  m_TextureViews, m_TextureBindings, ExternalCache);
+                    if (ExtIndex != InvalidTextureIndex)
+                    {
+                        Data.flags |= Flag;
+                        TexIndex = ExtIndex;
+                        TexSlice = 0.0f;
+                    }
+                    else if ((Data.flags & Flag) == 0u)
+                    {
+                        Data.flags &= ~Flag;
+                        TexIndex = 0;
+                    }
+                };
+
+                ApplyExternalTexture(Ext.BaseTexture, Ext.EnableBaseTexture,
+                                     kMaterialFlag_HasBaseColorTexture,
+                                     Data.baseColorTextureIndex, Data.baseColorTextureSlice);
+                ApplyExternalTexture(Ext.OcclusionRoughnessMetallicTexture, Ext.EnableOcclusionRoughnessMetallicTexture,
+                                     kMaterialFlag_HasMetallicRoughnessTexture,
+                                     Data.metallicRoughnessTextureIndex, Data.metallicRoughnessTextureSlice);
+                ApplyExternalTexture(Ext.NormalTexture, Ext.EnableNormalTexture,
+                                     kMaterialFlag_HasNormalTexture,
+                                     Data.normalTextureIndex, Data.normalTextureSlice);
+                ApplyExternalTexture(Ext.EmissiveTexture, Ext.EnableEmissiveTexture,
+                                     kMaterialFlag_HasEmissiveTexture,
+                                     Data.emissiveTextureIndex, Data.emissiveTextureSlice);
+
+                const bool TransmissionEnabled = (Data.flags & kMaterialFlag_HasTransmission) != 0u;
+                ApplyExternalTexture(Ext.TransmissionTexture, Ext.EnableTransmissionTexture && TransmissionEnabled,
+                                     kMaterialFlag_HasTransmissionTexture,
+                                     Data.transmissionTextureIndex, Data.transmissionTextureSlice);
+
+                if (Ext.HasNormalTextureScale)
+                    Data.normalScale = Ext.NormalTextureScale;
             }
 
             Data.flags &= ~kMaterialFlag_AlphaBlend;
@@ -443,6 +571,7 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
     if (MaterialData.empty())
         MaterialData.emplace_back();
 
+    m_Stats.TextureCount  = static_cast<Uint32>(m_TextureBindings.size());
     m_Stats.MaterialCount = static_cast<Uint32>(MaterialData.size());
     return CreateMaterialBuffer(pDevice, MaterialData);
 }

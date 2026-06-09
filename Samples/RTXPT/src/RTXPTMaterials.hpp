@@ -27,6 +27,7 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 #include "Buffer.h"
@@ -190,14 +191,14 @@ class RTXPTMaterials
 public:
     void Reset();
     bool Upload(IRenderDevice* pDevice, const GLTF::Model& Model);
-    bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
+    bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData, const std::string& AssetsRoot);
 
     const RTXPTMaterialStats& GetStats() const { return m_Stats; }
     IBuffer*                  GetMaterialBuffer() const { return m_MaterialBuffer; }
 
-    // Bindless material-texture table. Indices match GLTF::Model texture indices and are referenced by
-    // MaterialPTData::baseColorTextureIndex / emissiveTextureIndex. The SRV views are owned here and keep
-    // the underlying texture resources alive.
+    // Bindless material-texture table holding one SRV per glTF texture and per external .material.json
+    // texture. Indices are referenced by MaterialPTData texture-index fields. The SRV views are owned here
+    // and (being non-default views) keep the underlying texture resources alive on every backend.
     Uint32                GetTextureCount() const { return static_cast<Uint32>(m_TextureBindings.size()); }
     IDeviceObject* const* GetTextureBindings() const { return m_TextureBindings.empty() ? nullptr : m_TextureBindings.data(); }
 

@@ -58,7 +58,7 @@ Hard constraints:
 
 ## File-Move Map
 
-| Current `assets/shaders/...` | New `assets/shaders/...` | RTXPT-fork analog |
+| Current `shaders/...` | New `shaders/...` | RTXPT-fork analog |
 |---|---|---|
 | `RTXPTReference.rgen` | `PathTracer/PathTracerSample.rgen` | `PathTracer/PathTracerSample.hlsl` (raygen) |
 | `RTXPTReference.rchit` | `PathTracer/PathTracerClosestHit.rchit` | hit handling in `PathTracer.hlsli`/`Scene/HitInfo.hlsli` |
@@ -436,7 +436,7 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `SampleCommon/RenderTargets.cpp` | `src/RTXPTRenderTargets.cpp` | P1 | Diligent texture creation and fallback logic. `OutputColor` is HDR radiance, `AccumulatedRadiance` is `RGBA32F`, `ProcessedOutputColor` is HDR post-AA/post-accumulation, and `LdrColor`/`LdrColorScratch` are display-format ping-pong targets. |
 | `SampleCommon/RenderTargets.h` `RenderSize` / `DisplaySize` | `src/RTXPTRenderTargets.{hpp,cpp}` `RTXPTRenderTargetDimensions` | P6 | Splits render-size raw/guide resources from display-size `ProcessedOutputColor`, `LdrColor`, and presentation. |
 | `SampleCommon/RenderTargets.h` `TemporalFeedback1`, `TemporalFeedback2` | `src/RTXPTRenderTargets.{hpp,cpp}` | P6 | Display-size temporal feedback resources reserved for P6/P7 temporal contracts. |
-| `SampleCommon/RenderTargets.h` `ScreenMotionVectors`, `Depth` | `src/RTXPTRenderTargets.{hpp,cpp}`, `assets/shaders/PathTracer/PathTracerSample.rgen` | P6 | Render-size depth and screen motion-vector resources for future temporal contracts; Reference PathTracer writes primary depth and zero motion vectors but does not feed them to SR. |
+| `SampleCommon/RenderTargets.h` `ScreenMotionVectors`, `Depth` | `src/RTXPTRenderTargets.{hpp,cpp}`, `shaders/PathTracer/PathTracerSample.rgen` | P6 | Render-size depth and screen motion-vector resources for future temporal contracts; Reference PathTracer writes primary depth and zero motion vectors but does not feed them to SR. |
 | `SampleCommon/RenderTargets.h` `CombinedHistoryClampRelax` | `src/RTXPTRenderTargets.{hpp,cpp}` | P6 | Display-size history-relax resource reserved for temporal AA/denoiser handoff. |
 | `Sample.cpp::CreateRenderPasses` | `src/RTXPTPostProcessPipeline.{hpp,cpp}` plus `src/RTXPTSample.cpp` | P1 | Diligent-native pass construction and readiness. `RTXPTSample` owns lifetime and frame orchestration; the pipeline owns post-process pass objects. |
 | `Sample.cpp::PostProcessAA` | `src/RTXPTAccumulationPass.{hpp,cpp}` and later TAA/DLSS-specific classes | P2, P6, P8 | Reference mode runs accumulation from `OutputColor` into `AccumulatedRadiance` and `ProcessedOutputColor`. TAA/DLSS/DLSS-RR are later gated modes. |
@@ -447,22 +447,22 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | RTXPT-fork DLSS/TAA scheduling hooks | `src/RTXPTSuperResolutionPass.{hpp,cpp}`, `src/RTXPTPostProcessPipeline.{hpp,cpp}` | P6 | Reserves Diligent `ISuperResolution` for future non-reference temporal upscaling; Reference PathTracer does not schedule SR/TAA/DLSS/AA. |
 | `ProcessingPasses/AccumulationPass.h` | `src/RTXPTAccumulationPass.hpp` | P2 | Public Diligent accumulation pass interface, status, and resource binding contract. |
 | `ProcessingPasses/AccumulationPass.cpp` | `src/RTXPTAccumulationPass.cpp` | P2 | Diligent compute PSO/SRB creation and dispatch. No Donut/NVRHI API copy. |
-| `ProcessingPasses/AccumulationPass.hlsl` | `assets/shaders/PostProcessing/RTXPTAccumulation.csh` | P2 | Blend raw `OutputColor` into `AccumulatedRadiance`; write HDR `ProcessedOutputColor`. Preserve blend-factor semantics and render/display-size resampling hook. |
+| `ProcessingPasses/AccumulationPass.hlsl` | `shaders/PostProcessing/RTXPTAccumulation.csh` | P2 | Blend raw `OutputColor` into `AccumulatedRadiance`; write HDR `ProcessedOutputColor`. Preserve blend-factor semantics and render/display-size resampling hook. |
 | `ToneMapper/ToneMappingPasses.h` | `src/RTXPTToneMappingPass.hpp` and `src/RTXPTSample.hpp` | P3 | Tone-mapping parameter model: operator, enable flag, exposure mode, exposure compensation/value/range, auto exposure, white balance, white luminance/scale, clamp. |
 | `ToneMapper/ToneMappingPasses.cpp` | `src/RTXPTToneMappingPass.cpp` | P3 | Diligent tone-map pass setup, luminance resources, constants upload, pass-through when disabled, and frame advance. |
-| `ToneMapper/ToneMapping_cb.h` | `assets/shaders/PostProcessing/ToneMapper/ToneMappingShared.h` and matching C++ struct in `src/RTXPTToneMappingPass.hpp` | P3 | CPU/GPU constants layout. Add `static_assert` checks when the C++ side is introduced. |
-| `ToneMapper/ToneMapping.hlsl` | `assets/shaders/PostProcessing/ToneMapper/ToneMapping.hlsl` | P3 | Diligent shader entry points for tone mapping and optional luminance capture. |
-| `ToneMapper/ToneMapping.ps.hlsli` | `assets/shaders/PostProcessing/ToneMapper/ToneMapping.ps.hlsli` | P3 | Tone-map operators: `Linear`, `Reinhard`, `ReinhardModified`, `HejiHableAlu`, `HableUc2`, `Aces`. |
-| `ToneMapper/luminance_ps.hlsl` | `assets/shaders/PostProcessing/ToneMapper/Luminance.psh` | P3 | Auto-exposure luminance prepass. CPU readback is optional and must be gated if implemented. |
+| `ToneMapper/ToneMapping_cb.h` | `shaders/PostProcessing/ToneMapper/ToneMappingShared.h` and matching C++ struct in `src/RTXPTToneMappingPass.hpp` | P3 | CPU/GPU constants layout. Add `static_assert` checks when the C++ side is introduced. |
+| `ToneMapper/ToneMapping.hlsl` | `shaders/PostProcessing/ToneMapper/ToneMapping.hlsl` | P3 | Diligent shader entry points for tone mapping and optional luminance capture. |
+| `ToneMapper/ToneMapping.ps.hlsli` | `shaders/PostProcessing/ToneMapper/ToneMapping.ps.hlsli` | P3 | Tone-map operators: `Linear`, `Reinhard`, `ReinhardModified`, `HejiHableAlu`, `HableUc2`, `Aces`. |
+| `ToneMapper/luminance_ps.hlsl` | `shaders/PostProcessing/ToneMapper/Luminance.psh` | P3 | Auto-exposure luminance prepass. CPU readback is optional and must be gated if implemented. |
 | `External/Donut/include/donut/render/BloomPass.h` | `src/RTXPTBloomPass.hpp` | P4 | Diligent bloom pass interface, settings, stats, and temporary-resource ownership. |
 | `External/Donut/src/render/BloomPass.cpp` | `src/RTXPTBloomPass.cpp` | P4 | Two half-resolution downscales via `RTXPTBloomCopy.psh`, quarter-resolution horizontal/vertical blur, and blend-constant apply into `ProcessedOutputColor`. |
-| `External/Donut/include/donut/shaders/bloom_cb.h` | `assets/shaders/PostProcessing/RTXPTBloomShared.h` | P4 | `RTXPTBloomConstants` layout matching Donut `BloomConstants`. |
-| `External/Donut/shaders/passes/bloom_ps.hlsl` | `assets/shaders/PostProcessing/RTXPTBloomBlur.psh` | P4 | Gaussian blur shader formula. |
-| `Shaders/TestRaygenPP.hlsl` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` | P4 | HDR test circle and LDR Sobel edge-detection compute shader. |
+| `External/Donut/include/donut/shaders/bloom_cb.h` | `shaders/PostProcessing/RTXPTBloomShared.h` | P4 | `RTXPTBloomConstants` layout matching Donut `BloomConstants`. |
+| `External/Donut/shaders/passes/bloom_ps.hlsl` | `shaders/PostProcessing/RTXPTBloomBlur.psh` | P4 | Gaussian blur shader formula. |
+| `Shaders/TestRaygenPP.hlsl` | `shaders/PostProcessing/RTXPTPostProcess.csh` | P4 | HDR test circle and LDR Sobel edge-detection compute shader. |
 | `ProcessingPasses/PostProcess.h` | `src/RTXPTPostProcessPass.hpp` | P7, P8 | P4 introduced the HDR test and LDR edge hooks; G7 extends `RTXPTPostProcessPassId` with stable-plane debug, RELAX/REBLUR prepare, RELAX/REBLUR final merge, and no-denoiser final merge modes. |
 | `ProcessingPasses/PostProcess.cpp` | `src/RTXPTPostProcessPass.cpp` | P7, P8 | P4 introduced legacy post-process dispatch; G7 initializes PSO/SRB state per mode and dispatches stable-plane debug, prepare/final wrappers, and no-denoiser final merge through `pMergeOutputUAV` selected by `GetAccumulationOutputUAV()`. Full NRD orchestration remains G8+. |
-| `ProcessingPasses/PostProcess.hlsl` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` | P7, P8 | P4 shader started with HDR test and LDR edge paths; G7 adds `RTXPT_POST_PROCESS_MODE` branches for stable-plane debug, RELAX/REBLUR prepare, RELAX/REBLUR final merge, and no-denoiser final merge. NRD dependency-backed dispatch remains G8+. |
-| `Shaders/Bindings/ShaderResourceBindings.hlsli` | `assets/shaders/PostProcessing/RTXPTPostProcessBindings.hlsli` or local declarations in each post-process shader | P4-P8 | Resource naming reference: `t_LdrColorScratch`, `u_OutputColor`, `u_ProcessedOutputColor`, `u_PostTonemapOutputColor`. Diligent binding slots may differ, but names and ownership should remain recognizable. |
+| `ProcessingPasses/PostProcess.hlsl` | `shaders/PostProcessing/RTXPTPostProcess.csh` | P7, P8 | P4 shader started with HDR test and LDR edge paths; G7 adds `RTXPT_POST_PROCESS_MODE` branches for stable-plane debug, RELAX/REBLUR prepare, RELAX/REBLUR final merge, and no-denoiser final merge. NRD dependency-backed dispatch remains G8+. |
+| `Shaders/Bindings/ShaderResourceBindings.hlsli` | `shaders/PostProcessing/RTXPTPostProcessBindings.hlsli` or local declarations in each post-process shader | P4-P8 | Resource naming reference: `t_LdrColorScratch`, `u_OutputColor`, `u_ProcessedOutputColor`, `u_PostTonemapOutputColor`. Diligent binding slots may differ, but names and ownership should remain recognizable. |
 | `Sample.cpp::PostProcessPreToneMapping` | `src/RTXPTPostProcessPipeline.cpp`, `src/RTXPTBloomPass.cpp`, `src/RTXPTPostProcessPass.cpp` | P4 | HDR post-process scheduling: bloom first, optional HDR test second. |
 | `Sample.cpp::PostProcessPostToneMapping` | `src/RTXPTPostProcessPipeline.cpp`, `src/RTXPTPostProcessPass.cpp` | P4 | LDR post-process scheduling after tone mapping, including `LdrColor` to `LdrColorScratch` copy. |
 | `Sample.cpp` final `m_CommonPasses->BlitTexture` | `src/RTXPTBlitPass.{hpp,cpp}` plus `RTXPTRenderTargets::GetPresentationSRV()` | P5 | Final swapchain copy. `GetPresentationSRV()` returns `LdrColor`, and no debug/compute output may replace the normal swapchain source. |
@@ -471,10 +471,10 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `SampleUI.h::ActualUseStandaloneDenoiser` | `src/RTXPTRealtimeSettings.hpp::RTXPTRealtimeSettings::ActualUseStandaloneDenoiser` | Realtime G1 | Preserves RTXPT-fork semantics: true only when `RealtimeMode && RealtimeAA < 3 && StandaloneDenoiser`. |
 | `SampleUI.cpp` realtime UI controls | `src/RTXPTSample.cpp::UpdateUI` | Realtime G1 | Mode, realtime setup, AA/SR/denoiser selection, stable-plane controls, and NRD controls are visible. G1 introduced the controls before execution; G4/G5 PathTrace orchestration is documented below. |
 | `Sample.cpp::UpdatePathTracerConstants` realtime fields | `src/RTXPTSample.cpp::UpdateFrameConstants`, `src/RTXPTFrameConstants.hpp::PathTracerConstants` | Realtime G2 | Diligent now uploads render dimensions, `sampleBaseIndex`, `frameIndex`, `invSubSampleCount`, realtime jitter scale, texture LOD bias, pre-exposed gray luminance, denoiser flags, stable-plane controls, and generic tiled-storage strides through the shared constant buffer. Auto-exposure currently uploads neutral pre-exposed gray until a shared CPU/GPU exposure state is ported. |
-| `Shaders/PathTracer/PathTracerShared.h::PathTracerConstants` | `assets/shaders/PathTracer/PathTracerShared.h`, `src/RTXPTFrameConstants.hpp` | Realtime G2 | C++ and HLSL field order is synchronized with `static_assert` layout guards on the C++ side. Diligent reference compatibility fields are retained after the RTXPT-fork realtime fields. |
+| `Shaders/PathTracer/PathTracerShared.h::PathTracerConstants` | `shaders/PathTracer/PathTracerShared.h`, `src/RTXPTFrameConstants.hpp` | Realtime G2 | C++ and HLSL field order is synchronized with `static_assert` layout guards on the C++ side. Diligent reference compatibility fields are retained after the RTXPT-fork realtime fields. |
 | `Sample.cpp` realtime `m_sampleIndex` semantics | `src/RTXPTSample.cpp::UpdateFrameConstants` | Realtime G2 | Reference mode keeps accumulation sample indexing. Realtime mode derives the active sample from `frameIndex % 8192` and uploads `sampleBaseIndex = realtimeSampleIndex * ActualSamplesPerPixel()`. |
-| `Shaders/SampleConstantBuffer.h::view/previousView` | `src/RTXPTFrameConstants.hpp::PathTracerViewData`, `assets/shaders/PathTracer/PathTracerShared.h::PathTracerViewData` | Realtime G2 | Current and previous view constants are available for future motion-vector, denoiser guide, and NRD common-settings ports. |
-| `Shaders/PathTracer/PathTracer.hlsli::CommitPixel` | `assets/shaders/PathTracer/PathTracer.hlsli` | P2 | Reference mode commits raw `PathState::GetL().rgb` to `u_OutputColor`; accumulation and tone mapping are not raygen responsibilities. |
+| `Shaders/SampleConstantBuffer.h::view/previousView` | `src/RTXPTFrameConstants.hpp::PathTracerViewData`, `shaders/PathTracer/PathTracerShared.h::PathTracerViewData` | Realtime G2 | Current and previous view constants are available for future motion-vector, denoiser guide, and NRD common-settings ports. |
+| `Shaders/PathTracer/PathTracer.hlsli::CommitPixel` | `shaders/PathTracer/PathTracer.hlsli` | P2 | Reference mode commits raw `PathState::GetL().rgb` to `u_OutputColor`; accumulation and tone mapping are not raygen responsibilities. |
 
 ## Realtime G3 Render Target Map
 
@@ -501,10 +501,10 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `Sample.cpp::PathTrace` BUILD pre-pass | `src/RTXPTSample.cpp::DispatchPathTracePrePass` | Realtime-only dispatch to `BuildStablePlanes`, then UAV barriers. |
 | `Sample.cpp::PathTrace` `LightsBaker.UpdateEnd(... Depth, MotionVectors)` | `src/RTXPTLightsBaker::UpdateEnd(... pDepthSRV, pMotionVectorsSRV)` | Call-order and data contract preserved; current Diligent feedback implementation accepts but does not yet consume the views. |
 | `Sample.cpp::PathTrace` FILL/REFERENCE sub-sample loop | `src/RTXPTSample.cpp::DispatchPathTraceLoop` | Uses `SampleMiniConstants.params.x` for sub-sample index. |
-| `Shaders/PathTracer/PathPayload.hlsli` | `assets/shaders/PathTracer/PathPayload.hlsli` | Packed path-state payload for realtime variants; reference uses the same type with fp32 parity lanes. |
-| `Shaders/PathTracer/PathState.hlsli` | `assets/shaders/PathTracer/PathState.hlsli` | Stable-plane flags/counters and path state. |
-| `Shaders/PathTracer/StablePlanes.hlsli` | `assets/shaders/PathTracer/StablePlanes.hlsli` | Stable-plane buffer/header/radiance logic. |
-| `Shaders/PathTracer/PathTracerStablePlanes.hlsli` | `assets/shaders/PathTracer/PathTracerStablePlanes.hlsli` | Build/fill stable-plane hit/miss/scatter logic. |
+| `Shaders/PathTracer/PathPayload.hlsli` | `shaders/PathTracer/PathPayload.hlsli` | Packed path-state payload for realtime variants; reference uses the same type with fp32 parity lanes. |
+| `Shaders/PathTracer/PathState.hlsli` | `shaders/PathTracer/PathState.hlsli` | Stable-plane flags/counters and path state. |
+| `Shaders/PathTracer/StablePlanes.hlsli` | `shaders/PathTracer/StablePlanes.hlsli` | Stable-plane buffer/header/radiance logic. |
+| `Shaders/PathTracer/PathTracerStablePlanes.hlsli` | `shaders/PathTracer/PathTracerStablePlanes.hlsli` | Build/fill stable-plane hit/miss/scatter logic. |
 | `Sample.cpp::PathTrace` RTXDI final hooks | status UI only | Disabled in G4/G5; not silently treated as implemented. |
 | `Sample.cpp::Denoise` | G8/G9 plans | Excluded from this plan. |
 
@@ -577,7 +577,7 @@ Parity notes:
 | `ProcessingPasses/DenoisingGuidesBaker.cpp::DenoiseSpecHitT` | `src/RTXPTDenoisingGuidesBaker.cpp::Bake` | Preserves ping then pong dispatch ordering using `SpecularHitT` and `ScratchFloat1`. |
 | `ProcessingPasses/DenoisingGuidesBaker.cpp::ComputeAvgLayerRadiance` | `src/RTXPTDenoisingGuidesBaker.cpp::Bake` | Dispatches at half render resolution and writes `DenoiserAvgLayerRadianceHalfRes`. |
 | `ProcessingPasses/DenoisingGuidesBaker.cpp::RenderDebugViz` | `src/RTXPTDenoisingGuidesBaker.cpp::Bake` + `src/RTXPTSample.cpp::PresentRealtimeGuideDebug` | Diligent debug visualization writes to `ProcessedOutputColor` for optional presentation because no RTXPT-fork `ShaderDebug` texture owner is ported. |
-| `ProcessingPasses/DenoisingGuidesBaker.hlsl` | `assets/shaders/PathTracer/DenoisingGuidesBaker.hlsl` | Shader algorithms use Diligent resource names and existing `StablePlanesContext`. |
+| `ProcessingPasses/DenoisingGuidesBaker.hlsl` | `shaders/PathTracer/DenoisingGuidesBaker.hlsl` | Shader algorithms use Diligent resource names and existing `StablePlanesContext`. |
 | `Sample.cpp::PathTrace` guide bake call point | `src/RTXPTSample.cpp::PathTrace` | Runs after FILL stable-plane loop and before later final merge/NRD work. |
 
 G6 intentionally does not port `ShaderDebug`, `StablePlanesDebugViz`, NRD prepare/final merge, or no-denoiser final merge. G7 adds stable-plane debug plus prepare/final-merge mapping below while full NRD integration remains owned by later realtime denoise phases.
@@ -589,11 +589,11 @@ G6 intentionally does not port `ShaderDebug`, `StablePlanesDebugViz`, NRD prepar
 | `ProcessingPasses/PostProcess.h::ComputePassType` | `src/RTXPTPostProcessPass.hpp::RTXPTPostProcessPassId` | Diligent enum mirrors stable-plane debug, RELAX/REBLUR prepare, RELAX/REBLUR final merge, and no-denoiser final merge. |
 | `ProcessingPasses/PostProcess.cpp::PostProcess` | `src/RTXPTPostProcessPass.cpp::Initialize` | Creates one Diligent compute PSO/SRB per G7 mode using `RTXPT_POST_PROCESS_MODE`. |
 | `ProcessingPasses/PostProcess.cpp::Apply` | `src/RTXPTPostProcessPass.cpp::DispatchPass` | Uses the static frame constants SRB binding, updates `SampleMiniConstants`, binds dynamic stable-plane and denoiser resources, validation SRV, and merge work `pMergeOutputUAV` selected by `GetAccumulationOutputUAV()`. |
-| `ProcessingPasses/PostProcess.hlsl::DENOISER_PREPARE_INPUTS` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` prepare modes | Writes NRD input resources and initializes merge work output from `StableRadiance` on the first processed plane. |
-| `ProcessingPasses/PostProcess.hlsl::DENOISER_FINAL_MERGE` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` final merge modes | Reads per-plane NRD outputs, remodulates with stable-plane BSDF estimates, and adds radiance into `pMergeOutputUAV` selected by `GetAccumulationOutputUAV()`. |
-| `ProcessingPasses/PostProcess.hlsl::NO_DENOISER_FINAL_MERGE` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` no-denoiser mode | Combines stable radiance plus noisy stable-plane radiance into the same downstream `pMergeOutputUAV` target selected by `GetAccumulationOutputUAV()`. |
-| `ProcessingPasses/PostProcess.hlsl::STABLE_PLANES_DEBUG_VIZ` | `assets/shaders/PostProcessing/RTXPTPostProcess.csh` stable-plane debug mode | Provides lightweight stable-plane debug output without porting RTXPT-fork `ShaderDebug`. |
-| `NRD/DenoiserNRD.hlsli` | `assets/shaders/PostProcessing/RTXPTDenoiserNRD.hlsli` | Wrapper compiles before G8 and can forward to NRD headers after the NRD dependency gate exists. |
+| `ProcessingPasses/PostProcess.hlsl::DENOISER_PREPARE_INPUTS` | `shaders/PostProcessing/RTXPTPostProcess.csh` prepare modes | Writes NRD input resources and initializes merge work output from `StableRadiance` on the first processed plane. |
+| `ProcessingPasses/PostProcess.hlsl::DENOISER_FINAL_MERGE` | `shaders/PostProcessing/RTXPTPostProcess.csh` final merge modes | Reads per-plane NRD outputs, remodulates with stable-plane BSDF estimates, and adds radiance into `pMergeOutputUAV` selected by `GetAccumulationOutputUAV()`. |
+| `ProcessingPasses/PostProcess.hlsl::NO_DENOISER_FINAL_MERGE` | `shaders/PostProcessing/RTXPTPostProcess.csh` no-denoiser mode | Combines stable radiance plus noisy stable-plane radiance into the same downstream `pMergeOutputUAV` target selected by `GetAccumulationOutputUAV()`. |
+| `ProcessingPasses/PostProcess.hlsl::STABLE_PLANES_DEBUG_VIZ` | `shaders/PostProcessing/RTXPTPostProcess.csh` stable-plane debug mode | Provides lightweight stable-plane debug output without porting RTXPT-fork `ShaderDebug`. |
+| `NRD/DenoiserNRD.hlsli` | `shaders/PostProcessing/RTXPTDenoiserNRD.hlsli` | Wrapper compiles before G8 and can forward to NRD headers after the NRD dependency gate exists. |
 
 ## Skinned glTF Current Geometry
 

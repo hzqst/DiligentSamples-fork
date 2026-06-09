@@ -402,6 +402,14 @@ bool IsRTXPTAssetsRoot(const std::string& Path)
     return !EnumerateSceneFiles(Path).empty();
 }
 
+bool IsRTXPTShaderRoot(const std::string& Path)
+{
+    std::error_code             Error;
+    const std::filesystem::path RootPath{Path};
+    return std::filesystem::is_regular_file(RootPath / "shaders/RTXPTCommon.fxh", Error) &&
+        std::filesystem::is_regular_file(RootPath / "shaders/PathTracer/PathTracerSample.rgen", Error);
+}
+
 std::string MakeAbsoluteRTXPTPath(const std::string& Path)
 {
     std::error_code             Error;
@@ -415,6 +423,7 @@ std::string ResolveRTXPTAssetsRoot()
 {
     const char* DirectCandidates[] =
         {
+            ".",
             "assets",
             "Samples/RTXPT/assets",
             "DiligentSamples/Samples/RTXPT/assets",
@@ -440,6 +449,7 @@ std::string ResolveRTXPTAssetsRoot()
         };
     const char* SourceTreeSuffixes[] =
         {
+            "assets",
             "Samples/RTXPT/assets",
             "DiligentSamples/Samples/RTXPT/assets",
         };
@@ -455,6 +465,56 @@ std::string ResolveRTXPTAssetsRoot()
     }
 
     return MakeAbsoluteRTXPTPath("DiligentSamples/Samples/RTXPT/assets");
+}
+
+std::string ResolveRTXPTSampleRoot(const std::string& AssetsRoot)
+{
+    const std::filesystem::path AssetsPath = std::filesystem::path{AssetsRoot};
+    const std::filesystem::path ParentPath = AssetsPath.parent_path();
+
+    std::vector<std::string> DirectCandidates;
+    DirectCandidates.push_back(AssetsPath.string());
+    if (!ParentPath.empty())
+        DirectCandidates.push_back(ParentPath.string());
+    DirectCandidates.push_back(".");
+    DirectCandidates.push_back("Samples/RTXPT");
+    DirectCandidates.push_back("DiligentSamples/Samples/RTXPT");
+
+    for (const std::string& Candidate : DirectCandidates)
+    {
+        const std::string Path = FileSystem::SimplifyPath(Candidate.c_str());
+        if (IsRTXPTShaderRoot(Path))
+            return MakeAbsoluteRTXPTPath(Path);
+    }
+
+    const char* AncestorPrefixes[] =
+        {
+            "../",
+            "../../",
+            "../../../",
+            "../../../../",
+            "../../../../../",
+            "../../../../../../",
+            "../../../../../../../",
+            "../../../../../../../../",
+        };
+    const char* SourceTreeSuffixes[] =
+        {
+            "Samples/RTXPT",
+            "DiligentSamples/Samples/RTXPT",
+        };
+
+    for (const char* Prefix : AncestorPrefixes)
+    {
+        for (const char* Suffix : SourceTreeSuffixes)
+        {
+            const std::string Path = FileSystem::SimplifyPath((std::string{Prefix} + Suffix).c_str());
+            if (IsRTXPTShaderRoot(Path))
+                return MakeAbsoluteRTXPTPath(Path);
+        }
+    }
+
+    return !ParentPath.empty() ? MakeAbsoluteRTXPTPath(ParentPath.string()) : MakeAbsoluteRTXPTPath(".");
 }
 
 void SanitizeCameraClipPlanes(float& NearPlane, float& FarPlane)
@@ -808,11 +868,12 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
     InitializeCamera();
     CreateFrameResources();
 
-    m_AssetsRoot = ResolveRTXPTAssetsRoot();
-    std::error_code WorkingDirError;
-    std::filesystem::current_path(m_AssetsRoot, WorkingDirError);
+    m_AssetsRoot                 = ResolveRTXPTAssetsRoot();
+    const std::string SampleRoot = ResolveRTXPTSampleRoot(m_AssetsRoot);
+    std::error_code   WorkingDirError;
+    std::filesystem::current_path(SampleRoot, WorkingDirError);
     if (!WorkingDirError)
-        FileSystem::SetWorkingDirectory(m_AssetsRoot.c_str());
+        FileSystem::SetWorkingDirectory(SampleRoot.c_str());
 
     EnumerateEnvironmentMaps();
     EnumerateAvailableScenes();

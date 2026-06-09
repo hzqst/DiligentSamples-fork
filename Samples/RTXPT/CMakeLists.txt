@@ -67,58 +67,80 @@ set(INCLUDE
 )
 
 set(SHADERS
-    assets/shaders/RTXPTCommon.fxh
-    assets/shaders/PathTracer/PathTracer.hlsli
-    assets/shaders/PathTracer/Config.h
-    assets/shaders/PathTracer/PathTracerHelpers.hlsli
-    assets/shaders/PathTracer/PathTracerShared.h
-    assets/shaders/PathTracer/PathTracerBridge.hlsli
-    assets/shaders/PathTracer/PathPayload.hlsli
-    assets/shaders/PathTracer/PathState.hlsli
-    assets/shaders/PathTracer/PathTracerTypes.hlsli
-    assets/shaders/PathTracer/StablePlanes.hlsli
-    assets/shaders/PathTracer/PathTracerStablePlanes.hlsli
-    assets/shaders/PathTracer/DenoisingGuidesBaker.hlsl
-    assets/shaders/PathTracer/PathTracerNestedDielectrics.hlsli
-    assets/shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli
-    assets/shaders/PathTracer/Rendering/Materials/LobeType.hlsli
-    assets/shaders/PathTracer/Rendering/Materials/InteriorList.hlsli
-    assets/shaders/PathTracer/Scene/Material/MaterialData.hlsli
-    assets/shaders/PathTracer/Scene/Material/HomogeneousVolumeData.hlsli
-    assets/shaders/PathTracer/Rendering/Volumes/HomogeneousVolumeSampler.hlsli
-    assets/shaders/PathTracer/Lighting/LightingConfig.h
-    assets/shaders/PathTracer/Lighting/LightingTypes.hlsli
-    assets/shaders/PathTracer/Lighting/EnvMap.hlsli
-    assets/shaders/PathTracer/Lighting/PolymorphicLight.hlsli
-    assets/shaders/PathTracer/Lighting/LightSampler.hlsli
-    assets/shaders/PathTracer/Lighting/LightsBaker.hlsl
-    assets/shaders/PathTracer/Lighting/EnvMapImportanceBaker.hlsl
-    assets/shaders/PathTracer/Utils/SampleGenerators.hlsli
-    assets/shaders/PathTracer/Utils/StatelessSampleGenerators.hlsli
-    assets/shaders/PathTracer/Rendering/Materials/BxDF.hlsli
-    assets/shaders/PathTracer/PathTracerSample.rgen
-    assets/shaders/PathTracer/PathTracerMiss.rmiss
-    assets/shaders/PathTracer/PathTracerVisibilityMiss.rmiss
-    assets/shaders/PathTracer/PathTracerClosestHit.rchit
-    assets/shaders/PathTracer/EmissiveTriangleBuild.hlsl
-    assets/shaders/PathTracer/PathTracerAnyHit.rahit
-    assets/shaders/PathTracer/SkinnedVertexBuild.csh
-    assets/shaders/PostProcessing/RTXPTFullscreen.vsh
-    assets/shaders/PostProcessing/RTXPTAccumulation.csh
-    assets/shaders/PostProcessing/RTXPTPostProcess.csh
-    assets/shaders/PostProcessing/RTXPTTemporalAAInputs.csh
-    assets/shaders/PostProcessing/RTXPTSuperResolutionMotion.csh
-    assets/shaders/PostProcessing/RTXPTDenoiserNRD.hlsli
-    assets/shaders/PostProcessing/RTXPTBloomShared.h
-    assets/shaders/PostProcessing/RTXPTBloomCopy.psh
-    assets/shaders/PostProcessing/RTXPTBloomBlur.psh
-    assets/shaders/PostProcessing/ToneMapper/ToneMappingShared.h
-    assets/shaders/PostProcessing/ToneMapper/ToneMapping.hlsl
-    assets/shaders/PostProcessing/ToneMapper/ToneMapping.ps.hlsli
-    assets/shaders/PostProcessing/ToneMapper/Luminance.psh
-    assets/shaders/RTXPTDebugCompute.csh
-    assets/shaders/RTXPTBlit.vsh
-    assets/shaders/RTXPTBlit.psh
+    shaders/RTXPTCommon.fxh
+    shaders/PathTracer/PathTracer.hlsli
+    shaders/PathTracer/Config.h
+    shaders/PathTracer/PathTracerHelpers.hlsli
+    shaders/PathTracer/PathTracerShared.h
+    shaders/PathTracer/PathTracerBridge.hlsli
+    shaders/PathTracer/PathPayload.hlsli
+    shaders/PathTracer/PathState.hlsli
+    shaders/PathTracer/PathTracerTypes.hlsli
+    shaders/PathTracer/StablePlanes.hlsli
+    shaders/PathTracer/PathTracerStablePlanes.hlsli
+    shaders/PathTracer/DenoisingGuidesBaker.hlsl
+    shaders/PathTracer/PathTracerNestedDielectrics.hlsli
+    shaders/PathTracer/Rendering/Materials/MaterialBridge.hlsli
+    shaders/PathTracer/Rendering/Materials/LobeType.hlsli
+    shaders/PathTracer/Rendering/Materials/InteriorList.hlsli
+    shaders/PathTracer/Scene/Material/MaterialData.hlsli
+    shaders/PathTracer/Scene/Material/HomogeneousVolumeData.hlsli
+    shaders/PathTracer/Rendering/Volumes/HomogeneousVolumeSampler.hlsli
+    shaders/PathTracer/Lighting/LightingConfig.h
+    shaders/PathTracer/Lighting/LightingTypes.hlsli
+    shaders/PathTracer/Lighting/EnvMap.hlsli
+    shaders/PathTracer/Lighting/PolymorphicLight.hlsli
+    shaders/PathTracer/Lighting/LightSampler.hlsli
+    shaders/PathTracer/Lighting/LightsBaker.hlsl
+    shaders/PathTracer/Lighting/EnvMapImportanceBaker.hlsl
+    shaders/PathTracer/Utils/SampleGenerators.hlsli
+    shaders/PathTracer/Utils/StatelessSampleGenerators.hlsli
+    shaders/PathTracer/Rendering/Materials/BxDF.hlsli
+    shaders/PathTracer/PathTracerSample.rgen
+    shaders/PathTracer/PathTracerMiss.rmiss
+    shaders/PathTracer/PathTracerVisibilityMiss.rmiss
+    shaders/PathTracer/PathTracerClosestHit.rchit
+    shaders/PathTracer/EmissiveTriangleBuild.hlsl
+    shaders/PathTracer/PathTracerAnyHit.rahit
+    shaders/PathTracer/SkinnedVertexBuild.csh
+    shaders/PostProcessing/RTXPTFullscreen.vsh
+    shaders/PostProcessing/RTXPTAccumulation.csh
+    shaders/PostProcessing/RTXPTPostProcess.csh
+    shaders/PostProcessing/RTXPTTemporalAAInputs.csh
+    shaders/PostProcessing/RTXPTSuperResolutionMotion.csh
+    shaders/PostProcessing/RTXPTDenoiserNRD.hlsli
+    shaders/PostProcessing/RTXPTBloomShared.h
+    shaders/PostProcessing/RTXPTBloomCopy.psh
+    shaders/PostProcessing/RTXPTBloomBlur.psh
+    shaders/PostProcessing/ToneMapper/ToneMappingShared.h
+    shaders/PostProcessing/ToneMapper/ToneMapping.hlsl
+    shaders/PostProcessing/ToneMapper/ToneMapping.ps.hlsli
+    shaders/PostProcessing/ToneMapper/Luminance.psh
+    shaders/RTXPTDebugCompute.csh
+    shaders/RTXPTBlit.vsh
+    shaders/RTXPTBlit.psh
+)
+
+include(FetchContent)
+
+# Fetch assets
+set(RTXPT_ASSETS_FETCH_URL "https://github.com/NVIDIA-RTX/RTXPT-Assets")
+set(RTXPT_ASSETS_FETCH_TAG "main")
+set(RTXPT_ASSETS_FETCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets" CACHE PATH "Directory to fetch RTXPT assets to")
+message(STATUS "Updating RTXPT assets from ${RTXPT_ASSETS_FETCH_URL}, tag ${RTXPT_ASSETS_FETCH_TAG}, into folder ${RTXPT_ASSETS_FETCH_DIR}")
+FetchContent_Declare(
+    RTXPTAssets
+    GIT_REPOSITORY ${RTXPT_ASSETS_FETCH_URL}
+    GIT_TAG        ${RTXPT_ASSETS_FETCH_TAG}
+    GIT_PROGRESS   TRUE
+)
+FetchContent_MakeAvailable(RTXPTAssets)
+file(MAKE_DIRECTORY "${RTXPT_ASSETS_FETCH_DIR}")
+file(COPY "${rtxptassets_SOURCE_DIR}/"
+    DESTINATION "${RTXPT_ASSETS_FETCH_DIR}"
+    PATTERN ".git" EXCLUDE
+    PATTERN ".gitattributes" EXCLUDE
+    PATTERN "README.md" EXCLUDE
 )
 
 if(NOT DEFINED RTXPT_NRD_ROOT)
@@ -327,6 +349,27 @@ add_sample_app(RTXPT
     INSTALL_ASSETS_DIR
         assets
 )
+
+if(PLATFORM_WIN32)
+    set_target_properties(RTXPT PROPERTIES
+        VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+endif()
+
+if(PLATFORM_WIN32 OR PLATFORM_LINUX)
+    add_custom_command(TARGET RTXPT POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+            "\"$<TARGET_FILE_DIR:RTXPT>/shaders\"")
+endif()
+
+if(DILIGENT_INSTALL_SAMPLES AND (PLATFORM_LINUX OR PLATFORM_WIN32))
+    file(RELATIVE_PATH RTXPT_REL_PATH "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+    install(DIRECTORY   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/"
+            DESTINATION "${CMAKE_INSTALL_BINDIR}/${RTXPT_REL_PATH}/$<CONFIG>/shaders")
+endif()
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/shaders PREFIX Shaders FILES ${SHADERS})
 
 if (NOT SUPER_RESOLUTION_SUPPORTED)
     message(FATAL_ERROR "RTXPT requires Diligent SuperResolution; configure without DILIGENT_NO_SUPER_RESOLUTION or disable the RTXPT sample")

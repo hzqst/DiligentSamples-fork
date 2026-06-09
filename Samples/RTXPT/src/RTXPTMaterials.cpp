@@ -290,6 +290,10 @@ bool RTXPTMaterialHasBaseColorTexture(const GLTF::Model&            Model,
     if (pExtension != nullptr && pExtension->Loaded && !pExtension->EnableBaseTexture)
         return false;
 
+    // An authored, enabled external base texture provides base color even when the glTF carries none.
+    if (pExtension != nullptr && pExtension->Loaded && pExtension->BaseTexture.HasPath)
+        return true;
+
     const int BaseColorTextureId = Material.GetTextureId(GLTF::DefaultBaseColorTextureAttribId);
     if (BaseColorTextureId < 0)
         return false;
@@ -334,10 +338,12 @@ bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&         Material,
                                       const RTXPTMaterialExtension* pExtension)
 {
     const bool ExtensionLoaded = pExtension != nullptr && pExtension->Loaded;
-    const bool UsesEmissiveTexture =
+    const bool UsesGLTFEmissiveTexture =
         Material.GetTextureId(GLTF::DefaultEmissiveTextureAttribId) >= 0 &&
         (!ExtensionLoaded || pExtension->EnableEmissiveTexture);
-    if (UsesEmissiveTexture)
+    const bool UsesExternalEmissiveTexture =
+        ExtensionLoaded && pExtension->EmissiveTexture.HasPath && pExtension->EnableEmissiveTexture;
+    if (UsesGLTFEmissiveTexture || UsesExternalEmissiveTexture)
         return false;
 
     const float3& Emission = ExtensionLoaded ? pExtension->EmissiveFactor : Material.Attribs.EmissiveFactor;

@@ -255,20 +255,25 @@ namespace Bridge
         motion.z  = prevClipPos.w - clipPos.w;
         return motion;
     }
+#endif
 
     void ExportSurfaceInit(uint2 pixelPos)
     {
         u_Depth[pixelPos]         = 0.0;
         u_MotionVectors[pixelPos] = float4(0.0, 0.0, 0.0, 0.0);
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         u_Throughput[pixelPos]    = 0u;
         u_SpecularHitT[pixelPos]  = 0.0;
+#endif
     }
 
     void ExportNonSurface(uint2 pixelPos)
     {
         u_Depth[pixelPos]         = 0.0;
         u_MotionVectors[pixelPos] = float4(0.0, 0.0, 0.0, 0.0);
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         u_Throughput[pixelPos]    = 0u;
+#endif
     }
 
     void ExportSurface(const PathState path, PathTracer::SurfaceData surfaceData, float sceneLength, float3 motionVectors)
@@ -276,7 +281,9 @@ namespace Bridge
         const uint2 pixelPos = path.GetPixelPos();
         u_Depth[pixelPos]         = sceneLength;
         u_MotionVectors[pixelPos] = float4(motionVectors, 0.0);
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         u_Throughput[pixelPos]    = Pack_R11G11B10_FLOAT(saturate(path.GetThp()));
+#endif
     }
 
     void ExportNonSurface(const PathState path, float3 virtualWorldPos, float3 motionVectors)
@@ -284,9 +291,12 @@ namespace Bridge
         const uint2 pixelPos = path.GetPixelPos();
         u_Depth[pixelPos]         = 0.0;
         u_MotionVectors[pixelPos] = float4(motionVectors, 0.0);
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         u_Throughput[pixelPos]    = 0u;
+#endif
     }
 
+#if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
     void ExportSpecHitTStart(const PathState path)
     {
         u_SpecularHitT[path.GetPixelPos()] = -path.GetSceneLength();

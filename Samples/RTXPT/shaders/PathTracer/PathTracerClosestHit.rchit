@@ -185,8 +185,6 @@ namespace PathTracer
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
         UpdatePathTravelled(path, rayOrigin, rayDir, rayTCurrent, workingContext);
 
-        path.CaptureReferencePrimaryDepth(rayTCurrent);
-
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
         if (!path.interiorList.isEmpty())
         {
@@ -229,6 +227,7 @@ namespace PathTracer
         }
 
         const bool pathStopping = path.isTerminatingAtNextBounce();
+        Bridge::ExportSurface(path, surfaceData, path.GetSceneLength(), float3(0.0, 0.0, 0.0));
 
         if (pathStopping)
         {

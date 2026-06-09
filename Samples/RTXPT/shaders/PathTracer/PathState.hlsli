@@ -52,8 +52,6 @@ struct PathState
     uint4 PackOriginId;
     uint4 PackDirSceneLength;
 
-    // Realtime payload lanes: BuildStablePlanes stores imageXformPacked here,
-    // FillStablePlanes stores packed L. Reference keeps fp32 image-parity state below.
     uint2 pack23;
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
     uint2 imageXformPacked;
@@ -70,29 +68,7 @@ struct PathState
     RayCone rayCone;
     uint    pack0;
     uint    pack1;
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-    float3  referenceThp;
-    float4  referenceL;
-    float   referenceFireflyFilterK;
-    float   referenceBsdfScatterPdf;
-    uint    referencePackedMISInfo;
-    float   referenceThpRuRuCorrection;
-#endif
-    // [PathState packing refactor — Gate 1] The flags bits and the vertex index used to share one
-    // packed word (flagsAndVertexIndex). They are split into two independent members so DXC no longer
-    // has to track them as sub-lanes of a single uint. The single 32-bit wire layout is unchanged:
-    // they are recombined only at the PathPayload::pack/unpack boundary.
-    uint    flags;        // PathFlags region, bit[10..31] (kPathFlagsBitMask); low 10 bits always 0
-    uint    vertexIndex;  // vertex index, low 10 bits (kVertexIndexBitMask)
-    // [PathState packing refactor — Gate 3, 2026-06-07] stablePlaneIndex used to live as a 2-bit
-    // subfield (bits 24..25) inside the shared flags word. The FILL plane transition
-    // (StablePlanesOnScatter) is the only site that writes it with a non-zero value, and it does so
-    // interleaved with several setFlag() read-modify-writes on that same flags word — the exact
-    // intra-word aliasing pattern DXC miscompiles (cf. the vertexIndex split in Gate 1, which fixed the
-    // opaque path). It is split into its own member so the masked RMW no longer aliases the flag writes.
-    // The single 32-bit wire layout is unchanged: it is recombined into packed[4].w bits 24..25 only at
-    // the PathPayload::pack/unpack boundary.
-    uint    stablePlaneIndex;
+    uint    flagsAndVertexIndex;
 
     float3 GetOrigin() { return asfloat(PackOriginId.xyz); }
     void SetOrigin(float3 origin) { PackOriginId.xyz = asuint(origin); }
@@ -118,92 +94,32 @@ struct PathState
 #else
     void SetFireflyFilterK_BsdfScatterPdf(float fireflyFilterK, float bsdfScatterPdf)
     {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        referenceFireflyFilterK = fireflyFilterK;
-        referenceBsdfScatterPdf = bsdfScatterPdf;
-#else
         pack0 = (f32tof16(clamp(fireflyFilterK, 0.0, HLF_MAX)) << 16) |
             f32tof16(clamp(bsdfScatterPdf, 0.0, HLF_MAX));
-#endif
     }
-    lpfloat GetFireflyFilterK()
-    {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        return lpfloat(referenceFireflyFilterK);
-#else
-        return lpfloat(f16tof32(pack0 >> 16));
-#endif
-    }
-    lpfloat GetBsdfScatterPdf()
-    {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        return lpfloat(referenceBsdfScatterPdf);
-#else
-        return lpfloat(f16tof32(pack0 & 0xffff));
-#endif
-    }
+    lpfloat GetFireflyFilterK() { return lpfloat(f16tof32(pack0 >> 16)); }
+    lpfloat GetBsdfScatterPdf() { return lpfloat(f16tof32(pack0 & 0xffff)); }
 
     void SetPackedMISInfo_ThpRuRuCorrection(uint packedMISInfo, float thpRuRuCorrection)
     {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        referencePackedMISInfo     = packedMISInfo;
-        referenceThpRuRuCorrection = thpRuRuCorrection;
-#else
         pack1 = (packedMISInfo << 16) | f32tof16(clamp(thpRuRuCorrection, 0.0, HLF_MAX));
-#endif
     }
-    lpuint GetPackedMISInfo()
-    {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        return lpuint(referencePackedMISInfo);
-#else
-        return lpuint(pack1 >> 16);
-#endif
-    }
-    lpfloat GetThpRuRuCorrection()
-    {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        return lpfloat(referenceThpRuRuCorrection);
-#else
-        return lpfloat(f16tof32(pack1 & 0xffff));
-#endif
-    }
+    lpuint GetPackedMISInfo() { return lpuint(pack1 >> 16); }
+    lpfloat GetThpRuRuCorrection() { return lpfloat(f16tof32(pack1 & 0xffff)); }
 #endif
 
     void SetThp(float3 thp)
     {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        referenceThp = thp;
-#else
         pack23 = Fp32ToFp16NoClamp(float4(clamp(thp, 0.xxx, HLF_MAX.xxx), 0.0));
-#endif
     }
-    float3 GetThp()
-    {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        return referenceThp;
-#else
-        return Fp16ToFp32(pack23).xyz;
-#endif
-    }
+    float3 GetThp() { return Fp16ToFp32(pack23).xyz; }
 
 #if PATH_TRACER_MODE != PATH_TRACER_MODE_BUILD_STABLE_PLANES
     void SetL(float4 l)
     {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        referenceL = l;
-#else
         pack45 = Fp32ToFp16NoClamp(clamp(l, 0.xxxx, HLF_MAX.xxxx));
-#endif
     }
-    float4 GetL()
-    {
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        return referenceL;
-#else
-        return Fp16ToFp32(pack45);
-#endif
-    }
+    float4 GetL() { return Fp16ToFp32(pack45); }
 #endif
 
     bool isTerminated() { return !isActive(); }
@@ -227,7 +143,7 @@ struct PathState
         const uint bits = (((uint)PathFlags::transmission) |
                            ((uint)PathFlags::specular) |
                            ((uint)PathFlags::delta)) << kVertexIndexBitCount;
-        flags &= ~bits;
+        flagsAndVertexIndex &= ~bits;
     }
 
     void setScatterTransmission(bool value = true) { setFlag(PathFlags::transmission, value); }
@@ -240,13 +156,16 @@ struct PathState
     bool hasFlag(PathFlags flag)
     {
         const uint bit = ((uint)flag) << kVertexIndexBitCount;
-        return (flags & bit) != 0;
+        return (flagsAndVertexIndex & bit) != 0;
     }
 
     void setFlag(PathFlags flag, bool value = true)
     {
         const uint bit = ((uint)flag) << kVertexIndexBitCount;
-        flags = value ? (flags | bit) : (flags & ~bit);
+        if (value)
+            flagsAndVertexIndex |= bit;
+        else
+            flagsAndVertexIndex &= ~bit;
     }
 
     uint getCounter(PackedCounters type)
@@ -268,59 +187,27 @@ struct PathState
 
     uint2 GetPixelPos() { return PathIDToPixel(GetId()); }
 
-    // [PathState packing refactor — Gate 1, 2026-06-07] vertexIndex now lives in its own member, so
-    // these accessors operate on an isolated word instead of doing masked read-modify-write inside the
-    // shared flags word. This removes the intra-word aliasing that DXC miscompiles when realtime
-    // HandleHit contains nested-dielectric handling. getVertexIndex keeps the mask to stay bit-for-bit
-    // equivalent to the old combined form after a pack/unpack roundtrip.
-    void setVertexIndex(uint index) { vertexIndex = index; }
-    uint getVertexIndex() { return vertexIndex & kVertexIndexBitMask; }
-    void incrementVertexIndex() { vertexIndex += 1; }
-    void decrementVertexIndex() { vertexIndex -= 1; }
+    void setVertexIndex(uint index)
+    {
+        flagsAndVertexIndex &= kPathFlagsBitMask;
+        flagsAndVertexIndex |= index;
+    }
+
+    uint getVertexIndex() { return flagsAndVertexIndex & kVertexIndexBitMask; }
+    void incrementVertexIndex() { flagsAndVertexIndex += 1; }
+    void decrementVertexIndex() { flagsAndVertexIndex -= 1; }
 
     Ray getScatterRay()
     {
         return Ray::make(GetOrigin(), GetDir(), 0.0, kMaxRayTravel);
     }
 
-    // [Gate 3] stablePlaneIndex now lives in its own member instead of bits 24..25 of the flags word,
-    // removing the intra-word aliasing that DXC miscompiles during the FILL plane transition.
-    uint getStablePlaneIndex()
-    {
-        return stablePlaneIndex;
-    }
-
+    uint getStablePlaneIndex() { return (flagsAndVertexIndex & kStablePlaneIndexBitMask) >> kStablePlaneIndexBitOffset; }
     void setStablePlaneIndex(uint index)
     {
-        stablePlaneIndex = index;
+        flagsAndVertexIndex &= ~kStablePlaneIndexBitMask;
+        flagsAndVertexIndex |= index << kStablePlaneIndexBitOffset;
     }
-
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
-    void InitReferencePrimaryDepth(float depth)
-    {
-        stableBranchID   = asuint(depth);
-        stablePlaneIndex = 0u;
-    }
-
-    bool HasReferencePrimaryDepth()
-    {
-        return stablePlaneIndex != 0u;
-    }
-
-    void CaptureReferencePrimaryDepth(float depth)
-    {
-        if (!HasReferencePrimaryDepth())
-        {
-            stableBranchID   = asuint(depth);
-            stablePlaneIndex = 1u;
-        }
-    }
-
-    float GetReferencePrimaryDepth()
-    {
-        return asfloat(stableBranchID);
-    }
-#endif
 };
 
 #endif // __PATH_STATE_HLSLI__

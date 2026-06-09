@@ -239,8 +239,7 @@ namespace PathTracer
     {
         PathState path;
         path.SetId(PathIDFromPixel(pixelPos));
-        path.flags = 0;
-        path.vertexIndex = 0;
+        path.flagsAndVertexIndex = 0;
         path.SetSceneLength(0.0);
         path.packedCounters = 0;
 
@@ -269,11 +268,7 @@ namespace PathTracer
 #endif
 
         path.setStablePlaneIndex(0);
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        path.InitReferencePrimaryDepth(g_Const.ptConsts.camera.FarZ);
-#else
         path.stableBranchID = 1u;
-#endif
 
         if (HasFinishedSurfaceBounces(path.getVertexIndex() + 1,
                                       path.getCounter(PackedCounters::DiffuseBounces)))
@@ -288,7 +283,7 @@ namespace PathTracer
         workingContext.StablePlanes.StartPixel(path.GetPixelPos());
 #endif
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE || PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
         Bridge::ExportSurfaceInit(path.GetPixelPos());
 #endif
     }
@@ -614,10 +609,7 @@ namespace PathTracer
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
         // Stable radiance and stable-plane data are committed incrementally while tracing.
 #elif PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        const uint2 pixelPos = path.GetPixelPos();
-        workingContext.OutputColor[pixelPos]   = float4(path.GetL().rgb, 1.0);
-        workingContext.Depth[pixelPos]         = path.GetReferencePrimaryDepth();
-        workingContext.MotionVectors[pixelPos] = float4(0.0, 0.0, 0.0, 0.0);
+        workingContext.OutputColor[path.GetPixelPos()] = float4(path.GetL().rgb, 1.0);
 #elif PATH_TRACER_MODE == PATH_TRACER_MODE_FILL_STABLE_PLANES
         workingContext.StablePlanes.CommitDenoiserRadiance(path);
 #else
@@ -700,6 +692,8 @@ namespace PathTracer
 
 #if PATH_TRACER_MODE != PATH_TRACER_MODE_REFERENCE || defined(__INTELLISENSE__)
         StablePlanesHandleMiss(path, environmentEmission, rayOrigin, rayDir, rayTCurrent, workingContext);
+#else
+        Bridge::ExportNonSurface(path, rayOrigin + rayDir * rayTCurrent, float3(0.0, 0.0, 0.0));
 #endif
 
         if (any(environmentEmission > 0.0))
@@ -729,16 +723,6 @@ namespace PathTracer
     {
         UpdatePathTravelled(path, rayOrigin, rayDir, rayTCurrent, workingContext);
 
-#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-        path.CaptureReferencePrimaryDepth(rayTCurrent);
-#endif
-
-        // [Packing refactor — Gate 2] Nested-dielectric handling restored to realtime HandleHit on top
-        // of the split flags/vertexIndex packing (Gate 1). Previously the mere presence of this block
-        // blacked out opaque primary hits via a DXC miscompilation of the shared flagsAndVertexIndex
-        // word, even though opaque hits execute none of it (thin surface / empty interior list). If
-        // opaque shading stays correct now, the de-aliasing resolved the miscompilation and realtime
-        // transmission through nested dielectrics is back.
         float volumeAbsorption = 0.0;
 #if RTXPT_NESTED_DIELECTRICS_QUALITY > 0 || defined(__INTELLISENSE__)
         if (!path.interiorList.isEmpty())
@@ -790,6 +774,9 @@ namespace PathTracer
                                    ShouldCollectGISecondaryRadiance(path));
         }
         const bool pathStopping = path.isTerminatingAtNextBounce();
+#if PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
+        Bridge::ExportSurface(path, surfaceData, path.GetSceneLength(), float3(0.0, 0.0, 0.0));
+#endif
 #if PATH_TRACER_MODE == PATH_TRACER_MODE_BUILD_STABLE_PLANES
         StablePlanesHandleHit(path,
                               rayOrigin,

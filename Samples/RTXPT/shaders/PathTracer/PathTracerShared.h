@@ -9,21 +9,6 @@ static const uint kSubInstanceFlagSkinned = 0x2u;
 // clamps the area->solid-angle conversion for near-grazing / very close emissive-triangle samples.
 static const float kMaxSolidAnglePdf = 1e10;
 
-// Mode-specific packed PathState/PathPayload wire format. Realtime BUILD/FILL
-// stays 5xuint4; reference uses extra fp32 lanes for image-parity state.
-// Keep StablePlane::PackCustomPayload, PathPayload::{from,to}Array, and the RT
-// pipeline MaxPayloadSize audit in sync with this.
-#ifndef RTXPT_PATH_PAYLOAD_UINT4_COUNT
-#    if defined(PATH_TRACER_MODE) && defined(PATH_TRACER_MODE_REFERENCE) && PATH_TRACER_MODE == PATH_TRACER_MODE_REFERENCE
-#        define RTXPT_PATH_PAYLOAD_UINT4_COUNT 7
-#    else
-#        define RTXPT_PATH_PAYLOAD_UINT4_COUNT 5
-#    endif
-#endif
-#ifndef RTXPT_PATH_PAYLOAD_SIZE_BYTES
-#    define RTXPT_PATH_PAYLOAD_SIZE_BYTES (RTXPT_PATH_PAYLOAD_UINT4_COUNT * 4 * 4)
-#endif
-
 struct PathTracerCameraData
 {
     float3 PosW;

@@ -167,10 +167,8 @@ namespace PathTracer
                         path, rayDir, surfaceData, deltaLobes[lobeToExplore], lobeToExplore, true, workingContext);
                     splitPath.setStablePlaneIndex(availablePlanes[i]);
                     PathPayload splitPayload = PathPayload::pack(splitPath);
-                    uint4       splitPayloadPacked[RTXPT_PATH_PAYLOAD_UINT4_COUNT];
-                    PathPayload::toArray(splitPayload, splitPayloadPacked);
                     workingContext.StablePlanes.StoreExplorationStart(
-                        pixelPos, availablePlanes[i], splitPayloadPacked);
+                        pixelPos, availablePlanes[i], splitPayload.packed);
                 }
 
                 if (lobeForReuse != -1)

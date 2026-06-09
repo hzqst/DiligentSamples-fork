@@ -501,7 +501,7 @@ Phase 6 ports the RTXPT-fork post-processing display contract. This section is t
 | `Sample.cpp::PathTrace` BUILD pre-pass | `src/RTXPTSample.cpp::DispatchPathTracePrePass` | Realtime-only dispatch to `BuildStablePlanes`, then UAV barriers. |
 | `Sample.cpp::PathTrace` `LightsBaker.UpdateEnd(... Depth, MotionVectors)` | `src/RTXPTLightsBaker::UpdateEnd(... pDepthSRV, pMotionVectorsSRV)` | Call-order and data contract preserved; current Diligent feedback implementation accepts but does not yet consume the views. |
 | `Sample.cpp::PathTrace` FILL/REFERENCE sub-sample loop | `src/RTXPTSample.cpp::DispatchPathTraceLoop` | Uses `SampleMiniConstants.params.x` for sub-sample index. |
-| `Shaders/PathTracer/PathPayload.hlsli` | `shaders/PathTracer/PathPayload.hlsli` | Packed path-state payload for realtime variants; reference uses the same type with fp32 parity lanes. |
+| `Shaders/PathTracer/PathPayload.hlsli` | `shaders/PathTracer/PathPayload.hlsli` | Upstream-compatible five-`uint4` packed path-state payload for reference and realtime variants. |
 | `Shaders/PathTracer/PathState.hlsli` | `shaders/PathTracer/PathState.hlsli` | Stable-plane flags/counters and path state. |
 | `Shaders/PathTracer/StablePlanes.hlsli` | `shaders/PathTracer/StablePlanes.hlsli` | Stable-plane buffer/header/radiance logic. |
 | `Shaders/PathTracer/PathTracerStablePlanes.hlsli` | `shaders/PathTracer/PathTracerStablePlanes.hlsli` | Build/fill stable-plane hit/miss/scatter logic. |
@@ -517,8 +517,8 @@ Remaining intentional fork differences:
 
 - `PathTracerBridge.hlsli` uses Diligent resources and scene adapters instead
   of upstream Donut bridge calls.
-- Reference `CommitPixel` writes raw HDR output, primary depth, and zero screen
-  motion vectors; it does not write stable planes.
+- Reference `CommitPixel` writes raw HDR output; depth, motion vectors, and
+  throughput are exported through the Diligent bridge.
 - Reference branches inside `HandleHit`, `HandleMiss`, `GenerateScatterRay`,
   `HandleRussianRoulette`, and `HandleNEE` preserve the local reference
   estimator: full-sample NEE, emissive/environment MIS, firefly filtering,
@@ -526,15 +526,13 @@ Remaining intentional fork differences:
   Russian roulette, volumes, and nested dielectrics.
 - Reference raygen keeps a safety iteration ceiling in addition to normal path
   termination.
-- `RTXPTRayTracingPass.cpp` keeps the conservative 160-byte RT payload size
-  while realtime BUILD/FILL `PathPayload` is 80 bytes. Reference `PathPayload`
-  uses 112 bytes to keep radiance, throughput, BSDF pdf, firefly K, and MIS
-  state in fp32 across ray calls.
+- `PathState`, `PathPayload`, stable-plane exploration storage, and the RT PSO
+  use the upstream 80-byte payload layout in all path-tracer modes.
 
 Parity notes:
 
-- Reference, build, and fill variants now share the packed `PathPayload` /
-  `PathState` transport spine.
+- Reference, build, and fill variants share the upstream packed `PathPayload` /
+  `PathState` layout and fp16 transport fields.
 - `PathTracer::GenerateScatterRay` follows the upstream split-overload shape and
   keeps the upstream non-delta ray-cone spread expansion plus thread-reorder flag
   side effects.

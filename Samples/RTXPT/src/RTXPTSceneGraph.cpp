@@ -35,6 +35,29 @@ std::string GetRTXPTModelNameFromPath(const std::string& ModelPath)
     return Dot != std::string::npos && Dot > Start ? ModelPath.substr(Start, Dot - Start) : ModelPath.substr(Start);
 }
 
+// Reads a named RTXPT material texture object. Missing, null, non-object, or empty-path values yield
+// HasPath = false. The authored path is stored with backslashes normalized to forward slashes; no file
+// I/O happens here.
+static RTXPTMaterialTextureDesc ReadMaterialTexture(const nlohmann::json& Json, const char* Key)
+{
+    RTXPTMaterialTextureDesc Desc;
+
+    const auto It = Json.find(Key);
+    if (It == Json.end() || !It->is_object())
+        return Desc;
+
+    const std::string Path = ReadRTXPTOptionalString(*It, "path", "");
+    if (Path.empty())
+        return Desc;
+
+    Desc.LocalPath = Path;
+    std::replace(Desc.LocalPath.begin(), Desc.LocalPath.end(), '\\', '/');
+    Desc.HasPath   = true;
+    Desc.SRGB      = It->value("sRGB", false);
+    Desc.NormalMap = It->value("NormalMap", false);
+    return Desc;
+}
+
 RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string&    FilePath,
                                                    const std::string&    ModelName,
                                                    const std::string&    MaterialName,
@@ -90,6 +113,20 @@ RTXPTMaterialExtension ParseRTXPTMaterialExtension(const std::string&    FilePat
     Ext.PSDExclude                              = Json.value("PSDExclude", Ext.PSDExclude);
     Ext.IgnoreMeshTangentSpace                  = Json.value("IgnoreMeshTangentSpace", Ext.IgnoreMeshTangentSpace);
     Ext.SkipRender                              = Json.value("SkipRender", Ext.SkipRender);
+
+    Ext.EnableTransmissionTexture = Json.value("EnableTransmissionTexture", Ext.EnableTransmissionTexture);
+
+    Ext.BaseTexture                       = ReadMaterialTexture(Json, "BaseTexture");
+    Ext.OcclusionRoughnessMetallicTexture = ReadMaterialTexture(Json, "OcclusionRoughnessMetallicTexture");
+    Ext.NormalTexture                     = ReadMaterialTexture(Json, "NormalTexture");
+    Ext.EmissiveTexture                   = ReadMaterialTexture(Json, "EmissiveTexture");
+    Ext.TransmissionTexture               = ReadMaterialTexture(Json, "TransmissionTexture");
+
+    if (Json.contains("NormalTextureScale"))
+    {
+        Ext.NormalTextureScale    = ReadRTXPTOptionalFloat(Json, "NormalTextureScale", Ext.NormalTextureScale);
+        Ext.HasNormalTextureScale = true;
+    }
 
     return Ext;
 }

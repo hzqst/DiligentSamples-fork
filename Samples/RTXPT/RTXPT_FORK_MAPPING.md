@@ -363,9 +363,12 @@ Raygen locals become camelCase:
   signed `cosTheta` rejects back-face NEE samples, the BSDF-hit emissive pdf and the
   surface emission are gated on `frontFacing`, and `EmissiveTriangleBuild.hlsl` swaps
   edges on mirrored instances so the emitter normal matches the geometric front face.
-  Textured-emissive materials are promoted to area lights when bindless material textures
-  are available (the build shader bakes `emissiveFactor * emissiveTexture` per triangle,
-  matching `PrepareLights.hlsl`); on the non-bindless fallback they stay BSDF-only.
+  Textured-emissive materials are always promoted to area lights: bindless is a hard device
+  requirement (`Features.BindlessResources = DEVICE_FEATURE_STATE_ENABLED` in
+  `ModifyEngineInitInfo`), so the build shader can always bake `emissiveFactor *
+  emissiveTexture` per triangle (matching `PrepareLights.hlsl`). There is no factor-only
+  *capability* fallback — factor-only radiance is used only for scenes that contain no
+  material textures at all.
   Emissive triangles are importance-sampled **per-triangle** proportional to power via the
   GPU proxy build (`LightProxyBuild.hlsl` / `RTXPTLightProxyBuildPass`), replacing the
   earlier single "emissive bucket". Remaining divergences from RTXPT-fork:
@@ -379,7 +382,11 @@ Raygen locals become camelCase:
     proxy pool, giving finer power-proportional granularity (lower selection-pdf
     quantization / variance). Unbiased either way; this is a quality/parity deviation, not a
     correctness one. Adopting the upstream floor costs a ~2.4 MB minimum proxy buffer
-    regardless of scene size.
+    regardless of scene size. **Intentional, accepted:** we keep the tighter
+    `max(TotalLightCount, 1)` floor — the per-light proxy count scales with the actual scene,
+    so the extra granularity upstream buys only matters for very small light sets, and the
+    fixed ~2.4 MB floor is not worth paying on every scene. Revisit only if a scene with few
+    but high-variance emitters shows visible NEE noise.
   - emissive triangles live in a separate `EmissiveTriangle` buffer rather than the unified
     `PolymorphicLightInfo` light buffer.
   - the proxy build re-runs on scene/lights change **and** after dynamic/skinned emissive

@@ -282,7 +282,7 @@ bool RTXPTLights::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& Scen
     return UploadLightBuffer(pDevice, Lights);
 }
 
-bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData, bool AllowEmissiveTexture)
+bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData)
 {
     m_Stats.EmissiveTriangleCount = 0;
     m_Stats.LastError.clear();
@@ -317,7 +317,7 @@ bool RTXPTLights::UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSce
                     continue;
 
                 const RTXPTMaterialExtension* pExtension = RTXPTGetMaterialExtension(SceneData, Asset, Primitive.MaterialId);
-                if (!RTXPTMaterialIsEmissiveAreaLight(Model.Materials[Primitive.MaterialId], pExtension, AllowEmissiveTexture))
+                if (!RTXPTMaterialIsEmissiveAreaLight(Model.Materials[Primitive.MaterialId], pExtension))
                     continue;
 
                 const Uint32 TriangleCount = GetPrimitiveTriangleCount(Primitive);

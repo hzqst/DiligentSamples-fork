@@ -65,7 +65,7 @@ RefCntAutoPtr<ITextureView> CreateMaterialTextureView(ITexture* pTexture)
     return pSRV;
 }
 
-void FillMaterialPTDataFromGLTF(const GLTF::Material& Material, MaterialPTData& Data, bool AllowEmissiveTexture)
+void FillMaterialPTDataFromGLTF(const GLTF::Material& Material, MaterialPTData& Data)
 {
     const GLTF::Material::ShaderAttribs& Attribs = Material.Attribs;
 
@@ -147,7 +147,7 @@ void FillMaterialPTDataFromGLTF(const GLTF::Material& Material, MaterialPTData& 
     if (RTXPTMaterialIsAlphaTested(Material) && (Data.flags & kMaterialFlag_HasBaseColorTexture) != 0u)
         Data.flags |= kMaterialFlag_AlphaTested;
 
-    if (RTXPTMaterialIsEmissiveAreaLight(Material, AllowEmissiveTexture))
+    if (RTXPTMaterialIsEmissiveAreaLight(Material))
         Data.flags |= kMaterialFlag_EmissiveAreaLight;
 }
 
@@ -264,9 +264,9 @@ bool RTXPTMaterialIsAlphaTested(const GLTF::Material& Material)
         Material.GetTextureId(GLTF::DefaultBaseColorTextureAttribId) >= 0;
 }
 
-bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material& Material, bool AllowEmissiveTexture)
+bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material& Material)
 {
-    return RTXPTMaterialIsEmissiveAreaLight(Material, nullptr, AllowEmissiveTexture);
+    return RTXPTMaterialIsEmissiveAreaLight(Material, nullptr);
 }
 
 const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphData& SceneData,
@@ -342,23 +342,14 @@ bool RTXPTMaterialNeedsAnyHit(const GLTF::Material&         Material,
 }
 
 bool RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&         Material,
-                                      const RTXPTMaterialExtension* pExtension,
-                                      bool                          AllowEmissiveTexture)
+                                      const RTXPTMaterialExtension* pExtension)
 {
-    const bool ExtensionLoaded = pExtension != nullptr && pExtension->Loaded;
-    const bool UsesGLTFEmissiveTexture =
-        Material.GetTextureId(GLTF::DefaultEmissiveTextureAttribId) >= 0 &&
-        (!ExtensionLoaded || pExtension->EnableEmissiveTexture);
-    const bool UsesExternalEmissiveTexture =
-        ExtensionLoaded && pExtension->EmissiveTexture.HasPath && pExtension->EnableEmissiveTexture;
-    // Without bindless material textures the emissive-triangle build shader cannot sample the emissive
-    // texture, so textured emitters stay BSDF-only (matches RTXPT-fork's bindless-only assumption). When
-    // textures are available we fall through to the factor test: emission = emissiveFactor * texture, so a
-    // non-zero authored factor/strength is the glTF-correct gate (a zero factor yields zero emission).
-    if ((UsesGLTFEmissiveTexture || UsesExternalEmissiveTexture) && !AllowEmissiveTexture)
-        return false;
-
-    const float3& Emission = ExtensionLoaded ? pExtension->EmissiveFactor : Material.Attribs.EmissiveFactor;
+    // A material qualifies as an emissive area light on its authored emissive factor/strength. Bindless is
+    // mandatory, so emissive-textured materials are sampled on the GPU by the emissive-triangle build shader
+    // (emission = emissiveFactor * texture); the non-zero factor is the glTF-correct gate (a zero factor
+    // yields zero emission regardless of the texture).
+    const bool    ExtensionLoaded = pExtension != nullptr && pExtension->Loaded;
+    const float3& Emission        = ExtensionLoaded ? pExtension->EmissiveFactor : Material.Attribs.EmissiveFactor;
     return HasNonZeroEmission(Emission);
 }
 
@@ -406,33 +397,7 @@ bool RTXPTMaterials::CreateMaterialBuffer(IRenderDevice* pDevice, const std::vec
     return m_MaterialBuffer != nullptr;
 }
 
-bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const GLTF::Model& Model)
-{
-    Reset();
-
-    std::vector<Uint32> TextureRemap;
-    AppendTextureViews(Model, TextureRemap);
-    m_Stats.TextureCount = static_cast<Uint32>(m_TextureBindings.size());
-
-    std::vector<MaterialPTData> MaterialData;
-    MaterialData.reserve(std::max<size_t>(Model.Materials.size(), 1));
-    for (const GLTF::Material& Material : Model.Materials)
-    {
-        MaterialPTData Data;
-        // Single-GLTF compatibility path has no bindless-texture context; keep constant-only emitters.
-        FillMaterialPTDataFromGLTF(Material, Data, false);
-        RemapMaterialTextureIndices(Data, TextureRemap);
-        MaterialData.emplace_back(Data);
-    }
-
-    if (MaterialData.empty())
-        MaterialData.emplace_back();
-
-    m_Stats.MaterialCount = static_cast<Uint32>(MaterialData.size());
-    return CreateMaterialBuffer(pDevice, MaterialData);
-}
-
-bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData, const std::string& AssetsRoot, bool AllowEmissiveTexture)
+bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData, const std::string& AssetsRoot)
 {
     Reset();
 
@@ -458,7 +423,7 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
             const GLTF::Material& Material = Asset.Model->Materials[MatIdx];
 
             MaterialPTData Data;
-            FillMaterialPTDataFromGLTF(Material, Data, AllowEmissiveTexture);
+            FillMaterialPTDataFromGLTF(Material, Data);
             RemapMaterialTextureIndices(Data, TextureRemaps[AssetIdx]);
 
             const RTXPTMaterialExtension* pExtension = RTXPTGetMaterialExtension(SceneData, Asset, MatIdx);
@@ -580,7 +545,7 @@ bool RTXPTMaterials::Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& S
                 Data.flags |= kMaterialFlag_AlphaTested;
 
             Data.flags &= ~kMaterialFlag_EmissiveAreaLight;
-            if (RTXPTMaterialIsEmissiveAreaLight(Material, pExtension, AllowEmissiveTexture))
+            if (RTXPTMaterialIsEmissiveAreaLight(Material, pExtension))
                 Data.flags |= kMaterialFlag_EmissiveAreaLight;
 
             MaterialData.emplace_back(Data);

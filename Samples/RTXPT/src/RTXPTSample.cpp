@@ -26,6 +26,7 @@
 
 #include "RTXPTSample.hpp"
 #include "RTXPTCameraBasis.hpp"
+#include "DebugUtilities.hpp"
 #include "GraphicsAccessories.hpp"
 #include "GraphicsUtilities.h"
 #include "FileSystem.hpp"
@@ -317,6 +318,8 @@ RTXPTFeatureCaps MakeFeatureCaps(const IRenderDevice* pDevice)
     const auto&      RTProps = pDevice->GetAdapterInfo().RayTracing;
 
     Caps.RayTracing        = DevInfo.Features.RayTracing == DEVICE_FEATURE_STATE_ENABLED;
+    // Always true here: ModifyEngineInitInfo hard-requires BindlessResources, so device creation would have
+    // failed otherwise. Retained for the InfoGUI readout and as a defensive cap.
     Caps.BindlessResources = DevInfo.Features.BindlessResources == DEVICE_FEATURE_STATE_ENABLED;
     Caps.ComputeShaders    = DevInfo.Features.ComputeShaders == DEVICE_FEATURE_STATE_ENABLED;
 
@@ -574,6 +577,11 @@ void RTXPTSample::ModifyEngineInitInfo(const ModifyEngineInitInfoAttribs& Attrib
     SampleBase::ModifyEngineInitInfo(Attribs);
 
     Attribs.EngineCI.Features.RayTracing = DEVICE_FEATURE_STATE_ENABLED;
+    // Bindless material textures are mandatory: the emissive-triangle build bakes textured per-triangle radiance
+    // for NEE, and the closest-hit path must sample the same textures so the NEE pdf and BSDF-hit MIS weight
+    // describe the same emitter. Requiring the feature here fails device creation on backends without bindless
+    // (e.g. WebGPU) rather than silently degrading to a factor-only path. Supported by default on D3D12/Vulkan.
+    Attribs.EngineCI.Features.BindlessResources = DEVICE_FEATURE_STATE_ENABLED;
 
 #ifdef DILIGENT_DEBUG
     Attribs.EngineCI.EnableValidation = true;
@@ -686,14 +694,12 @@ bool RTXPTSample::RebuildSceneDependentResources()
         m_Scene.Update(0.0, 0.0);
     }
 
-    // Emissive-textured materials become NEE area lights only when the emissive-triangle build shader can
-    // sample their textures on the GPU, i.e. when bindless material textures are available. This must be the
-    // same value for materials, emissive-triangle counting, and the AS EmissiveTriangleOffset allocation.
-    const bool AllowEmissiveTexture = m_FeatureCaps.BindlessResources;
-
-    ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData, m_Scene.GetAssetsRoot(), AllowEmissiveTexture);
+    // Emissive-textured materials are always promoted to NEE area lights: bindless is mandatory, so the
+    // emissive-triangle build shader can always sample their textures on the GPU. Classification stays
+    // consistent across materials, emissive-triangle counting, and the AS EmissiveTriangleOffset allocation.
+    ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData, m_Scene.GetAssetsRoot());
     ResourcesReady &= m_Lights.Upload(m_pDevice, SceneData);
-    ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData, AllowEmissiveTexture);
+    ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData);
 
     const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
     ResourcesReady &= m_EnvMapBaker.CreateResources(m_pDevice, m_pImmediateContext, m_pEngineFactory, m_FeatureCaps.ComputeShaders);
@@ -718,8 +724,7 @@ bool RTXPTSample::RebuildSceneDependentResources()
                                             SceneData,
                                             m_Scene.GetIndexType(),
                                             &m_SkinnedGeometry,
-                                            m_FeatureCaps.RayTracing,
-                                            AllowEmissiveTexture);
+                                            m_FeatureCaps.RayTracing);
 
     if (ResourcesReady)
     {
@@ -1155,9 +1160,10 @@ void RTXPTSample::CreatePhase4Passes()
                                       m_FrameConstantsCB,
                                       m_FeatureCaps.ComputeShaders);
 
-    // Material-texture sampling needs descriptor indexing. Gate it on bindless support; if the textured
-    // pipeline fails to build, fall back to the Phase 5.2 factor-only path so the sample still renders.
-    const bool EnableMaterialTextures = m_FeatureCaps.BindlessResources && m_Materials.GetTextureCount() > 0;
+    // Build the textured shader variants whenever the scene actually carries material textures. Bindless is
+    // mandatory (required in ModifyEngineInitInfo), so descriptor indexing is always available; the only
+    // factor-only path left is the legitimate texture-less scene (MaterialTextureCount == 0).
+    const bool EnableMaterialTextures = m_Materials.GetTextureCount() > 0;
     const bool EnableAnyHit           = EnableMaterialTextures || m_AccelerationStructures.GetStats().AlphaBlendedGeometryCount > 0;
 
     m_EmissiveTrianglePass.Initialize(m_pDevice,
@@ -1208,39 +1214,11 @@ void RTXPTSample::CreatePhase4Passes()
                                     m_FeatureCaps.RayTracing,
                                     m_FeatureCaps.StandaloneRayTracingShaders);
 
-    if (!RTReady && EnableMaterialTextures)
+    if (!RTReady)
     {
-        m_RayTracingPass.Initialize(m_pDevice,
-                                    m_pImmediateContext,
-                                    m_pEngineFactory,
-                                    m_FrameConstantsCB,
-                                    m_Materials.GetMaterialBuffer(),
-                                    m_AccelerationStructures.GetSubInstanceBuffer(),
-                                    m_Lights.GetLightBuffer(),
-                                    m_LightsBaker.GetControlBuffer(),
-                                    m_LightsBaker.GetLightProxyCounters(),
-                                    m_LightsBaker.GetLightSamplingProxies(),
-                                    m_LightsBaker.GetLocalSamplingBuffer(),
-                                    m_LightsBaker.GetFeedbackTotalWeightUAV(),
-                                    m_LightsBaker.GetFeedbackCandidatesUAV(),
-                                    m_EnvMapBaker.GetEnvironmentMapSRV(),
-                                    m_EnvMapBaker.GetImportanceMapSRV(),
-                                    m_EnvMapBaker.GetRadianceMapSRV(),
-                                    m_EnvMapBaker.GetEnvironmentSampler(),
-                                    m_EnvMapBaker.GetImportanceSampler(),
-                                    m_Lights.GetEmissiveTriangleBuffer(),
-                                    m_Scene.GetVertexBuffer0(m_pDevice, m_pImmediateContext),
-                                    m_SkinnedGeometry.GetSkinnedVertexBuffer(),
-                                    m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
-                                    m_Scene.GetIndexType(),
-                                    m_AccelerationStructures.GetTLAS(),
-                                    nullptr,
-                                    0,
-                                    false,
-                                    m_AccelerationStructures.GetStats().AlphaBlendedGeometryCount > 0,
-                                    m_ReferenceUI.EnableLDSamplerForBSDF,
-                                    m_FeatureCaps.RayTracing,
-                                    m_FeatureCaps.StandaloneRayTracingShaders);
+        // Bindless is mandatory, so the textured ray-tracing pipeline must build; there is no factor-only
+        // capability fallback. A failure here leaves m_RayTracingPass un-ready and the scene won't render.
+        LOG_ERROR_MESSAGE("RTXPT ray-tracing pipeline failed to initialize; the scene cannot be path traced");
     }
 }
 

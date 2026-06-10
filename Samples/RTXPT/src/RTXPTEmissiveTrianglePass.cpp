@@ -78,8 +78,9 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*        pDevice,
         return false;
     }
 
-    // Sample emissive textures on the GPU (matching the closest-hit material bridge) only when bindless
-    // material textures are available; otherwise the build shader falls back to factor-only radiance.
+    // Sample emissive textures on the GPU (matching the closest-hit material bridge) when the scene carries
+    // material textures. Bindless is mandatory, so the only factor-only case is a texture-less scene
+    // (MaterialTextureCount == 0), where the textured variant cannot be compiled.
     const bool UseTextures = EnableMaterialTextures && pMaterialTextures != nullptr && MaterialTextureCount > 0;
 
     if (pDevice == nullptr || pEngineFactory == nullptr || pMaterialBuffer == nullptr || pSubInstanceBuffer == nullptr ||

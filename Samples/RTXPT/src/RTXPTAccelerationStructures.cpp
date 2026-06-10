@@ -121,8 +121,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
                                              const RTXPTSceneGraphData&       SceneData,
                                              VALUE_TYPE                       IndexType,
                                              const RTXPTSkinnedSceneGeometry* pSkinnedGeometry,
-                                             bool                             RayTracingSupported,
-                                             bool                             AllowEmissiveTexture)
+                                             bool                             RayTracingSupported)
 {
     Reset();
     m_Stats.RayTracingSupported = RayTracingSupported;
@@ -207,7 +206,7 @@ bool RTXPTAccelerationStructures::BuildScene(IRenderDevice*                   pD
             MaterialAlphaTested[MatIdx]                       = IsAlphaTested ? Uint8{1} : Uint8{0};
             MaterialAlphaBlended[MatIdx]                      = IsAlphaBlended ? Uint8{1} : Uint8{0};
             MaterialNeedsAnyHit[MatIdx]                       = NeedsAnyHit ? Uint8{1} : Uint8{0};
-            MaterialEmissiveAreaLight[MatIdx]                 = RTXPTMaterialIsEmissiveAreaLight(Material, pExtension, AllowEmissiveTexture) ? Uint8{1} : Uint8{0};
+            MaterialEmissiveAreaLight[MatIdx]                 = RTXPTMaterialIsEmissiveAreaLight(Material, pExtension) ? Uint8{1} : Uint8{0};
         }
 
         IBuffer* pVertexBuffer = Model.GetVertexBuffer(Position.BufferId, pDevice, pContext);

@@ -443,6 +443,9 @@ bool RTXPTLightsBaker::CreateProxyBuffers(IRenderDevice* pDevice, const RTXPTLig
     // Proxy budget mirrors the previous CPU build (kProxyRatio proxies per light); the GPU build fills up to
     // this many entries and writes the exact count into control.SamplingProxyCount. ProxyBudget is the actual
     // allocated capacity, so the path tracer's selection pdf denominator stays consistent.
+    // Intentional deviation from RTXPT-fork: we floor at max(TotalLightCount, 1) rather than upstream's
+    // max(TotalLightCount, RTXPT_LIGHTING_MAX_LIGHTS/10). Unbiased either way; see RTXPT_FORK_MAPPING.md
+    // ("proxy budget floor deviation") for the rationale (avoids a fixed ~2.4 MB minimum proxy buffer).
     m_ProxyBudget = kProxyRatio * std::max(TotalLightCount, 1u);
     m_Stats.SamplingProxyCount = m_ProxyBudget; // CPU estimate (UI / local-sampling gating); GPU writes the real count
 

@@ -410,6 +410,21 @@ Raygen locals become camelCase:
   upstream `PTMaterialData`; the other local backing layouts also remain
   port-specific. `PathPayload` is the shared packed path-state bridge documented
   in G4/G5.
+- **Material texture sampling (single-UV / single-wrap / no atlas transform) is an
+  intentional deviation that matches upstream behavior, not an outstanding task.**
+  `MaterialBridge.hlsli` samples every material texture with one interpolated UV set
+  (TEXCOORD_0), one immutable wrap-address sampler (`s_MaterialSampler`), and a
+  carried-but-unapplied atlas slice. Upstream `PathTracerBridgeDonut.hlsli` does the
+  same: one baked texcoord channel per geometry (`texCoord1Offset`), one global
+  `m_AnisotropicWrapSampler` bound as `s_MaterialSampler` for all material textures,
+  and standalone bindless `Texture2D` loads with no atlas, no UV scale/bias, and no
+  KHR_texture_transform. DiligentFX's glTF loader exposes `TextureShaderAttribs` UV
+  selectors, wrap modes, and `AtlasUVScaleAndBias`, but these have no upstream analog,
+  so there is nothing to re-port; honoring them would be a from-scratch addition and is
+  intentionally not done while it matches upstream for the single-UV/wrap case. Revisit
+  only if a scene needs per-texture UV sets, per-material wrap modes, or atlas/UV
+  transforms. (Orthogonal, separately tracked: upstream computes texture LOD via ray
+  cones / STF, while the port samples mip 0.)
 - Shared struct fields follow T-H's upstream-style casing/alignment where
   applicable. Fields kept identical in T-H, such as `MaterialID`, `Flags`,
   `IndexCount`, and `VertexCount`, remain intentionally unchanged, and every

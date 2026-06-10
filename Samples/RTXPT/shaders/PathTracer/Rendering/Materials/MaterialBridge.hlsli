@@ -196,6 +196,14 @@ namespace Bridge
     }
 } // namespace Bridge
 
-// TODO(RTXPT-Port): Honor TextureShaderAttribs UV selectors / wrap modes / atlas transform (currently assumes TEXCOORD_0 + wrap + slice).
+// NOTE(RTXPT-Port): Intentional deviation that matches upstream behavior. Material texture sampling assumes a
+// single UV set (TEXCOORD_0), a single immutable wrap-address sampler (s_MaterialSampler), and a carried-but-
+// untransformed atlas slice. Upstream PathTracerBridgeDonut.hlsli does the same: one baked texcoord channel per
+// geometry, one global AnisotropicWrap sampler bound as s_MaterialSampler for all material textures, and
+// standalone bindless Texture2D loads with no atlas / UV scale-bias / KHR_texture_transform. TextureShaderAttribs
+// UV selectors, wrap modes, and atlas UV transform are DiligentFX-loader concepts with no upstream analog, so
+// there is nothing to re-port; honoring them would be a from-scratch addition. See RTXPT_FORK_MAPPING.md
+// "Divergences". (Orthogonal, separately noted above: ray tracing cannot derive LOD here, so we sample mip 0,
+// whereas upstream computes texture LOD via ray cones / STF.)
 
 #endif // __MATERIAL_BRIDGE_HLSLI__

@@ -114,7 +114,15 @@ namespace PathTracer
         }
         ior                             = Bridge::loadIoR(materialID);
         materialFlags                   = material.flags;
-        nestedPriority                  = min(material.nestedPriority, 14u);
+        // Match RTXPT-fork PathTracerBridgeDonut::loadSurface: stored nested priority is
+        // 1 + authored, clamped to kMaxNestedPriority. Authored priorities therefore map to
+        // the [1, kMaxNestedPriority] range because InteriorList reserves 0 for empty slots
+        // (and remaps a stored 0 to kMaxNestedPriority). Omitting the +1 made an authored
+        // priority of 0 collapse to the *highest* priority instead of the lowest, so a
+        // priority-0 dielectric (e.g. "Thin Smooth Transmission", "Smooth Glass") wrongly
+        // outranked opaque geometry behind it and false-hit-rejected it (seeing the envmap
+        // straight through the glass instead of the refracted wall).
+        nestedPriority                  = min(InteriorList::kMaxNestedPriority, 1u + material.nestedPriority);
         psdExclude                      = Bridge::isPSDExclude(material) ? 1u : 0u;
         psdBlockMotionVectorsAtSurface  = Bridge::isPSDBlockMotionVectorsAtSurface(material) ? 1u : 0u;
         psdDominantDeltaLobeP1          = Bridge::getPSDDominantDeltaLobeP1(material);

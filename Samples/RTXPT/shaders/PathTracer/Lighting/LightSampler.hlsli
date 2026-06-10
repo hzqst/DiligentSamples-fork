@@ -104,7 +104,7 @@ uint SampleGlobalLightIndex(float randomValue, out float pdf)
 
     const uint proxyIndex = min(uint(randomValue * float(ctrl.SamplingProxyCount)), ctrl.SamplingProxyCount - 1u);
     const uint lightIndex = t_LightSamplingProxies[proxyIndex];
-    const uint proxyCount = max(1u, t_LightProxyCounters[lightIndex]);
+    const uint proxyCount = t_LightProxyCounters[lightIndex]; // light came from the proxy table, so count >= 1
     pdf                   = float(proxyCount) / float(ctrl.SamplingProxyCount);
     return lightIndex;
 }
@@ -160,7 +160,13 @@ float SampleGlobalPDF(uint lightIndex)
     if (ctrl.ImportanceSamplingType == 0u)
         return 1.0 / float(ctrl.TotalLightCount);
 
-    return float(max(1u, t_LightProxyCounters[lightIndex])) / float(max(1u, ctrl.SamplingProxyCount));
+    if (ctrl.SamplingProxyCount == 0u)
+        return 0.0;
+
+    // Match RTXPT-fork LightSampler::SampleGlobalPDF: use the real per-light proxy count (no max(1u, ...)).
+    // A zero-proxy light (sub-threshold weight) is never selected by NEE, so it must report pdf 0 here;
+    // otherwise the BSDF-hit MIS weight is wrongly reduced and dim emitters lose energy (darkening).
+    return float(t_LightProxyCounters[lightIndex]) / float(ctrl.SamplingProxyCount);
 }
 
 float SampleLocalPDF(uint2 pixelPos, uint lightIndex)
@@ -187,16 +193,6 @@ float GetLightSelectionPdf(uint2 pixelPos, uint lightIndex)
     const float localRatio = saturate(ctrl.LocalToGlobalSampleRatio);
     const float localPdf   = SampleLocalPDF(pixelPos, lightIndex);
     return localRatio * localPdf + (1.0 - localRatio) * globalPdf;
-}
-
-float GetEmissiveTriangleSelectionPdf(uint2 pixelPos)
-{
-    const uint triCount = Bridge::getEmissiveTriangleCount();
-    if (triCount == 0u)
-        return 0.0;
-
-    const uint bucketIndex = Bridge::getEmissiveBucketLightIndex();
-    return GetLightSelectionPdf(pixelPos, bucketIndex) / float(triCount);
 }
 
 DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3 hitPos, float3 wo,
@@ -301,7 +297,7 @@ DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3
         sample.proposalPdf      = trianglePdf;
         sample.bsdfF            = f;
         sample.bsdfPdf          = bsdfPdf;
-        sample.kind             = kLightProxyKindEmissiveBucket;
+        sample.kind             = kLightProxyKindEmissiveTriangle;
         sample.index            = lightIndex; // unified light index (used for temporal feedback)
         sample.valid            = true;
         sample.sampleableByBSDF = true;

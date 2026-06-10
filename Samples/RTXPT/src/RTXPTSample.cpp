@@ -1871,6 +1871,9 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
             {
                 m_EmissiveTrianglesDirty = true;
                 BuildEmissiveTriangles();
+                // The emissive-triangle buffer was rebuilt in place; re-run the per-triangle power proxy build
+                // on the next LightsBaker UpdateEnd so the sampling weights track the deformed emitters.
+                m_LightsBaker.RequestProxyRebuild();
                 RequestAccumulationReset("Skinned geometry updated");
                 m_Scene.ClearGeometryDirty();
             }

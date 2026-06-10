@@ -104,6 +104,9 @@ public:
     void Reset();
     void SceneReloaded();
     void RequestFeedbackReset();
+    // Re-run the GPU per-triangle proxy build on the next UpdateEnd (e.g. after a dynamic/skinned update
+    // rebuilt the emissive-triangle buffer in place, so the power weights/proxies reflect current geometry).
+    void RequestProxyRebuild();
 
     bool CreateResources(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, Uint32 Width, Uint32 Height, bool ComputeSupported);
     bool UpdateBegin(IRenderDevice* pDevice, const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings);

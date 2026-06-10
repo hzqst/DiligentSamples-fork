@@ -153,7 +153,7 @@ Hard constraints:
 | `LightSampler::SampleLocal` local proxy table | `RTXPTLightsBaker` `t_LocalSamplingBuffer` | populated by baker-owned local sampling passes |
 | `PrepareLights.hlsl` / `LightsBaker.hlsl` `BakeEmissiveTriangles` emissive-texture sampling | `EmissiveTriangleBuild.hlsl` `computeTriangleRadiance` | centroid + anisotropic `SampleGrad`; identical short/long-edge gradient logic |
 | `TriangleLight::CalcSample` (one-sided) | `GenerateDirectLightCandidate` emissive branch + `PathTracerClosestHit.rchit` frontFacing emission/pdf gates | R2-done: one-sided (front-face only) NEE/MIS/emission; winding fix on mirrored instances |
-| `LightsBaker.hlsl` `ComputeWeight` / `ComputeWeights` / `ComputeProxyCounts` / `CreateProxyJobs` / `ExecuteProxyJobs` | `LightProxyBuild.hlsl` `ComputeWeightsCS` / `ComputeProxyCountsCS` / `ScatterProxiesCS` (+ `ResetProxyBuildCS`) driven by `RTXPTLightProxyBuildPass` | GPU per-light power weights + power-proportional proxy table; atomic running-offset scatter replaces upstream prefix-sum + task system (identical distribution) |
+| `LightsBaker.hlsl` `ComputeWeight` / `ComputeWeights` / `ComputeProxyCounts` / `CreateProxyJobs` / `ExecuteProxyJobs` | `LightProxyBuild.hlsl` `ComputeWeightsCS` / `ComputeProxyCountsCS` / `ScatterProxiesCS` (+ `ResetProxyBuildCS`) driven by `RTXPTLightProxyBuildPass` | GPU per-light power weights + power-proportional proxy table; atomic running-offset scatter replaces upstream prefix-sum + task system (same per-light proxy counts; only the proxy-table order differs, which sampling is invariant to) |
 | `TriangleLight::GetPower` (`area*PI*Luminance`) | `LightProxyBuild.hlsl` `ComputeEmissiveTriangleWeight` (`pow(area*PI*Luminance, 0.8)`) | analytic weights keep the prior `EstimateAnalyticWeight` heuristic |
 | `SampleTriangleUniform` / `pdfAtoW` / `MAX_SOLID_ANGLE_PDF` | `SampleTriangleUniform` / `pdfAtoW` / `kMaxSolidAnglePdf` (style) | |
 | `LightsBaker` emissive triangle list | `RTXPTLights::UploadEmissiveTriangles` + `RTXPTEmissiveTrianglePass` (GPU build from current geometry) | full `LightsBaker` parity target; keep the Diligent-native scene plumbing |
@@ -368,14 +368,30 @@ Raygen locals become camelCase:
   matching `PrepareLights.hlsl`); on the non-bindless fallback they stay BSDF-only.
   Emissive triangles are importance-sampled **per-triangle** proportional to power via the
   GPU proxy build (`LightProxyBuild.hlsl` / `RTXPTLightProxyBuildPass`), replacing the
-  earlier single "emissive bucket". Remaining divergences from RTXPT-fork: the proxy table
-  is filled with a single atomic running-offset scatter rather than upstream's prefix-sum +
-  task system (identical distribution); emissive triangles live in a separate
-  `EmissiveTriangle` buffer rather than the unified `PolymorphicLightInfo` light buffer; and
-  the proxy build runs on scene/lights change rather than every frame (animated emissive
-  radiance is not re-weighted per frame). Analytic-light weights keep the port's
-  `EstimateAnalyticWeight` heuristic (ported to `LightProxyBuild.hlsl`) instead of
-  RTXPT-fork's `GetPower`.
+  earlier single "emissive bucket". Remaining divergences from RTXPT-fork:
+  - the proxy table is filled with a single atomic running-offset scatter rather than
+    upstream's prefix-sum + task system. Per-light proxy *counts* are identical; only the
+    order of light indices within the proxy table differs, which proxy sampling (a uniform
+    pick over the table) is invariant to.
+  - **proxy budget floor deviation:** the budget is `kProxyRatio * max(TotalLightCount, 1)`,
+    whereas RTXPT-fork uses `RTXPT_LIGHTING_SAMPLING_PROXY_RATIO * max(TotalLightCount,
+    RTXPT_LIGHTING_MAX_LIGHTS/10)`. For small/medium scenes upstream allocates a much larger
+    proxy pool, giving finer power-proportional granularity (lower selection-pdf
+    quantization / variance). Unbiased either way; this is a quality/parity deviation, not a
+    correctness one. Adopting the upstream floor costs a ~2.4 MB minimum proxy buffer
+    regardless of scene size.
+  - emissive triangles live in a separate `EmissiveTriangle` buffer rather than the unified
+    `PolymorphicLightInfo` light buffer.
+  - the proxy build re-runs on scene/lights change **and** after dynamic/skinned emissive
+    updates (`RTXPTLightsBaker::RequestProxyRebuild`, triggered alongside the in-place
+    emissive-triangle rebuild); it is not re-weighted on non-geometry per-frame changes.
+
+  Analytic-light weights keep the port's `EstimateAnalyticWeight` heuristic (ported to
+  `LightProxyBuild.hlsl`) instead of RTXPT-fork's `GetPower`.
+  Emissive-NEE enable/dirty state is gated in-shader via `Bridge::getEmissiveTriangleCount`,
+  which reads the *enabled* triangle count packed into `ptConsts.environmentNEEEnabled`
+  (0 when the UI toggle is off or the emissive pass is dirty), rather than the raw baked
+  `LightingControlData::TriangleLightCount`.
 - Resource/global names follow the RTXPT-fork `t_/u_/s_/g_` prefix scheme, but
   the set here is the reference-mode subset only. `t_PTMaterialData` is the
   material-buffer resource/global name backed by the local `MaterialPTData`

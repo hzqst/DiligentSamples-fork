@@ -201,11 +201,6 @@ namespace Bridge
         return t_LightingControl[0].AnalyticLightCount;
     }
 
-    uint getEmissiveBucketLightIndex()
-    {
-        return t_LightingControl[0].AnalyticLightCount;
-    }
-
     // Total valid analytic light count. The C++ side may upload one disabled dummy light for binding safety;
     // that dummy is intentionally excluded from sampling.
     uint getLightCount()
@@ -220,7 +215,12 @@ namespace Bridge
 
     uint getEmissiveTriangleCount()
     {
-        return t_LightingControl[0].TriangleLightCount;
+        // The CPU packs the *enabled* emissive-triangle count into the high bits of environmentNEEEnabled
+        // (PackEnvironmentNEEAndEmissiveTriangleCount): it equals the baked TriangleLightCount when emissive
+        // NEE is enabled and the emissive-triangle pass is up to date, and 0 when the user toggles emissive
+        // NEE off or the pass is dirty. Reading it here makes the toggle/dirty state actually gate emissive
+        // NEE + MIS (t_LightingControl[0].TriangleLightCount alone never reflects the UI toggle).
+        return g_Const.ptConsts.environmentNEEEnabled >> 1u;
     }
 
     EmissiveTriangle getEmissiveTriangle(uint index)

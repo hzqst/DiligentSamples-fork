@@ -165,7 +165,7 @@ namespace PathTracer
                 continue;
 
             const float visibilityDistance =
-                picked.kind == kLightProxyKindEmissiveBucket ? picked.distance * 0.9985 : picked.distance;
+                picked.kind == kLightProxyKindEmissiveTriangle ? picked.distance * 0.9985 : picked.distance;
             const float3 visibilityOrigin = MakeVisibilityOrigin(hitPos, faceNormal, bsdfData.N, picked.dir);
             const bool visible = TraceVisibilityRay(visibilityOrigin, picked.dir, visibilityDistance);
             if (!visible)
@@ -185,7 +185,7 @@ namespace PathTracer
 
             // picked.index is the unified global light index for both analytic lights and emissive triangles.
             InsertFeedbackFromNEE(pixelPos, picked.index, contribution, sampleNext1D(sg));
-            sampledEmissive = sampledEmissive || picked.kind == kLightProxyKindEmissiveBucket;
+            sampledEmissive = sampledEmissive || picked.kind == kLightProxyKindEmissiveTriangle;
             result += contribution;
         }
 

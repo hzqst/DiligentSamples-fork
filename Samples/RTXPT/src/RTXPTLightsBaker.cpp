@@ -499,6 +499,14 @@ bool RTXPTLightsBaker::RunProxyBuild(IDeviceContext* pContext)
                                   m_ProxyImportanceType);
 }
 
+void RTXPTLightsBaker::RequestProxyRebuild()
+{
+    // The proxy buffers already exist (allocated in UpdateBegin); a dynamic/skinned update only rewrites the
+    // emissive-triangle buffer contents in place. Flag the GPU build to re-run on the next UpdateEnd so the
+    // per-triangle power weights, proxy counters, and proxy table are recomputed from the current geometry.
+    m_ProxyBuildPending = true;
+}
+
 bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLights&, const RTXPTLightsBakerSettings& Settings)
 {
     if (pDevice == nullptr)

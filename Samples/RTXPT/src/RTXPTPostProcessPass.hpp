@@ -46,29 +46,8 @@
 namespace Diligent
 {
 
-struct RTXPTPostProcessParameters
-{
-    bool  EnableHdrTest       = false;
-    bool  EnableEdgeDetection = false;
-    float EdgeThreshold       = 0.1f;
-};
-
-struct RTXPTPostProcessRenderAttribs
-{
-    ITextureView*              pProcessedOutputUAV     = nullptr;
-    ITexture*                  pLdrColorTexture        = nullptr;
-    ITexture*                  pLdrColorScratchTexture = nullptr;
-    ITextureView*              pLdrColorScratchSRV     = nullptr;
-    ITextureView*              pLdrColorUAV            = nullptr;
-    Uint32                     Width                   = 0;
-    Uint32                     Height                  = 0;
-    RTXPTPostProcessParameters Params;
-};
-
 enum class RTXPTPostProcessPassId : Uint32
 {
-    HdrTest = 0,
-    EdgeDetection,
     StablePlanesDebugViz,
     RelaxDenoiserPrepareInputs,
     ReblurDenoiserPrepareInputs,
@@ -92,14 +71,10 @@ struct RTXPTDenoiserPostProcessAttribs
 struct RTXPTPostProcessPassStats
 {
     bool   Ready                           = false;
-    bool   LastHdrTestExecuted             = false;
-    bool   LastEdgeDetectionExecuted       = false;
     bool   LastStablePlanesDebugExecuted   = false;
     bool   LastDenoiserPrepareExecuted     = false;
     bool   LastDenoiserFinalMergeExecuted  = false;
     bool   LastNoDenoiserMergeExecuted     = false;
-    Uint32 HdrTestDispatchCount            = 0;
-    Uint32 EdgeDetectionDispatchCount      = 0;
     Uint32 StablePlanesDebugDispatchCount  = 0;
     Uint32 DenoiserPrepareDispatchCount    = 0;
     Uint32 DenoiserFinalMergeDispatchCount = 0;
@@ -111,8 +86,6 @@ class RTXPTPostProcessPass
 public:
     void Reset();
     bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IBuffer* pFrameConstants, bool ComputeSupported);
-    bool RunHdrTest(IDeviceContext* pContext, const RTXPTPostProcessRenderAttribs& Attribs);
-    bool RunEdgeDetection(IDeviceContext* pContext, const RTXPTPostProcessRenderAttribs& Attribs);
     bool RunStablePlanesDebugViz(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
     bool RunDenoiserPrepare(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
     bool RunDenoiserFinalMerge(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
@@ -134,12 +107,10 @@ private:
     bool DispatchPass(IDeviceContext*                        pContext,
                       RTXPTPostProcessPassId                 Pass,
                       const RTXPTDenoiserPostProcessAttribs& Attribs);
-    bool UpdateConstants(IDeviceContext* pContext, Uint32 Width, Uint32 Height, float EdgeThreshold);
 
     std::array<PassState, static_cast<std::size_t>(RTXPTPostProcessPassId::Count)> m_Passes;
     RefCntAutoPtr<IBuffer>                                                         m_FrameConstants;
     RefCntAutoPtr<IBuffer>                                                         m_MiniConstants;
-    RefCntAutoPtr<IBuffer>                                                         m_Constants;
     RTXPTPostProcessPassStats                                                      m_Stats;
 };
 

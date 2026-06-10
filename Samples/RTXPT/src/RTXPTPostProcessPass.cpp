@@ -39,23 +39,12 @@ namespace Diligent
 namespace
 {
 
-struct RTXPTPostProcessConstants
-{
-    Uint32 Width         = 0;
-    Uint32 Height        = 0;
-    float  EdgeThreshold = 0.1f;
-    float  Padding0      = 0.0f;
-};
-static_assert(sizeof(RTXPTPostProcessConstants) == 16, "RTXPTPostProcessConstants must match RTXPTPostProcess.csh");
-
 constexpr Uint32 kThreadGroupSize = 8;
 
 const char* GetPassName(RTXPTPostProcessPassId Pass)
 {
     switch (Pass)
     {
-        case RTXPTPostProcessPassId::HdrTest: return "HdrTest";
-        case RTXPTPostProcessPassId::EdgeDetection: return "EdgeDetection";
         case RTXPTPostProcessPassId::StablePlanesDebugViz: return "StablePlanesDebugViz";
         case RTXPTPostProcessPassId::RelaxDenoiserPrepareInputs: return "RelaxDenoiserPrepareInputs";
         case RTXPTPostProcessPassId::ReblurDenoiserPrepareInputs: return "ReblurDenoiserPrepareInputs";
@@ -71,8 +60,6 @@ const char* GetModeMacro(RTXPTPostProcessPassId Pass)
 {
     switch (Pass)
     {
-        case RTXPTPostProcessPassId::HdrTest: return "RTXPT_POST_PROCESS_HDR_TEST";
-        case RTXPTPostProcessPassId::EdgeDetection: return "RTXPT_POST_PROCESS_EDGE_DETECTION";
         case RTXPTPostProcessPassId::StablePlanesDebugViz: return "RTXPT_POST_PROCESS_STABLE_PLANES_DEBUG_VIZ";
         case RTXPTPostProcessPassId::RelaxDenoiserPrepareInputs: return "RTXPT_POST_PROCESS_RELAX_PREPARE_INPUTS";
         case RTXPTPostProcessPassId::ReblurDenoiserPrepareInputs: return "RTXPT_POST_PROCESS_REBLUR_PREPARE_INPUTS";
@@ -192,8 +179,7 @@ bool BindDispatchResources(IShaderResourceBinding*                pSRB,
         pDenoiserOutValidationSRV = pDenoiserOutDiffRadianceHitDistSRV;
     }
 
-    return SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_LdrColorScratch", nullptr, false, Pass, "LDR color scratch SRV") &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_Depth", RenderTargets.GetDepthSRV(), false, Pass, "depth SRV") &&
+    return SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_Depth", RenderTargets.GetDepthSRV(), false, Pass, "depth SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_MotionVectors", RenderTargets.GetScreenMotionVectorsSRV(), false, Pass, "motion vectors SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_SpecularHitT", RenderTargets.GetSpecularHitTSRV(), PreparePass, Pass, "specular hit T SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserOutDiffRadianceHitDist", pDenoiserOutDiffRadianceHitDistSRV, FinalMergePass, Pass, "denoiser output diffuse radiance hit distance SRV") &&
@@ -202,8 +188,6 @@ bool BindDispatchResources(IShaderResourceBinding*                pSRB,
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserViewspaceZ", RenderTargets.GetDenoiserViewspaceZSRV(), FinalMergePass, Pass, "denoiser viewspace Z SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "t_DenoiserDisocclusionThresholdMix", RenderTargets.GetDenoiserDisocclusionThresholdMixSRV(), false, Pass, "denoiser disocclusion threshold mix SRV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_OutputColor", Attribs.pMergeOutputUAV, true, Pass, "merge output UAV") &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_ProcessedOutputColor", nullptr, false, Pass, "processed output color UAV") &&
-        SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_PostTonemapOutputColor", nullptr, false, Pass, "post-tonemap output color UAV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StableRadiance", RenderTargets.GetStableRadianceUAV(), StablePlanesRequired, Pass, "stable radiance UAV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StablePlanesHeader", RenderTargets.GetStablePlanesHeaderUAV(), StablePlanesRequired, Pass, "stable planes header UAV") &&
         SetSRBVariable(pSRB, SHADER_TYPE_COMPUTE, "u_StablePlanesBuffer", RenderTargets.GetStablePlanesBufferUAV(), StableBufferRequired, Pass, "stable planes buffer UAV") &&
@@ -227,7 +211,6 @@ void RTXPTPostProcessPass::Reset()
     }
     m_FrameConstants.Release();
     m_MiniConstants.Release();
-    m_Constants.Release();
     m_Stats = {};
 }
 
@@ -294,17 +277,6 @@ bool RTXPTPostProcessPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
     ShaderCI.EntryPoint                 = "main";
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
-    BufferDesc ConstantsDesc;
-    ConstantsDesc.Name           = "RTXPT post-process constants";
-    ConstantsDesc.Size           = sizeof(RTXPTPostProcessConstants);
-    ConstantsDesc.BindFlags      = BIND_UNIFORM_BUFFER;
-    ConstantsDesc.Usage          = USAGE_DYNAMIC;
-    ConstantsDesc.CPUAccessFlags = CPU_ACCESS_WRITE;
-    pDevice->CreateBuffer(ConstantsDesc, nullptr, &m_Constants);
-    VERIFY(m_Constants, "Failed to create RTXPT post-process constants");
-    if (!m_Constants)
-        return false;
-
     BufferDesc MiniConstantsDesc;
     MiniConstantsDesc.Name           = "RTXPT post-process SampleMiniConstants";
     MiniConstantsDesc.Size           = sizeof(SampleMiniConstants);
@@ -369,10 +341,8 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
     PipelineResourceLayoutDescX ResourceLayout;
     ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
     ResourceLayout
-        .AddVariable(SHADER_TYPE_COMPUTE, "g_PostProcessConstants", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "g_Const", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "g_MiniConst", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
-        .AddVariable(SHADER_TYPE_COMPUTE, "t_LdrColorScratch", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_Depth", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_MotionVectors", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_SpecularHitT", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
@@ -382,8 +352,6 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
         .AddVariable(SHADER_TYPE_COMPUTE, "t_DenoiserViewspaceZ", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_DenoiserDisocclusionThresholdMix", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_OutputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
-        .AddVariable(SHADER_TYPE_COMPUTE, "u_ProcessedOutputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
-        .AddVariable(SHADER_TYPE_COMPUTE, "u_PostTonemapOutputColor", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_StableRadiance", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_StablePlanesHeader", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_StablePlanesBuffer", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
@@ -401,16 +369,12 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
     if (!State.PSO)
         return false;
 
-    const bool LegacyPostProcessPass =
-        Pass == RTXPTPostProcessPassId::HdrTest ||
-        Pass == RTXPTPostProcessPassId::EdgeDetection;
     const bool MiniConstantsRequired =
         IsDenoiserPreparePass(Pass) ||
         IsDenoiserFinalMergePass(Pass) ||
         Pass == RTXPTPostProcessPassId::StablePlanesDebugViz;
     const bool StaticBound =
-        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_PostProcessConstants", m_Constants, LegacyPostProcessPass, Pass, "post-process constants") &&
-        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_Const", m_FrameConstants, !LegacyPostProcessPass, Pass, "frame constants") &&
+        SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_Const", m_FrameConstants, true, Pass, "frame constants") &&
         SetStaticVariable(State.PSO, SHADER_TYPE_COMPUTE, "g_MiniConst", m_MiniConstants, MiniConstantsRequired, Pass, "mini constants");
     if (!StaticBound)
     {
@@ -421,25 +385,6 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
     State.PSO->CreateShaderResourceBinding(&State.SRB, true);
     VERIFY(State.SRB, "Failed to create RTXPT post-process SRB: ", GetPassName(Pass));
     return State.SRB != nullptr;
-}
-
-bool RTXPTPostProcessPass::UpdateConstants(IDeviceContext* pContext, Uint32 Width, Uint32 Height, float EdgeThreshold)
-{
-    if (pContext == nullptr || !m_Constants)
-        return false;
-
-    RTXPTPostProcessConstants Constants;
-    Constants.Width         = Width;
-    Constants.Height        = Height;
-    Constants.EdgeThreshold = EdgeThreshold;
-
-    MapHelper<RTXPTPostProcessConstants> Mapped{pContext, m_Constants, MAP_WRITE, MAP_FLAG_DISCARD};
-    VERIFY(Mapped, "Failed to map RTXPT post-process constants");
-    if (!Mapped)
-        return false;
-
-    *Mapped = Constants;
-    return true;
 }
 
 bool RTXPTPostProcessPass::DispatchPass(IDeviceContext*                        pContext,
@@ -483,96 +428,6 @@ bool RTXPTPostProcessPass::DispatchPass(IDeviceContext*                        p
     DispatchAttribs.ThreadGroupCountY = (pRenderTargets->GetRenderHeight() + kThreadGroupSize - 1u) / kThreadGroupSize;
     DispatchAttribs.ThreadGroupCountZ = 1;
     pContext->DispatchCompute(DispatchAttribs);
-    return true;
-}
-
-bool RTXPTPostProcessPass::RunHdrTest(IDeviceContext* pContext, const RTXPTPostProcessRenderAttribs& Attribs)
-{
-    m_Stats.LastHdrTestExecuted = false;
-
-    if (!Attribs.Params.EnableHdrTest)
-        return true;
-
-    const PassState& State = m_Passes[static_cast<std::size_t>(RTXPTPostProcessPassId::HdrTest)];
-
-    if (!IsReady() || pContext == nullptr ||
-        Attribs.pProcessedOutputUAV == nullptr ||
-        Attribs.Width == 0 ||
-        Attribs.Height == 0 ||
-        !State.PSO ||
-        !State.SRB)
-        return false;
-
-    pContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-    if (!UpdateConstants(pContext, Attribs.Width, Attribs.Height, Attribs.Params.EdgeThreshold))
-        return false;
-
-    if (!SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "u_ProcessedOutputColor", Attribs.pProcessedOutputUAV, true, RTXPTPostProcessPassId::HdrTest, "processed output color UAV"))
-        return false;
-
-    pContext->SetPipelineState(State.PSO);
-    pContext->CommitShaderResources(State.SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-    DispatchComputeAttribs DispatchAttribs;
-    DispatchAttribs.ThreadGroupCountX = (Attribs.Width + kThreadGroupSize - 1u) / kThreadGroupSize;
-    DispatchAttribs.ThreadGroupCountY = (Attribs.Height + kThreadGroupSize - 1u) / kThreadGroupSize;
-    DispatchAttribs.ThreadGroupCountZ = 1;
-    pContext->DispatchCompute(DispatchAttribs);
-
-    m_Stats.LastHdrTestExecuted = true;
-    ++m_Stats.HdrTestDispatchCount;
-    return true;
-}
-
-bool RTXPTPostProcessPass::RunEdgeDetection(IDeviceContext* pContext, const RTXPTPostProcessRenderAttribs& Attribs)
-{
-    m_Stats.LastEdgeDetectionExecuted = false;
-
-    if (!Attribs.Params.EnableEdgeDetection)
-        return true;
-
-    const PassState& State = m_Passes[static_cast<std::size_t>(RTXPTPostProcessPassId::EdgeDetection)];
-
-    if (!IsReady() || pContext == nullptr ||
-        Attribs.pLdrColorTexture == nullptr ||
-        Attribs.pLdrColorScratchTexture == nullptr ||
-        Attribs.pLdrColorScratchSRV == nullptr ||
-        Attribs.pLdrColorUAV == nullptr ||
-        Attribs.Width == 0 ||
-        Attribs.Height == 0 ||
-        !State.PSO ||
-        !State.SRB)
-        return false;
-
-    pContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-    CopyTextureAttribs CopyAttribs{Attribs.pLdrColorTexture,
-                                   RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-                                   Attribs.pLdrColorScratchTexture,
-                                   RESOURCE_STATE_TRANSITION_MODE_TRANSITION};
-    pContext->CopyTexture(CopyAttribs);
-
-    if (!UpdateConstants(pContext, Attribs.Width, Attribs.Height, Attribs.Params.EdgeThreshold))
-        return false;
-
-    const bool Bound =
-        SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "t_LdrColorScratch", Attribs.pLdrColorScratchSRV, true, RTXPTPostProcessPassId::EdgeDetection, "LDR color scratch SRV") &&
-        SetSRBVariable(State.SRB, SHADER_TYPE_COMPUTE, "u_PostTonemapOutputColor", Attribs.pLdrColorUAV, true, RTXPTPostProcessPassId::EdgeDetection, "post-tonemap output color UAV");
-    if (!Bound)
-        return false;
-
-    pContext->SetPipelineState(State.PSO);
-    pContext->CommitShaderResources(State.SRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-    DispatchComputeAttribs DispatchAttribs;
-    DispatchAttribs.ThreadGroupCountX = (Attribs.Width + kThreadGroupSize - 1u) / kThreadGroupSize;
-    DispatchAttribs.ThreadGroupCountY = (Attribs.Height + kThreadGroupSize - 1u) / kThreadGroupSize;
-    DispatchAttribs.ThreadGroupCountZ = 1;
-    pContext->DispatchCompute(DispatchAttribs);
-
-    m_Stats.LastEdgeDetectionExecuted = true;
-    ++m_Stats.EdgeDetectionDispatchCount;
     return true;
 }
 

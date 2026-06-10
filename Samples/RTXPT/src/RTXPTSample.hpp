@@ -122,7 +122,8 @@ private:
     void UpdateRenderTargetDimensions(float TimeDeltaSeconds);
     bool UpdateLightsBaker(bool ResetFeedback);
     bool UpdateEnvMapBaker(bool ForceRebuild);
-    void CreatePhase4Passes();
+    void CreateSceneIndependentPasses();
+    void CreateSceneDependentPasses();
     bool BuildEmissiveTriangles();
     bool EnsureRenderTargets();
     void ClearFallback(const float4& ClearColor);

@@ -146,14 +146,16 @@ bool RTXPTSuperResolutionPass::Initialize(IRenderDevice* pDevice)
 
     if (pDevice == nullptr)
     {
-        m_Stats.DisabledReason = "render device is null";
         DEV_ERROR("RTXPT super resolution pass requires a render device");
         return false;
     }
 
     m_Device = pDevice;
+
     LoadAndCreateSuperResolutionFactory(pDevice, &m_Factory);
+
     m_Stats.FactoryReady = m_Factory != nullptr;
+
     if (!m_Factory)
     {
         m_Stats.DisabledReason = kSRProviderUnavailableReason;
@@ -176,10 +178,11 @@ bool RTXPTSuperResolutionPass::Initialize(IRenderDevice* pDevice)
         return true;
     }
 
-    if (ContainsTemporalVariant(m_Variants) && !CreateMotionConversionPipeline(pDevice))
+    const bool HasTemporalVariant = ContainsTemporalVariant(m_Variants);
+    if (HasTemporalVariant && !CreateMotionConversionPipeline(pDevice))
         return true;
 
-    m_Stats.DisabledReason = ContainsTemporalVariant(m_Variants) ? "" : "temporal super resolution variant unavailable";
+    m_Stats.DisabledReason = HasTemporalVariant ? "" : "temporal super resolution variant unavailable";
     return true;
 }
 
@@ -248,17 +251,17 @@ RTXPTSuperResolutionFrameDesc RTXPTSuperResolutionPass::ResolveFrameDesc(const R
     const SuperResolutionInfo* pVariant = GetActiveVariant(Settings);
     if (pVariant == nullptr)
     {
-        m_Stats.DisabledReason = "active super resolution variant is invalid";
+        DEV_ERROR("RTXPT super resolution active variant is invalid");
         return DirectFrameDesc;
     }
     if (pVariant->Type != SUPER_RESOLUTION_TYPE_TEMPORAL)
     {
-        m_Stats.DisabledReason = "P6 HDR path requires temporal variant";
+        DEV_ERROR("RTXPT P6 HDR path requires temporal super resolution variant");
         return DirectFrameDesc;
     }
     if (!m_MotionConversionPSO || !m_MotionConversionSRB)
     {
-        m_Stats.DisabledReason = "super resolution motion conversion pipeline unavailable";
+        DEV_ERROR("RTXPT super resolution motion conversion pipeline is unavailable");
         return DirectFrameDesc;
     }
 
@@ -274,7 +277,7 @@ RTXPTSuperResolutionFrameDesc RTXPTSuperResolutionPass::ResolveFrameDesc(const R
     m_Factory->GetSourceSettings(SRAttribs, SRSettings);
     if (SRSettings.OptimalInputWidth == 0 || SRSettings.OptimalInputHeight == 0)
     {
-        m_Stats.DisabledReason = "super resolution source settings are invalid";
+        DEV_ERROR("RTXPT super resolution source settings are invalid");
         return DirectFrameDesc;
     }
 
@@ -288,14 +291,13 @@ RTXPTSuperResolutionFrameDesc RTXPTSuperResolutionPass::ResolveFrameDesc(const R
     FrameDesc.VariantId                        = pVariant->VariantId;
     if (!FrameDesc.Dimensions.IsValid())
     {
-        m_Stats.DisabledReason = "super resolution dimensions are invalid";
+        DEV_ERROR("RTXPT super resolution dimensions are invalid");
         return DirectFrameDesc;
     }
 
     if (!EnsureUpscaler(FrameDesc))
     {
-        const std::string DisabledReason = m_Stats.DisabledReason;
-        m_Stats.DisabledReason           = DisabledReason.empty() ? "failed to create super resolution upscaler" : DisabledReason;
+        DEV_ERROR("RTXPT super resolution failed to prepare upscaler");
         return DirectFrameDesc;
     }
 
@@ -321,14 +323,14 @@ bool RTXPTSuperResolutionPass::EnsureUpscaler(const RTXPTSuperResolutionFrameDes
     }
     if (!m_Device)
     {
-        m_Stats.UpscalerReady  = false;
-        m_Stats.DisabledReason = "render device is unavailable";
+        m_Stats.UpscalerReady = false;
+        DEV_ERROR("RTXPT super resolution pass requires a render device");
         return false;
     }
     if (VariantIt == m_Variants.end())
     {
-        m_Stats.UpscalerReady  = false;
-        m_Stats.DisabledReason = "super resolution variant is unavailable";
+        m_Stats.UpscalerReady = false;
+        DEV_ERROR("RTXPT super resolution variant is unavailable");
         return false;
     }
 
@@ -356,7 +358,7 @@ bool RTXPTSuperResolutionPass::EnsureUpscaler(const RTXPTSuperResolutionFrameDes
     m_Stats.UpscalerReady = m_Upscaler != nullptr;
     if (!m_Upscaler)
     {
-        m_Stats.DisabledReason = "failed to create super resolution upscaler";
+        DEV_ERROR("Failed to create RTXPT super resolution upscaler");
         return false;
     }
 
@@ -368,20 +370,20 @@ bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDe
 {
     if (pDevice->GetDeviceInfo().Features.ComputeShaders != DEVICE_FEATURE_STATE_ENABLED)
     {
-        m_Stats.DisabledReason = "super resolution motion conversion requires compute shader support";
+        DEV_ERROR("RTXPT super resolution motion conversion requires compute shader support");
         return false;
     }
 
     if (!SupportsBindFlags(pDevice, kSRMotionFormat, BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS))
     {
-        m_Stats.DisabledReason = "RG16F SRV/UAV texture is not supported for super resolution motion vectors";
+        DEV_ERROR("RG16F SRV/UAV texture is not supported for RTXPT super resolution motion vectors");
         return false;
     }
 
     IEngineFactory* pEngineFactory = pDevice->GetEngineFactory();
     if (pEngineFactory == nullptr)
     {
-        m_Stats.DisabledReason = "super resolution motion conversion requires an engine factory";
+        DEV_ERROR("RTXPT super resolution motion conversion requires an engine factory");
         return false;
     }
 
@@ -389,7 +391,7 @@ bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDe
     pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders;shaders\\PostProcessing", &pShaderSourceFactory);
     if (!pShaderSourceFactory)
     {
-        m_Stats.DisabledReason = "failed to create super resolution motion shader source factory";
+        DEV_ERROR("Failed to create RTXPT super resolution motion shader source factory");
         return false;
     }
 
@@ -409,7 +411,7 @@ bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDe
     VERIFY(pCS, "Failed to create RTXPT super resolution motion conversion shader");
     if (!pCS)
     {
-        m_Stats.DisabledReason = "failed to create super resolution motion conversion shader";
+        DEV_ERROR("Failed to create RTXPT super resolution motion conversion shader");
         return false;
     }
 
@@ -429,7 +431,7 @@ bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDe
     VERIFY(m_MotionConversionPSO, "Failed to create RTXPT super resolution motion conversion PSO");
     if (!m_MotionConversionPSO)
     {
-        m_Stats.DisabledReason = "failed to create super resolution motion conversion PSO";
+        DEV_ERROR("Failed to create RTXPT super resolution motion conversion PSO");
         return false;
     }
 
@@ -437,7 +439,7 @@ bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDe
     VERIFY(m_MotionConversionSRB, "Failed to create RTXPT super resolution motion conversion SRB");
     if (!m_MotionConversionSRB)
     {
-        m_Stats.DisabledReason = "failed to create super resolution motion conversion SRB";
+        DEV_ERROR("Failed to create RTXPT super resolution motion conversion SRB");
         return false;
     }
 
@@ -451,7 +453,7 @@ bool RTXPTSuperResolutionPass::EnsureMotionConversionResources(IRenderDevice* pD
 
     if (Width == 0 || Height == 0)
     {
-        m_Stats.DisabledReason = "super resolution motion conversion dimensions are invalid";
+        DEV_ERROR("RTXPT super resolution motion conversion dimensions are invalid");
         return false;
     }
 
@@ -473,7 +475,7 @@ bool RTXPTSuperResolutionPass::EnsureMotionConversionResources(IRenderDevice* pD
     if (!GetSRMotionSRV() || !GetSRMotionUAV())
     {
         m_SRMotionVectors.Release();
-        m_Stats.DisabledReason = "failed to create super resolution motion texture";
+        DEV_ERROR("Failed to create RTXPT super resolution motion texture");
         return false;
     }
 
@@ -502,7 +504,7 @@ bool RTXPTSuperResolutionPass::ConvertMotionVectors(IDeviceContext* pContext, co
         SetDynamicVariable(m_MotionConversionSRB, "u_SRMotionVectors", GetSRMotionUAV());
     if (!Bound)
     {
-        m_Stats.DisabledReason = "failed to bind super resolution motion conversion resources";
+        DEV_ERROR("RTXPT super resolution motion conversion failed to bind resources");
         return false;
     }
 
@@ -529,9 +531,7 @@ bool RTXPTSuperResolutionPass::Execute(IDeviceContext*                      pCon
 
     if (!EnsureUpscaler(FrameDesc))
     {
-        if (m_Stats.DisabledReason.empty())
-            m_Stats.DisabledReason = "failed to prepare super resolution upscaler";
-        DEV_ERROR("RTXPT super resolution pass failed: ", m_Stats.DisabledReason.c_str());
+        DEV_ERROR("RTXPT super resolution pass failed to prepare upscaler");
         return false;
     }
 
@@ -555,8 +555,7 @@ bool RTXPTSuperResolutionPass::Execute(IDeviceContext*                      pCon
     Attribs.TimeDeltaInSeconds  = FrameDesc.TimeDeltaSeconds;
     Attribs.ResetHistory        = FrameDesc.ResetHistory;
 
-    const auto FailExecute = [this](const char* Reason) {
-        m_Stats.DisabledReason = Reason;
+    const auto FailExecute = [](const char* Reason) {
         DEV_ERROR("RTXPT super resolution pass failed: ", Reason);
         return false;
     };

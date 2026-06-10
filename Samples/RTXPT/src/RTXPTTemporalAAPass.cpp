@@ -79,34 +79,34 @@ HLSL::CameraAttribs MakeCameraAttribs(const SampleConstants&      Constants,
     return Attribs;
 }
 
-bool ValidateTemporalInputs(const RTXPTTemporalAAFrameAttribs& Attribs, std::string& Reason)
+bool ValidateTemporalInputs(const RTXPTTemporalAAFrameAttribs& Attribs)
 {
     if (Attribs.pDevice == nullptr)
-        Reason = "render device is null";
+        DEV_ERROR("RTXPT Temporal AA requires a render device");
     else if (Attribs.pDeviceContext == nullptr)
-        Reason = "device context is null";
+        DEV_ERROR("RTXPT Temporal AA requires a device context");
     else if (Attribs.pRenderTargets == nullptr)
-        Reason = "render targets are null";
+        DEV_ERROR("RTXPT Temporal AA requires render targets");
     else if (Attribs.pFrameConstants == nullptr)
-        Reason = "frame constants are null";
+        DEV_ERROR("RTXPT Temporal AA requires frame constants");
     else if (Attribs.pRenderTargets->GetRenderWidth() != Attribs.pRenderTargets->GetDisplayWidth() ||
              Attribs.pRenderTargets->GetRenderHeight() != Attribs.pRenderTargets->GetDisplayHeight())
-        Reason = "Temporal AA requires render and display dimensions to match";
+        DEV_ERROR("RTXPT Temporal AA requires render and display dimensions to match");
     else if (Attribs.pFrameConstants->ptConsts.imageWidth != Attribs.pRenderTargets->GetRenderWidth() ||
              Attribs.pFrameConstants->ptConsts.imageHeight != Attribs.pRenderTargets->GetRenderHeight())
-        Reason = "Temporal AA frame constants dimensions do not match render targets";
+        DEV_ERROR("RTXPT Temporal AA frame constants dimensions do not match render targets");
     else if (Attribs.pRenderTargets->GetOutputColorSRV() == nullptr)
-        Reason = "OutputColor SRV is null";
+        DEV_ERROR("RTXPT Temporal AA requires OutputColor SRV");
     else if (Attribs.pRenderTargets->GetProcessedOutputColorRTV() == nullptr)
-        Reason = "ProcessedOutputColor RTV is null";
+        DEV_ERROR("RTXPT Temporal AA requires ProcessedOutputColor RTV");
     else if (Attribs.pRenderTargets->GetDepthSRV() == nullptr)
-        Reason = "Depth SRV is null";
+        DEV_ERROR("RTXPT Temporal AA requires Depth SRV");
     else if (Attribs.pRenderTargets->GetPreviousDepthSRV() == nullptr)
-        Reason = "PreviousDepth SRV is null";
+        DEV_ERROR("RTXPT Temporal AA requires PreviousDepth SRV");
     else if (Attribs.pRenderTargets->GetPreviousDepthRTV() == nullptr)
-        Reason = "PreviousDepth RTV is null";
+        DEV_ERROR("RTXPT Temporal AA requires PreviousDepth RTV");
     else if (Attribs.pRenderTargets->GetScreenMotionVectorsSRV() == nullptr)
-        Reason = "ScreenMotionVectors SRV is null";
+        DEV_ERROR("RTXPT Temporal AA requires ScreenMotionVectors SRV");
     else
         return true;
     return false;
@@ -176,7 +176,7 @@ bool RTXPTTemporalAAPass::Initialize(IRenderDevice* pDevice)
     Reset();
     if (pDevice == nullptr)
     {
-        m_Stats.DisabledReason = "render device is null";
+        DEV_ERROR("RTXPT Temporal AA pass requires a render device");
         return false;
     }
 
@@ -194,7 +194,7 @@ bool RTXPTTemporalAAPass::Initialize(IRenderDevice* pDevice)
 
     m_Stats.Ready = m_PostFXContext != nullptr && m_TemporalAA != nullptr && m_InputConversionPSO && m_InputConversionSRB;
     if (!m_Stats.Ready)
-        m_Stats.DisabledReason = "failed to create DiligentFX TAA objects";
+        DEV_ERROR("RTXPT Temporal AA pass failed to create DiligentFX TAA objects");
     return m_Stats.Ready;
 }
 
@@ -202,19 +202,19 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
 {
     if (pDevice->GetDeviceInfo().Features.ComputeShaders != DEVICE_FEATURE_STATE_ENABLED)
     {
-        m_Stats.DisabledReason = "Temporal AA input conversion requires compute shader support";
+        DEV_ERROR("RTXPT Temporal AA input conversion requires compute shader support");
         return false;
     }
 
     if (!SupportsBindFlags(pDevice, TEX_FORMAT_R32_FLOAT, BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS))
     {
-        m_Stats.DisabledReason = "R32F SRV/UAV texture is not supported for Temporal AA depth conversion";
+        DEV_ERROR("R32F SRV/UAV texture is not supported for RTXPT Temporal AA depth conversion");
         return false;
     }
 
     if (!SupportsBindFlags(pDevice, TEX_FORMAT_RG16_FLOAT, BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS))
     {
-        m_Stats.DisabledReason = "RG16F SRV/UAV texture is not supported for Temporal AA motion conversion";
+        DEV_ERROR("RG16F SRV/UAV texture is not supported for RTXPT Temporal AA motion conversion");
         return false;
     }
 
@@ -228,14 +228,14 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
     VERIFY(m_FrameConstantsBuffer, "Failed to create RTXPT Temporal AA frame constants");
     if (!m_FrameConstantsBuffer)
     {
-        m_Stats.DisabledReason = "failed to create Temporal AA frame constants";
+        DEV_ERROR("Failed to create RTXPT Temporal AA frame constants");
         return false;
     }
 
     IEngineFactory* pEngineFactory = pDevice->GetEngineFactory();
     if (pEngineFactory == nullptr)
     {
-        m_Stats.DisabledReason = "Temporal AA input conversion requires an engine factory";
+        DEV_ERROR("RTXPT Temporal AA input conversion requires an engine factory");
         return false;
     }
 
@@ -243,7 +243,7 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
     pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders;shaders\\PostProcessing;shaders\\PathTracer", &pShaderSourceFactory);
     if (!pShaderSourceFactory)
     {
-        m_Stats.DisabledReason = "failed to create Temporal AA shader source factory";
+        DEV_ERROR("Failed to create RTXPT Temporal AA shader source factory");
         return false;
     }
 
@@ -263,7 +263,7 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
     VERIFY(pCS, "Failed to create RTXPT Temporal AA input conversion shader");
     if (!pCS)
     {
-        m_Stats.DisabledReason = "failed to create Temporal AA input conversion shader";
+        DEV_ERROR("Failed to create RTXPT Temporal AA input conversion shader");
         return false;
     }
 
@@ -286,13 +286,13 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
     VERIFY(m_InputConversionPSO, "Failed to create RTXPT Temporal AA input conversion PSO");
     if (!m_InputConversionPSO)
     {
-        m_Stats.DisabledReason = "failed to create Temporal AA input conversion PSO";
+        DEV_ERROR("Failed to create RTXPT Temporal AA input conversion PSO");
         return false;
     }
 
     if (!SetStaticVariable(m_InputConversionPSO, "g_Const", m_FrameConstantsBuffer))
     {
-        m_Stats.DisabledReason = "failed to bind Temporal AA frame constants";
+        DEV_ERROR("RTXPT Temporal AA input conversion failed to bind frame constants");
         return false;
     }
 
@@ -300,7 +300,7 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
     VERIFY(m_InputConversionSRB, "Failed to create RTXPT Temporal AA input conversion SRB");
     if (!m_InputConversionSRB)
     {
-        m_Stats.DisabledReason = "failed to create Temporal AA input conversion SRB";
+        DEV_ERROR("Failed to create RTXPT Temporal AA input conversion SRB");
         return false;
     }
 
@@ -345,7 +345,7 @@ bool RTXPTTemporalAAPass::EnsureInputConversionResources(IRenderDevice* pDevice,
 
     if (Width == 0 || Height == 0)
     {
-        m_Stats.DisabledReason = "Temporal AA input conversion dimensions are invalid";
+        DEV_ERROR("RTXPT Temporal AA input conversion dimensions are invalid");
         return false;
     }
 
@@ -368,7 +368,7 @@ bool RTXPTTemporalAAPass::EnsureInputConversionResources(IRenderDevice* pDevice,
     if (!GetTAADepthSRV() || !GetTAADepthUAV())
     {
         m_TAADepth.Release();
-        m_Stats.DisabledReason = "failed to create Temporal AA depth texture";
+        DEV_ERROR("Failed to create RTXPT Temporal AA depth texture");
         return false;
     }
 
@@ -383,7 +383,7 @@ bool RTXPTTemporalAAPass::EnsureInputConversionResources(IRenderDevice* pDevice,
     if (!GetTAAMotionSRV() || !GetTAAMotionUAV())
     {
         m_TAAMotion.Release();
-        m_Stats.DisabledReason = "failed to create Temporal AA motion texture";
+        DEV_ERROR("Failed to create RTXPT Temporal AA motion texture");
         return false;
     }
 
@@ -402,7 +402,7 @@ bool RTXPTTemporalAAPass::ConvertInputs(const RTXPTTemporalAAFrameAttribs& Attri
         VERIFY(Constants, "Failed to map RTXPT Temporal AA frame constants");
         if (!Constants)
         {
-            m_Stats.DisabledReason = "failed to update Temporal AA frame constants";
+            DEV_ERROR("Failed to update RTXPT Temporal AA frame constants");
             return false;
         }
 
@@ -416,7 +416,7 @@ bool RTXPTTemporalAAPass::ConvertInputs(const RTXPTTemporalAAFrameAttribs& Attri
         SetDynamicVariable(m_InputConversionSRB, "u_TAAMotion", GetTAAMotionUAV());
     if (!Bound)
     {
-        m_Stats.DisabledReason = "failed to bind Temporal AA input conversion resources";
+        DEV_ERROR("RTXPT Temporal AA input conversion failed to bind resources");
         return false;
     }
 
@@ -450,23 +450,23 @@ bool RTXPTTemporalAAPass::CopyOutputToProcessed(IRenderDevice*            pDevic
     m_Stats.LastCopyToProcessed = false;
     if (!m_PostFXContext)
     {
-        m_Stats.DisabledReason = "PostFXContext is not initialized";
+        DEV_ERROR("RTXPT Temporal AA copy requires initialized PostFXContext");
         return false;
     }
     if (pDevice == nullptr || pContext == nullptr)
     {
-        m_Stats.DisabledReason = "copy requires a device and context";
+        DEV_ERROR("RTXPT Temporal AA copy requires a device and context");
         return false;
     }
     if (RenderTargets.GetOutputColorSRV() == nullptr || RenderTargets.GetProcessedOutputColorRTV() == nullptr)
     {
-        m_Stats.DisabledReason = "copy requires OutputColor SRV and ProcessedOutputColor RTV";
+        DEV_ERROR("RTXPT Temporal AA copy requires OutputColor SRV and ProcessedOutputColor RTV");
         return false;
     }
     if (RenderTargets.GetRenderWidth() != RenderTargets.GetDisplayWidth() ||
         RenderTargets.GetRenderHeight() != RenderTargets.GetDisplayHeight())
     {
-        m_Stats.DisabledReason = "copy requires render and display dimensions to match";
+        DEV_ERROR("RTXPT Temporal AA copy requires render and display dimensions to match");
         return false;
     }
 
@@ -476,7 +476,6 @@ bool RTXPTTemporalAAPass::CopyOutputToProcessed(IRenderDevice*            pDevic
     m_PostFXContext->CopyTextureColor(CopyAttribs,
                                       RenderTargets.GetOutputColorSRV(),
                                       RenderTargets.GetProcessedOutputColorRTV());
-    m_Stats.DisabledReason.clear();
     m_Stats.LastCopyToProcessed = true;
     return true;
 }
@@ -488,7 +487,7 @@ bool RTXPTTemporalAAPass::CopyCurrentDepthToPrevious(IRenderDevice*            p
     m_Stats.LastPreviousDepthCopy = false;
     if (GetTAADepthSRV() == nullptr || RenderTargets.GetPreviousDepthRTV() == nullptr)
     {
-        m_Stats.DisabledReason = "previous-depth update requires Temporal AA depth SRV and PreviousDepth RTV";
+        DEV_ERROR("RTXPT Temporal AA previous-depth update requires Temporal AA depth SRV and PreviousDepth RTV");
         return false;
     }
 
@@ -510,16 +509,12 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
 
     if (!m_Stats.Ready || !m_PostFXContext || !m_TemporalAA)
     {
-        m_Stats.DisabledReason = "Temporal AA pass is not initialized";
+        DEV_ERROR("RTXPT Temporal AA pass is not initialized");
         return false;
     }
 
-    std::string Reason;
-    if (!ValidateTemporalInputs(Attribs, Reason))
-    {
-        m_Stats.DisabledReason = Reason;
+    if (!ValidateTemporalInputs(Attribs))
         return false;
-    }
 
     PreparePostFX(Attribs);
     if (!ConvertInputs(Attribs))
@@ -549,7 +544,7 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
     m_PostFXContext->Execute(PostFXAttribs);
     if (!m_PostFXContext->IsPSOsReady())
     {
-        m_Stats.DisabledReason = "Temporal AA PostFX resources are not ready";
+        DEV_ERROR("RTXPT Temporal AA PostFX resources are not ready");
         return false;
     }
 
@@ -569,7 +564,7 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
     ITextureView* pTaaOutputSRV = m_TemporalAA->GetAccumulatedFrameSRV(false);
     if (pTaaOutputSRV == nullptr)
     {
-        m_Stats.DisabledReason = "Temporal AA accumulated output SRV is null";
+        DEV_ERROR("RTXPT Temporal AA accumulated output SRV is null");
         return false;
     }
 
@@ -584,7 +579,6 @@ bool RTXPTTemporalAAPass::Execute(const RTXPTTemporalAAFrameAttribs& Attribs)
                                       Attribs.pRenderTargets->GetProcessedOutputColorRTV());
     m_Stats.LastCopyToProcessed = true;
 
-    m_Stats.DisabledReason.clear();
     m_Stats.LastExecute = true;
     ++m_Stats.ExecuteCount;
     return true;

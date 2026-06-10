@@ -634,9 +634,7 @@ void RTXPTSample::ResetSceneDependentResources()
     m_AccelerationStructures.Reset();
     m_SkinnedGeometry.Reset();
     m_RayTracingPass.Reset();
-    m_DenoisingGuidesBaker.Reset();
     m_EmissiveTrianglePass.Reset();
-    m_PostProcessPipeline.Reset();
 
     m_SelectedSceneCamera   = -1;
     m_EnableSceneAnimations = !kReferencePathTraceMode;
@@ -682,7 +680,6 @@ bool RTXPTSample::RebuildSceneDependentResources()
     if (SceneData.ModelAssets.empty() || SceneData.ModelInstances.empty())
     {
         ResetSceneDependentResources();
-        CreatePhase4Passes();
         return false;
     }
 
@@ -729,7 +726,7 @@ bool RTXPTSample::RebuildSceneDependentResources()
     if (ResourcesReady)
     {
         m_Scene.ClearGeometryDirty();
-        CreatePhase4Passes();
+        CreateSceneDependentPasses();
         ResourcesReady &= BuildEmissiveTriangles();
     }
     else
@@ -763,8 +760,6 @@ bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload
     }
 
     const bool ResourcesReady = SceneLoaded && RebuildSceneDependentResources();
-    if (!SceneLoaded)
-        CreatePhase4Passes();
 
     auto InitializeFreeFlightCamera = [this]() {
         m_CameraVerticalFov = PI_F / 4.0f;
@@ -796,6 +791,10 @@ bool RTXPTSample::SetCurrentScene(const std::string& SceneName, bool ForceReload
     m_HasLastCameraMatrices = false;
     InvalidatePreviousFrameConstants();
     RequestAccumulationReset("Scene changed");
+    RequestRealtimeReset(RTXPT_REALTIME_RESET_REALTIME_CACHES |
+                             RTXPT_REALTIME_RESET_NRD_HISTORY |
+                             RTXPT_REALTIME_RESET_TAA_SR_HISTORY,
+                         "Scene changed");
     return SceneLoaded && ResourcesReady;
 }
 
@@ -888,6 +887,7 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 
     EnumerateEnvironmentMaps();
     EnumerateAvailableScenes();
+    CreateSceneIndependentPasses();
 
     std::string InitialScene;
     auto        PreferredIt = std::find(m_AvailableScenes.begin(), m_AvailableScenes.end(), kPreferredSceneName);
@@ -903,7 +903,6 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
     else
     {
         ResetSceneDependentResources();
-        CreatePhase4Passes();
     }
 
     UpdateRenderTargetDimensions(m_LastElapsedTimeSeconds);
@@ -1147,7 +1146,7 @@ bool RTXPTSample::UpdateLightsBaker(bool ResetFeedback)
     return Updated;
 }
 
-void RTXPTSample::CreatePhase4Passes()
+void RTXPTSample::CreateSceneIndependentPasses()
 {
     m_BlitPass.Initialize(m_pDevice, m_pEngineFactory, m_pSwapChain);
     m_PostProcessPipeline.Initialize(m_pDevice,
@@ -1159,7 +1158,10 @@ void RTXPTSample::CreatePhase4Passes()
                                       m_pEngineFactory,
                                       m_FrameConstantsCB,
                                       m_FeatureCaps.ComputeShaders);
+}
 
+void RTXPTSample::CreateSceneDependentPasses()
+{
     // Build the textured shader variants whenever the scene actually carries material textures. Bindless is
     // mandatory (required in ModifyEngineInitInfo), so descriptor indexing is always available; the only
     // factor-only path left is the legitimate texture-less scene (MaterialTextureCount == 0).
@@ -1858,7 +1860,7 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
         }
     }
 
-    bool RecreatePhase4Passes = false;
+    bool RecreateSceneDependentPasses = false;
     if ((m_EnvMapBakerDirty || m_EnvMapBakerSettingsDirty) && UpdateEnvMapBaker(m_EnvMapBakerDirty))
     {
         m_LightsBakerSettingsDirty = true;
@@ -1866,16 +1868,16 @@ void RTXPTSample::Update(double CurrTime, double ElapsedTime, bool DoUpdateUI)
     }
 
     if (m_LightsBakerSettingsDirty && UpdateLightsBaker(true))
-        RecreatePhase4Passes = true;
+        RecreateSceneDependentPasses = true;
 
     if (m_RayTracingPassSettingsDirty)
     {
-        RecreatePhase4Passes          = true;
+        RecreateSceneDependentPasses  = true;
         m_RayTracingPassSettingsDirty = false;
     }
 
-    if (RecreatePhase4Passes)
-        CreatePhase4Passes();
+    if (RecreateSceneDependentPasses)
+        CreateSceneDependentPasses();
 
     m_LastElapsedTimeSeconds = static_cast<float>(ElapsedTime);
     UpdateRenderTargetDimensions(m_LastElapsedTimeSeconds);
@@ -1922,7 +1924,7 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
             const bool LightsUpdated = LightsResourcesReady && UpdateLightsBaker(true);
             if (EnvUpdated && LightsUpdated)
             {
-                CreatePhase4Passes();
+                CreateSceneDependentPasses();
                 m_AccumulationActive =
                     Ok && ResourcesValid &&
                     m_RenderTargets.IsAccumulationActive() &&

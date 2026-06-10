@@ -81,20 +81,25 @@ class RTXPTAccelerationStructures
 public:
     void Reset();
 
+    // AllowEmissiveTexture must match the value passed to RTXPTMaterials::Upload and
+    // RTXPTLights::UploadEmissiveTriangles so the per-sub-instance EmissiveTriangleOffset allocation
+    // agrees with the material flag and the emissive-triangle buffer size.
     bool BuildScene(IRenderDevice*                   pDevice,
                     IDeviceContext*                  pContext,
                     const RTXPTSceneGraphData&       SceneData,
                     VALUE_TYPE                       IndexType,
                     const RTXPTSkinnedSceneGeometry* pSkinnedGeometry,
-                    bool                             RayTracingSupported);
+                    bool                             RayTracingSupported,
+                    bool                             AllowEmissiveTexture);
 
     bool BuildStaticScene(IRenderDevice*             pDevice,
                           IDeviceContext*            pContext,
                           const RTXPTSceneGraphData& SceneData,
                           VALUE_TYPE                 IndexType,
-                          bool                       RayTracingSupported)
+                          bool                       RayTracingSupported,
+                          bool                       AllowEmissiveTexture)
     {
-        return BuildScene(pDevice, pContext, SceneData, IndexType, nullptr, RayTracingSupported);
+        return BuildScene(pDevice, pContext, SceneData, IndexType, nullptr, RayTracingSupported, AllowEmissiveTexture);
     }
 
     bool UpdateDynamicBLAS(IDeviceContext*                  pContext,

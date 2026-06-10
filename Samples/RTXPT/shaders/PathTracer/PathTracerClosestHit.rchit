@@ -41,6 +41,7 @@ namespace PathTracer
         uint   psdBlockMotionVectorsAtSurface   = 0u;
         uint   psdDominantDeltaLobeP1           = 0u;
         float  emissiveLightPdf                 = 0.0;
+        uint   neeTriangleLightIndex            = 0xFFFFFFFFu;
         surfaceEmission                         = float3(0.0, 0.0, 0.0);
 
         const SubInstanceData subInstance = Bridge::getSubInstanceData();
@@ -95,9 +96,18 @@ namespace PathTracer
         diffuseTransmissionFactor       = Bridge::getDiffuseTransmission(material, texCoord);
         thinSurface                     = Bridge::isThinSurface(material);
         shadowNoLFadeout                = Bridge::loadShadowNoLFadeout(materialID);
-        surfaceEmission                 = Bridge::getEmission(material, texCoord);
-        if ((material.flags & kMaterialFlagEmissiveAreaLight) != 0u)
+        // RTXPT-fork single-sided emissives: only front-facing hits emit (PathTracerBridgeDonut.hlsli),
+        // keeping the BSDF-hit emission consistent with the one-sided NEE TriangleLight.
+        surfaceEmission                 = frontFacing ? Bridge::getEmission(material, texCoord) : float3(0.0, 0.0, 0.0);
+        // One-sided area-light pdf: only the front face can be sampled by NEE, so back-face hits carry no
+        // emissive light pdf (and emit nothing via the gate above), keeping BSDF/NEE MIS consistent.
+        if (frontFacing && (material.flags & kMaterialFlagEmissiveAreaLight) != 0u)
         {
+            // Unified global light index of this emissive triangle, matching the per-triangle proxy table
+            // and the NEE selection path: [AnalyticLightCount + global emissive-triangle index]. Used by
+            // ComputeBSDFMISForEmissiveTriangle to look up this triangle's per-triangle selection pdf.
+            neeTriangleLightIndex = Bridge::getAnalyticLightCount() + subInstance.emissiveTriangleOffset + PrimitiveIndex();
+
             const float3 wp0   = mul(ObjectToWorld3x4(), float4(V0.position, 1.0));
             const float3 wp1   = mul(ObjectToWorld3x4(), float4(V1.position, 1.0));
             const float3 wp2   = mul(ObjectToWorld3x4(), float4(V2.position, 1.0));
@@ -175,7 +185,7 @@ namespace PathTracer
                                  worldPos,
 #endif
                                  ior,
-                                 0xFFFFFFFFu,
+                                 neeTriangleLightIndex,
                                  0xFFFFFFFFu,
                                   emissiveLightPdf);
     }
@@ -215,6 +225,7 @@ namespace PathTracer
         if (didEmissiveNEE && path.GetBsdfScatterPdf() > 0.0 && surfaceData.emissiveLightPdf > 0.0)
         {
             referenceSurfaceEmission *= ComputeBSDFMISForEmissiveTriangle(path.GetPixelPos(),
+                                                                          surfaceData.neeTriangleLightIndex,
                                                                           path.GetBsdfScatterPdf(),
                                                                           surfaceData.emissiveLightPdf,
                                                                           prevMISInfo.FullSamples);
@@ -294,5 +305,10 @@ void main(inout ActiveRayPayload Payload,
     Payload = PathPayload::pack(path);
 }
 
-// TODO(RTXPT-Port Phase R2): Emissive triangles feed area-light NEE + MIS (constant emitters only). Textured
-// emissive triangles stay BSDF-only, and emitters are two-sided rather than RTXPT-fork's one-sided TriangleLight.
+// RTXPT-Port Phase R2 (done): emissive triangles feed area-light NEE + MIS with GPU-baked textured radiance
+// (EmissiveTriangleBuild.hlsl), are one-sided like RTXPT-fork's TriangleLight (front-face gated NEE/MIS/emission),
+// and are importance-sampled per-triangle proportional to power via the GPU proxy build (LightProxyBuild.hlsl).
+// Deviations from RTXPT-fork: the per-triangle proxy scatter uses a single atomic running offset instead of
+// upstream's prefix-sum + task system (identical proxy distribution); emissive triangles live in a separate
+// buffer rather than the unified PolymorphicLightInfo light buffer; and the proxy build runs on scene/lights
+// change rather than every frame, so animated emissive radiance is not re-weighted per frame.

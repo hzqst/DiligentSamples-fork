@@ -162,7 +162,9 @@ constexpr Uint32 kMaterialPathDecompositionFlag_PSDDominantDeltaLobeP1Shift     
 // A material is alpha tested only when it uses ALPHA_MODE_MASK and actually has a base-color texture to
 // sample the alpha from. This compatibility overload preserves the single-GLTF path behavior.
 bool                          RTXPTMaterialIsAlphaTested(const GLTF::Material& Material);
-bool                          RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material& Material);
+// AllowEmissiveTexture: when false, emissive-textured materials are NOT promoted to area lights (textured
+// emitters stay BSDF-only); when true, they qualify on non-zero emissive factor like constant emitters.
+bool                          RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material& Material, bool AllowEmissiveTexture);
 const RTXPTMaterialExtension* RTXPTGetMaterialExtension(const RTXPTSceneGraphData& SceneData,
                                                         const RTXPTModelAsset&     Asset,
                                                         Uint32                     MaterialId);
@@ -173,7 +175,8 @@ bool                          RTXPTMaterialIsAlphaTested(const GLTF::Material&  
                                                          const RTXPTMaterialExtension* pExtension,
                                                          bool                          HasBaseColorTexture);
 bool                          RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&         Material,
-                                                               const RTXPTMaterialExtension* pExtension);
+                                                               const RTXPTMaterialExtension* pExtension,
+                                                               bool                          AllowEmissiveTexture);
 bool                          RTXPTMaterialIsAlphaBlended(const GLTF::Material&         Material,
                                                           const RTXPTMaterialExtension* pExtension);
 bool                          RTXPTMaterialNeedsAnyHit(const GLTF::Material&         Material,
@@ -191,7 +194,10 @@ class RTXPTMaterials
 public:
     void Reset();
     bool Upload(IRenderDevice* pDevice, const GLTF::Model& Model);
-    bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData, const std::string& AssetsRoot);
+    // AllowEmissiveTexture promotes emissive-textured materials to area lights (gated on bindless material
+    // textures, since the emissive-triangle build shader samples them on the GPU); when false, textured
+    // emitters stay BSDF-only, matching the non-bindless fallback and RTXPT-fork's bindless-only assumption.
+    bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData, const std::string& AssetsRoot, bool AllowEmissiveTexture);
 
     const RTXPTMaterialStats& GetStats() const { return m_Stats; }
     IBuffer*                  GetMaterialBuffer() const { return m_MaterialBuffer; }

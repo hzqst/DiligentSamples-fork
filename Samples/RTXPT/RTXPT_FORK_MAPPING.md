@@ -147,11 +147,14 @@ Hard constraints:
 | `RTXPTNormalizeDirection` | `tryNormalize` (style) | |
 | `RTXPTEvalAnalyticLight(Light, SurfacePos)` | `SampleAnalyticLight(light, random, surfacePos)` (style) | |
 | `RTXPTEvalSky(RayDir)` | `EnvMapSampler::Eval(worldDir, lod)` | R4 routes miss and env NEE through baked env-map resources; procedural sky is a source/fallback path |
-| `TriangleLight` (struct) | `EmissiveTriangle` (R2/G4 backing layout) | base+edge1+edge2+radiance; normal/area recomputed |
+| `TriangleLight` (struct) | `EmissiveTriangle` (R2/G4 backing layout) | base+edge1+edge2+radiance; normal/area recomputed; radiance baked from `emissiveFactor * emissiveTexture` (textured emitters supported) |
 | `PathTracer/Lighting/LightSampler.hlsli` `NEEWeightedReservoirSampler` / `GenerateLightSample` | `PathTracer/Lighting/LightSampler.hlsli` `NEEWeightedReservoirSampler` / `GenerateDirectLightCandidate` / `SampleDirectLightNEE` | R3/G5 ports the RIS/WRS math as part of the full `LightsBaker` parity target |
-| `LightSampler::SampleGlobal` proxy table | `RTXPTLightsBaker` `t_LightProxyCounters` + `t_LightSamplingProxies` | global proxy data now feeds the baker-owned light/feedback/proxy pipeline |
+| `LightSampler::SampleGlobal` proxy table | `RTXPTLightsBaker` `t_LightProxyCounters` + `t_LightSamplingProxies` | per-triangle power-proportional proxies; unified light index space `[analytic | emissive triangles]` |
 | `LightSampler::SampleLocal` local proxy table | `RTXPTLightsBaker` `t_LocalSamplingBuffer` | populated by baker-owned local sampling passes |
-| `TriangleLight::CalcSample` | emissive bucket branch inside `GenerateDirectLightCandidate` | R2 stores `EmissiveTriangle`; R3 samples it through the RIS/WRS proxy table, still with uniform per-triangle selection inside the emissive bucket |
+| `PrepareLights.hlsl` / `LightsBaker.hlsl` `BakeEmissiveTriangles` emissive-texture sampling | `EmissiveTriangleBuild.hlsl` `computeTriangleRadiance` | centroid + anisotropic `SampleGrad`; identical short/long-edge gradient logic |
+| `TriangleLight::CalcSample` (one-sided) | `GenerateDirectLightCandidate` emissive branch + `PathTracerClosestHit.rchit` frontFacing emission/pdf gates | R2-done: one-sided (front-face only) NEE/MIS/emission; winding fix on mirrored instances |
+| `LightsBaker.hlsl` `ComputeWeight` / `ComputeWeights` / `ComputeProxyCounts` / `CreateProxyJobs` / `ExecuteProxyJobs` | `LightProxyBuild.hlsl` `ComputeWeightsCS` / `ComputeProxyCountsCS` / `ScatterProxiesCS` (+ `ResetProxyBuildCS`) driven by `RTXPTLightProxyBuildPass` | GPU per-light power weights + power-proportional proxy table; atomic running-offset scatter replaces upstream prefix-sum + task system (identical distribution) |
+| `TriangleLight::GetPower` (`area*PI*Luminance`) | `LightProxyBuild.hlsl` `ComputeEmissiveTriangleWeight` (`pow(area*PI*Luminance, 0.8)`) | analytic weights keep the prior `EstimateAnalyticWeight` heuristic |
 | `SampleTriangleUniform` / `pdfAtoW` / `MAX_SOLID_ANGLE_PDF` | `SampleTriangleUniform` / `pdfAtoW` / `kMaxSolidAnglePdf` (style) | |
 | `LightsBaker` emissive triangle list | `RTXPTLights::UploadEmissiveTriangles` + `RTXPTEmissiveTrianglePass` (GPU build from current geometry) | full `LightsBaker` parity target; keep the Diligent-native scene plumbing |
 
@@ -165,7 +168,7 @@ Hard constraints:
 | `RTXPTSampleAnalyticNEE(...)` | `PathTracer::SampleAnalyticNEE(...)` (style) | |
 | `RTXPTSampleEnvNEE(...)` | `PathTracer::SampleEnvironmentNEE(...)` (style) | |
 | `RTXPTBSDFSampledEnvMISWeight(...)` | `PathTracer::ComputeBSDFEnvMISWeight(...)` (style) | |
-| `ComputeBSDFMISForEmissiveTriangle` | raygen emissive BSDF-hit MIS (`payload.emissiveLightPdf` + power heuristic) | |
+| `ComputeBSDFMISForEmissiveTriangle(neeTriangleLightIndex, ...)` | `PathTracer::ComputeBSDFMISForEmissiveTriangle(pixelPos, triangleLightIndex, bsdfPdf, emissiveSolidAnglePdf, fullSamples)` | folds the hit triangle's per-triangle selection pdf (`GetLightSelectionPdf`) into the power heuristic; triangle light index = `AnalyticLightCount + emissiveTriangleOffset + PrimitiveIndex()` |
 | `ToneMapACES` | `ToneMapACES` (unchanged) | port-specific |
 
 Raygen locals become camelCase:
@@ -356,13 +359,23 @@ Raygen locals become camelCase:
   multi-scatter specular compensation.
 - `evalVisibilitySmithGGXCorrelated` returns `G/(4*NoV*NoL)`, not RTXPT-fork's
   bare masking `G`.
-- Emissive-triangle area lights (R2/G4) are **two-sided** (`abs(cosTheta)` in both the
-  NEE estimator and the BSDF-hit MIS), unlike RTXPT-fork's one-sided `TriangleLight`.
-  This preserves the port's pre-R2 two-sided emissive look and stays unbiased.
-  Textured-emissive triangles are excluded from NEE (BSDF-only) for now. R3/G5 now
-  covers the full `LightsBaker`/local-feedback system; the remaining question is how
-  to reconcile the Diligent scene's emissive-triangle semantics with the upstream
-  one-sided baker inputs. TODO: align one-sided + double-sided baker semantics.
+- Emissive-triangle area lights are now **one-sided** like RTXPT-fork's `TriangleLight`:
+  signed `cosTheta` rejects back-face NEE samples, the BSDF-hit emissive pdf and the
+  surface emission are gated on `frontFacing`, and `EmissiveTriangleBuild.hlsl` swaps
+  edges on mirrored instances so the emitter normal matches the geometric front face.
+  Textured-emissive materials are promoted to area lights when bindless material textures
+  are available (the build shader bakes `emissiveFactor * emissiveTexture` per triangle,
+  matching `PrepareLights.hlsl`); on the non-bindless fallback they stay BSDF-only.
+  Emissive triangles are importance-sampled **per-triangle** proportional to power via the
+  GPU proxy build (`LightProxyBuild.hlsl` / `RTXPTLightProxyBuildPass`), replacing the
+  earlier single "emissive bucket". Remaining divergences from RTXPT-fork: the proxy table
+  is filled with a single atomic running-offset scatter rather than upstream's prefix-sum +
+  task system (identical distribution); emissive triangles live in a separate
+  `EmissiveTriangle` buffer rather than the unified `PolymorphicLightInfo` light buffer; and
+  the proxy build runs on scene/lights change rather than every frame (animated emissive
+  radiance is not re-weighted per frame). Analytic-light weights keep the port's
+  `EstimateAnalyticWeight` heuristic (ported to `LightProxyBuild.hlsl`) instead of
+  RTXPT-fork's `GetPower`.
 - Resource/global names follow the RTXPT-fork `t_/u_/s_/g_` prefix scheme, but
   the set here is the reference-mode subset only. `t_PTMaterialData` is the
   material-buffer resource/global name backed by the local `MaterialPTData`

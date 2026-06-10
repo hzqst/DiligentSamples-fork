@@ -119,12 +119,14 @@ namespace PathTracer
         return contribution;
     }
 
-    float ComputeBSDFMISForEmissiveTriangle(uint2 pixelPos, float bsdfPdf, float emissiveSolidAnglePdf, uint fullSamples)
+    float ComputeBSDFMISForEmissiveTriangle(uint2 pixelPos, uint triangleLightIndex, float bsdfPdf, float emissiveSolidAnglePdf, uint fullSamples)
     {
-        if (bsdfPdf <= 0.0 || emissiveSolidAnglePdf <= 0.0)
+        if (bsdfPdf <= 0.0 || emissiveSolidAnglePdf <= 0.0 || triangleLightIndex == 0xFFFFFFFFu)
             return 1.0;
 
-        const float selectionPdf = GetEmissiveTriangleSelectionPdf(pixelPos);
+        // Per-triangle selection probability: the proxy table selects this exact triangle proportional to its
+        // power, so the MIS light pdf must use this triangle's selection pdf (matching the NEE side).
+        const float selectionPdf = GetLightSelectionPdf(pixelPos, triangleLightIndex);
         if (selectionPdf <= 0.0)
             return 1.0;
 
@@ -181,9 +183,8 @@ namespace PathTracer
                 contribution *= FireflyFilterShort(Average(contribution), ffThreshold, neeK);
             }
 
-            const uint feedbackLightIndex =
-                picked.kind == kLightProxyKindAnalytic ? picked.index : Bridge::getEmissiveBucketLightIndex();
-            InsertFeedbackFromNEE(pixelPos, feedbackLightIndex, contribution, sampleNext1D(sg));
+            // picked.index is the unified global light index for both analytic lights and emissive triangles.
+            InsertFeedbackFromNEE(pixelPos, picked.index, contribution, sampleNext1D(sg));
             sampledEmissive = sampledEmissive || picked.kind == kLightProxyKindEmissiveBucket;
             result += contribution;
         }
@@ -754,6 +755,7 @@ namespace PathTracer
         if (didEmissiveNEE && path.GetBsdfScatterPdf() > 0.0 && surfaceData.emissiveLightPdf > 0.0)
         {
             referenceSurfaceEmission *= ComputeBSDFMISForEmissiveTriangle(path.GetPixelPos(),
+                                                                          surfaceData.neeTriangleLightIndex,
                                                                           path.GetBsdfScatterPdf(),
                                                                           surfaceData.emissiveLightPdf,
                                                                           prevMISInfo.FullSamples);

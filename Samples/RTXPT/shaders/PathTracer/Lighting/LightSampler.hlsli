@@ -253,10 +253,16 @@ DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3
         sample.valid            = true;
         sample.sampleableByBSDF = false;
     }
-    else if (lightIndex == ctrl.AnalyticLightCount && Bridge::getEmissiveTriangleCount() > 0u)
+    else if (lightIndex >= ctrl.AnalyticLightCount && Bridge::getEmissiveTriangleCount() > 0u)
     {
+        // Per-triangle selection (RTXPT-fork model): the global proxy table already chose this specific
+        // emissive triangle with probability proportional to its power, so the unified light index maps
+        // directly to a triangle and selectionPdf is already the per-triangle selection probability
+        // (no extra uniform 1/triCount factor).
         const uint triCount = Bridge::getEmissiveTriangleCount();
-        const uint triIndex = min(uint(sampleNext1D(sg) * float(triCount)), triCount - 1u);
+        const uint triIndex = lightIndex - ctrl.AnalyticLightCount;
+        if (triIndex >= triCount)
+            return sample;
         const EmissiveTriangle tri = Bridge::getEmissiveTriangle(triIndex);
 
         const float3 ng    = cross(tri.edge1.xyz, tri.edge2.xyz);
@@ -273,12 +279,14 @@ DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3
         const float  distSq  = max(1e-9, dot(toLight, toLight));
         const float  dist    = sqrt(distSq);
         const float3 wi      = toLight / dist;
-        const float  cosTheta = abs(dot(normal, -wi));
+        // One-sided emitter: only the front face (normal hemisphere) radiates, matching RTXPT-fork
+        // TriangleLight::CalcSample (PolymorphicLight.hlsli) and the closest-hit frontFacing emission gate.
+        const float  cosTheta = dot(normal, -wi);
         if (cosTheta <= 2e-9)
             return sample;
 
         const float solidAnglePdf = min(kMaxSolidAnglePdf, pdfAtoW(1.0 / area, dist, cosTheta));
-        const float trianglePdf   = selectionPdf * (1.0 / float(triCount)) * solidAnglePdf;
+        const float trianglePdf   = selectionPdf * solidAnglePdf;
         if (trianglePdf <= 0.0)
             return sample;
 
@@ -294,7 +302,7 @@ DirectLightSample GenerateDirectLightCandidate(StandardBSDFData bsdfData, float3
         sample.bsdfF            = f;
         sample.bsdfPdf          = bsdfPdf;
         sample.kind             = kLightProxyKindEmissiveBucket;
-        sample.index            = triIndex;
+        sample.index            = lightIndex; // unified light index (used for temporal feedback)
         sample.valid            = true;
         sample.sampleableByBSDF = true;
     }

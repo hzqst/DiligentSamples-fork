@@ -29,6 +29,7 @@
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "ShaderMacroHelper.hpp"
 
 namespace Diligent
 {
@@ -54,17 +55,20 @@ void RTXPTEmissiveTrianglePass::Reset()
     m_Stats = {};
 }
 
-bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
-                                           IEngineFactory* pEngineFactory,
-                                           IBuffer*        pMaterialBuffer,
-                                           IBuffer*        pSubInstanceBuffer,
-                                           IBuffer*        pSubInstanceTransformBuffer,
-                                           IBuffer*        pVertexBuffer,
-                                           IBuffer*        pSkinnedVertexBuffer,
-                                           IBuffer*        pIndexBuffer,
-                                           VALUE_TYPE      IndexValueType,
-                                           IBuffer*        pEmissiveTriangleBuffer,
-                                           bool            ComputeSupported)
+bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*        pDevice,
+                                           IEngineFactory*       pEngineFactory,
+                                           IBuffer*              pMaterialBuffer,
+                                           IBuffer*              pSubInstanceBuffer,
+                                           IBuffer*              pSubInstanceTransformBuffer,
+                                           IBuffer*              pVertexBuffer,
+                                           IBuffer*              pSkinnedVertexBuffer,
+                                           IBuffer*              pIndexBuffer,
+                                           VALUE_TYPE            IndexValueType,
+                                           IBuffer*              pEmissiveTriangleBuffer,
+                                           IDeviceObject* const* pMaterialTextures,
+                                           Uint32                MaterialTextureCount,
+                                           bool                  EnableMaterialTextures,
+                                           bool                  ComputeSupported)
 {
     Reset();
 
@@ -73,6 +77,10 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
         DEV_ERROR("RTXPT emissive triangle pass requires compute shader support");
         return false;
     }
+
+    // Sample emissive textures on the GPU (matching the closest-hit material bridge) only when bindless
+    // material textures are available; otherwise the build shader falls back to factor-only radiance.
+    const bool UseTextures = EnableMaterialTextures && pMaterialTextures != nullptr && MaterialTextureCount > 0;
 
     if (pDevice == nullptr || pEngineFactory == nullptr || pMaterialBuffer == nullptr || pSubInstanceBuffer == nullptr ||
         pSubInstanceTransformBuffer == nullptr || pVertexBuffer == nullptr || pSkinnedVertexBuffer == nullptr ||
@@ -102,6 +110,14 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
     ShaderCI.EntryPoint                 = "main";
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
+    ShaderMacroHelper Macros;
+    if (UseTextures)
+    {
+        Macros.Add("ENABLE_MATERIAL_TEXTURES", 1);
+        Macros.Add("MATERIAL_TEXTURE_COUNT", static_cast<int>(MaterialTextureCount));
+    }
+    ShaderCI.Macros = Macros;
+
     RefCntAutoPtr<IShader> pCS;
     pDevice->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create RTXPT emissive triangle build shader");
@@ -124,6 +140,18 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
         .AddVariable(SHADER_TYPE_COMPUTE, "t_SkinnedVertexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "t_IndexBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_EmissiveTriangles", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
+    if (UseTextures)
+    {
+        // The bindless material-texture array is bound per-build on the SRB (mutable); the sampler matches
+        // the closest-hit material sampler (Rendering/Materials/MaterialBridge.hlsli) so baked emissive
+        // radiance is consistent with the BSDF-path emission.
+        ResourceLayout.AddVariable(SHADER_TYPE_COMPUTE, "t_BindlessTextures", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
+
+        const SamplerDesc MaterialSamplerDesc{
+            FILTER_TYPE_LINEAR, FILTER_TYPE_LINEAR, FILTER_TYPE_LINEAR,
+            TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP, TEXTURE_ADDRESS_WRAP};
+        ResourceLayout.AddImmutableSampler(SHADER_TYPE_COMPUTE, "s_MaterialSampler", MaterialSamplerDesc);
+    }
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
     pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
@@ -191,6 +219,17 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*  pDevice,
     VERIFY(m_SRB, "Failed to create RTXPT emissive triangle build SRB");
     if (!m_SRB)
         return false;
+
+    if (UseTextures)
+    {
+        IShaderResourceVariable* pTexVar = m_SRB->GetVariableByName(SHADER_TYPE_COMPUTE, "t_BindlessTextures");
+        if (pTexVar == nullptr)
+        {
+            UNEXPECTED("RTXPT emissive triangle pass material texture array binding is missing");
+            return false;
+        }
+        pTexVar->SetArray(pMaterialTextures, 0, MaterialTextureCount);
+    }
 
     m_Stats.Ready = true;
     return true;

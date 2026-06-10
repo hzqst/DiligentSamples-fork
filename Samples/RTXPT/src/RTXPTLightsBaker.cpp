@@ -45,7 +45,6 @@ namespace
 {
 
 constexpr Uint32 kProxyRatio                        = 12u;
-constexpr Uint32 kMinProxyCount                     = 1u;
 constexpr Uint32 kLocalProxyCount                   = 128u;
 constexpr Uint32 kTileSize                          = 8u;
 constexpr float  kDistantVsLocalImportanceBaseScale = 0.0002f;
@@ -110,16 +109,6 @@ static_assert(offsetof(RTXPTLightingControlDataCPU, BakerPadding) == kLightingCo
 static_assert(sizeof(RTXPTLightingControlDataCPU) - offsetof(RTXPTLightingControlDataCPU, BakerPadding) == kLightsBakerConstantsSizeBytes,
               "LightingControlData BakerConstants payload size must match LightingTypes.hlsli");
 
-float EstimateAnalyticWeight(const PolymorphicLightInfo& Light)
-{
-    const float Luma             = Light.colorType.x * 0.2126f + Light.colorType.y * 0.7152f + Light.colorType.z * 0.0722f;
-    const float Radius           = std::max(Light.positionRadius.w, 0.0f);
-    const float AreaOrSolidAngle = Light.colorType.w == 2.0f ?
-        std::max(Light.shaping.w, 1.0e-8f) :
-        std::max(PI_F * Radius * Radius, 1.0f);
-    return std::max(1.0e-6f, Luma * AreaOrSolidAngle);
-}
-
 Uint32 DivRoundUp(Uint32 Value, Uint32 Divisor)
 {
     return (Value + Divisor - 1u) / Divisor;
@@ -140,18 +129,23 @@ void RTXPTLightsBaker::Reset()
     m_ClearLocalSamplingPass.Reset();
     m_FillLocalSamplingPass.Reset();
     m_ClearFeedbackPass.Reset();
+    m_ProxyBuildPass.Reset();
     m_ControlBuffer.Release();
+    m_LightWeights.Release();
     m_LightProxyCounters.Release();
     m_LightSamplingProxies.Release();
     m_LocalSamplingBuffer.Release();
+    m_AnalyticLightBuffer    = nullptr;
+    m_EmissiveTriangleBuffer = nullptr;
     m_FeedbackTotalWeight.Release();
     m_FeedbackCandidates.Release();
     m_FeedbackTotalWeightSRV.Release();
     m_FeedbackTotalWeightUAV.Release();
     m_FeedbackCandidatesSRV.Release();
     m_FeedbackCandidatesUAV.Release();
-    m_ProxyCounters.clear();
-    m_ProxyIndices.clear();
+    m_ProxyBudget          = 0;
+    m_ProxyImportanceType  = 1;
+    m_ProxyBuildPending    = false;
     m_AllocatedWidth       = 0;
     m_AllocatedHeight      = 0;
     m_ResetFeedbackPending = false;
@@ -161,8 +155,7 @@ void RTXPTLightsBaker::Reset()
 
 void RTXPTLightsBaker::SceneReloaded()
 {
-    m_ProxyCounters.clear();
-    m_ProxyIndices.clear();
+    m_ProxyBuildPending = false;
     RequestFeedbackReset();
     m_LocalSamplingEnabled     = false;
     m_Stats.TotalLightCount    = 0;
@@ -206,7 +199,8 @@ bool RTXPTLightsBaker::CreateResources(IRenderDevice* pDevice, IEngineFactory* p
         m_ClearLocalSamplingPass.Initialize(pDevice, pEngineFactory, "RTXPT LightsBaker clear local sampling", "ClearLocalSamplingCS");
     const bool FillPassOk = ClearPassOk &&
         m_FillLocalSamplingPass.Initialize(pDevice, pEngineFactory, "RTXPT LightsBaker fill local sampling", "FillLocalSamplingCS");
-    m_Stats.Ready = FeedbackOk && LocalOk && ClearFeedbackPassOk && ClearPassOk && FillPassOk;
+    const bool ProxyBuildOk = FillPassOk && m_ProxyBuildPass.Initialize(pDevice, pEngineFactory);
+    m_Stats.Ready = FeedbackOk && LocalOk && ClearFeedbackPassOk && ClearPassOk && FillPassOk && ProxyBuildOk;
     return m_Stats.Ready;
 }
 
@@ -214,6 +208,7 @@ bool RTXPTLightsBaker::UpdateBegin(IRenderDevice* pDevice, const RTXPTLights& Li
 {
     m_Stats.Ready = false;
     m_ControlBuffer.Release();
+    m_LightWeights.Release();
     m_LightProxyCounters.Release();
     m_LightSamplingProxies.Release();
     m_LocalSamplingEnabled = false;
@@ -221,12 +216,13 @@ bool RTXPTLightsBaker::UpdateBegin(IRenderDevice* pDevice, const RTXPTLights& Li
     if (Settings.ResetFeedback)
         RequestFeedbackReset();
 
-    if (!BuildGlobalProxies(Lights, Settings))
-        return false;
-    if (!UploadProxyBuffers(pDevice))
+    // Allocate the GPU proxy buffers sized to the current light count; the per-triangle power-proportional
+    // proxy contents are filled on the GPU in UpdateEnd (RunProxyBuild), which needs a device context.
+    if (!CreateProxyBuffers(pDevice, Lights, Settings))
         return false;
     if (!UploadControlBuffer(pDevice, Lights, Settings))
         return false;
+    m_ProxyBuildPending = true;
 
     ++m_Stats.UpdateCounter;
     m_Stats.Ready = true;
@@ -246,6 +242,18 @@ bool RTXPTLightsBaker::UpdateEnd(IDeviceContext* pContext,
     // PathTrace call contract for future NEE-AT feedback passes.
     (void)pDepthSRV;
     (void)pMotionVectorsSRV;
+
+    // Per-triangle power-proportional proxy build (GPU). Runs after the emissive-triangle build pass (so the
+    // emissive radiance is current) and before the local-sampling fill (which reads the proxy table).
+    if (m_ProxyBuildPending)
+    {
+        if (!RunProxyBuild(pContext))
+        {
+            m_Stats.LastError = "RTXPT LightsBaker proxy build failed";
+            return false;
+        }
+        m_ProxyBuildPending = false;
+    }
 
     if (m_ResetFeedbackPending)
     {
@@ -413,101 +421,82 @@ bool RTXPTLightsBaker::CreateLocalSamplingBuffer(IRenderDevice* pDevice, Uint32 
     return true;
 }
 
-bool RTXPTLightsBaker::BuildGlobalProxies(const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings)
-{
-    const auto&  AnalyticLights    = Lights.GetAnalyticLights();
-    const Uint32 AnalyticCount     = static_cast<Uint32>(AnalyticLights.size());
-    const bool   HasEmissiveBucket = Lights.GetEmissiveTriangleCount() > 0;
-    const Uint32 TotalLightCount   = AnalyticCount + (HasEmissiveBucket ? 1u : 0u);
-
-    m_ProxyCounters.assign(std::max(TotalLightCount, 1u), 0u);
-    m_ProxyIndices.clear();
-    m_Stats.ProxyTotalWeight = 0.0f;
-
-    m_Stats.TotalLightCount    = TotalLightCount;
-    m_Stats.AnalyticLightCount = AnalyticCount;
-    m_Stats.TriangleLightCount = Lights.GetEmissiveTriangleCount();
-    m_Stats.SamplingProxyCount = 0;
-
-    if (TotalLightCount == 0)
-        return true;
-
-    std::vector<ProxyBuildItem> Items;
-    Items.reserve(TotalLightCount);
-    for (Uint32 LightIndex = 0; LightIndex < AnalyticCount; ++LightIndex)
-    {
-        const float Weight = Settings.ImportanceSamplingType == 0 ? 1.0f : EstimateAnalyticWeight(AnalyticLights[LightIndex]);
-        Items.push_back(ProxyBuildItem{LightIndex, 0u, Weight});
-        m_Stats.ProxyTotalWeight += Weight;
-    }
-
-    if (HasEmissiveBucket)
-    {
-        const float Weight = Settings.ImportanceSamplingType == 0 ? 1.0f : std::max(1.0e-6f, Lights.GetEmissiveProxyWeight());
-        Items.push_back(ProxyBuildItem{AnalyticCount, 0u, Weight});
-        m_Stats.ProxyTotalWeight += Weight;
-    }
-
-    const Uint32 TargetProxyCount   = std::max<Uint32>(TotalLightCount, TotalLightCount * kProxyRatio);
-    Uint32       AssignedProxyCount = 0;
-    for (ProxyBuildItem& Item : Items)
-    {
-        const float Normalized = m_Stats.ProxyTotalWeight > 0.0f ?
-            Item.Weight / m_Stats.ProxyTotalWeight :
-            1.0f / float(TotalLightCount);
-        Item.Count = std::max(kMinProxyCount, static_cast<Uint32>(std::round(Normalized * float(TargetProxyCount))));
-        AssignedProxyCount += Item.Count;
-    }
-
-    m_ProxyIndices.reserve(AssignedProxyCount);
-    for (const ProxyBuildItem& Item : Items)
-    {
-        m_ProxyCounters[Item.LightIndex] = Item.Count;
-        for (Uint32 ProxyIndex = 0; ProxyIndex < Item.Count; ++ProxyIndex)
-            m_ProxyIndices.push_back(Item.LightIndex);
-    }
-
-    m_Stats.SamplingProxyCount = static_cast<Uint32>(m_ProxyIndices.size());
-    return true;
-}
-
-bool RTXPTLightsBaker::UploadProxyBuffers(IRenderDevice* pDevice)
+bool RTXPTLightsBaker::CreateProxyBuffers(IRenderDevice* pDevice, const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings)
 {
     if (pDevice == nullptr)
     {
-        m_Stats.LastError = "RTXPT LightsBaker proxy upload requires a render device";
+        m_Stats.LastError = "RTXPT LightsBaker proxy buffer creation requires a render device";
         LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
         return false;
     }
 
-    if (m_ProxyCounters.empty())
-        m_ProxyCounters.push_back(0u);
-    if (m_ProxyIndices.empty())
-        m_ProxyIndices.push_back(0u);
+    const Uint32 AnalyticCount   = static_cast<Uint32>(Lights.GetAnalyticLights().size());
+    const Uint32 TriangleCount   = Lights.GetEmissiveTriangleCount();
+    const Uint32 TotalLightCount = AnalyticCount + TriangleCount;
 
-    BufferDesc CounterDesc;
-    CounterDesc.Name              = "RTXPT LightsBaker proxy counters";
-    CounterDesc.Usage             = USAGE_IMMUTABLE;
-    CounterDesc.BindFlags         = BIND_SHADER_RESOURCE;
-    CounterDesc.Mode              = BUFFER_MODE_STRUCTURED;
-    CounterDesc.ElementByteStride = sizeof(Uint32);
-    CounterDesc.Size              = Uint64{m_ProxyCounters.size()} * sizeof(Uint32);
-    BufferData CounterData{m_ProxyCounters.data(), CounterDesc.Size};
-    pDevice->CreateBuffer(CounterDesc, &CounterData, &m_LightProxyCounters);
+    m_Stats.TotalLightCount    = TotalLightCount;
+    m_Stats.AnalyticLightCount = AnalyticCount;
+    m_Stats.TriangleLightCount = TriangleCount;
+    m_Stats.ProxyTotalWeight   = 0.0f; // computed on the GPU now (control.WeightsSumUINT)
+    m_ProxyImportanceType      = Settings.ImportanceSamplingType;
 
-    BufferDesc ProxyDesc = CounterDesc;
-    ProxyDesc.Name       = "RTXPT LightsBaker sampling proxies";
-    ProxyDesc.Size       = Uint64{m_ProxyIndices.size()} * sizeof(Uint32);
-    BufferData ProxyData{m_ProxyIndices.data(), ProxyDesc.Size};
-    pDevice->CreateBuffer(ProxyDesc, &ProxyData, &m_LightSamplingProxies);
+    // Proxy budget mirrors the previous CPU build (kProxyRatio proxies per light); the GPU build fills up to
+    // this many entries and writes the exact count into control.SamplingProxyCount. ProxyBudget is the actual
+    // allocated capacity, so the path tracer's selection pdf denominator stays consistent.
+    m_ProxyBudget = kProxyRatio * std::max(TotalLightCount, 1u);
+    m_Stats.SamplingProxyCount = m_ProxyBudget; // CPU estimate (UI / local-sampling gating); GPU writes the real count
 
-    if (!m_LightProxyCounters || !m_LightSamplingProxies)
+    // Capture the source light buffers for the GPU weight computation (owned by RTXPTLights for the scene's lifetime).
+    m_AnalyticLightBuffer    = Lights.GetLightBuffer();
+    m_EmissiveTriangleBuffer = Lights.GetEmissiveTriangleBuffer();
+
+    auto CreateRWStructured = [&](const char* Name, Uint32 ElementCount, Uint32 Stride, RefCntAutoPtr<IBuffer>& Out) {
+        BufferDesc Desc;
+        Desc.Name              = Name;
+        Desc.Usage             = USAGE_DEFAULT;
+        Desc.BindFlags         = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+        Desc.Mode              = BUFFER_MODE_STRUCTURED;
+        Desc.ElementByteStride = Stride;
+        Desc.Size              = Uint64{std::max(ElementCount, 1u)} * Stride;
+        Out.Release();
+        pDevice->CreateBuffer(Desc, nullptr, &Out);
+        return Out != nullptr;
+    };
+
+    const bool BuffersOk =
+        CreateRWStructured("RTXPT LightsBaker light weights", TotalLightCount, sizeof(float), m_LightWeights) &&
+        CreateRWStructured("RTXPT LightsBaker proxy counters", TotalLightCount, sizeof(Uint32), m_LightProxyCounters) &&
+        CreateRWStructured("RTXPT LightsBaker sampling proxies", m_ProxyBudget, sizeof(Uint32), m_LightSamplingProxies);
+    if (!BuffersOk)
     {
-        m_Stats.LastError = "Failed to upload RTXPT LightsBaker proxy buffers";
+        m_Stats.LastError = "Failed to create RTXPT LightsBaker proxy buffers";
         LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
         return false;
     }
     return true;
+}
+
+bool RTXPTLightsBaker::RunProxyBuild(IDeviceContext* pContext)
+{
+    if (m_Stats.TotalLightCount == 0u)
+        return true; // no lights: control.SamplingProxyCount stays 0 and NEE light sampling is skipped
+
+    if (!m_ProxyBuildPass.IsReady() || m_ControlBuffer == nullptr || m_AnalyticLightBuffer == nullptr ||
+        m_EmissiveTriangleBuffer == nullptr || m_LightWeights == nullptr || m_LightProxyCounters == nullptr ||
+        m_LightSamplingProxies == nullptr)
+        return false;
+
+    return m_ProxyBuildPass.Build(pContext,
+                                  m_ControlBuffer,
+                                  m_AnalyticLightBuffer,
+                                  m_EmissiveTriangleBuffer,
+                                  m_LightWeights,
+                                  m_LightProxyCounters,
+                                  m_LightSamplingProxies,
+                                  m_Stats.TotalLightCount,
+                                  m_Stats.AnalyticLightCount,
+                                  m_ProxyBudget,
+                                  m_ProxyImportanceType);
 }
 
 bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLights&, const RTXPTLightsBakerSettings& Settings)
@@ -523,10 +512,12 @@ bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLi
     Control.TotalLightCount         = m_Stats.TotalLightCount;
     Control.AnalyticLightCount      = m_Stats.AnalyticLightCount;
     Control.TriangleLightCount      = m_Stats.TriangleLightCount;
-    Control.SamplingProxyCount      = m_Stats.SamplingProxyCount;
+    // SamplingProxyCount, WeightsSumUINT and ProxyBuildTaskCount are produced by the GPU proxy build
+    // (RTXPTLightProxyBuildPass) into this DEFAULT/UAV buffer; initialize them to zero.
+    Control.SamplingProxyCount      = 0u;
     Control.HistoricTotalLightCount = m_Stats.TotalLightCount;
-    Control.ProxyBuildTaskCount     = m_Stats.TotalLightCount;
-    Control.WeightsSumUINT          = FloatAsUint(m_Stats.ProxyTotalWeight);
+    Control.ProxyBuildTaskCount     = 0u;
+    Control.WeightsSumUINT          = 0u;
     const bool  NEEATEnabled        = Settings.ImportanceSamplingType == 2u;
     const float FeedbackUseWeight   = NEEATEnabled ? std::clamp(Settings.GlobalTemporalFeedbackWeight, 0.0f, 0.95f) : 0.0f;
     const float LocalToGlobalRatio  = NEEATEnabled ? std::clamp(Settings.LocalToGlobalSampleRatio, 0.0f, 0.95f) : 0.0f;
@@ -580,8 +571,8 @@ bool RTXPTLightsBaker::UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLi
 
     BufferDesc Desc;
     Desc.Name              = "RTXPT LightsBaker control buffer";
-    Desc.Usage             = USAGE_IMMUTABLE;
-    Desc.BindFlags         = BIND_SHADER_RESOURCE;
+    Desc.Usage             = USAGE_DEFAULT; // GPU proxy build writes the computed scalars via UAV atomics
+    Desc.BindFlags         = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
     Desc.Mode              = BUFFER_MODE_STRUCTURED;
     Desc.ElementByteStride = sizeof(RTXPTLightingControlDataCPU);
     Desc.Size              = sizeof(RTXPTLightingControlDataCPU);

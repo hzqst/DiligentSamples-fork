@@ -77,7 +77,10 @@ public:
     void Reset();
     bool Upload(IRenderDevice* pDevice, const GLTF::Scene& Scene, const GLTF::ModelTransforms& Transforms);
     bool Upload(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
-    bool UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
+    // AllowEmissiveTexture must match the value passed to RTXPTMaterials::Upload and
+    // RTXPTAccelerationStructures::BuildScene so the emissive-triangle count here agrees with the
+    // material flag and the per-sub-instance EmissiveTriangleOffset allocation.
+    bool UploadEmissiveTriangles(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData, bool AllowEmissiveTexture);
 
     const RTXPTLightStats&                   GetStats() const { return m_Stats; }
     IBuffer*                                 GetLightBuffer() const { return m_LightBuffer; }

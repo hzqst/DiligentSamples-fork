@@ -686,9 +686,14 @@ bool RTXPTSample::RebuildSceneDependentResources()
         m_Scene.Update(0.0, 0.0);
     }
 
-    ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData, m_Scene.GetAssetsRoot());
+    // Emissive-textured materials become NEE area lights only when the emissive-triangle build shader can
+    // sample their textures on the GPU, i.e. when bindless material textures are available. This must be the
+    // same value for materials, emissive-triangle counting, and the AS EmissiveTriangleOffset allocation.
+    const bool AllowEmissiveTexture = m_FeatureCaps.BindlessResources;
+
+    ResourcesReady &= m_Materials.Upload(m_pDevice, SceneData, m_Scene.GetAssetsRoot(), AllowEmissiveTexture);
     ResourcesReady &= m_Lights.Upload(m_pDevice, SceneData);
-    ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData);
+    ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData, AllowEmissiveTexture);
 
     const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
     ResourcesReady &= m_EnvMapBaker.CreateResources(m_pDevice, m_pImmediateContext, m_pEngineFactory, m_FeatureCaps.ComputeShaders);
@@ -713,7 +718,8 @@ bool RTXPTSample::RebuildSceneDependentResources()
                                             SceneData,
                                             m_Scene.GetIndexType(),
                                             &m_SkinnedGeometry,
-                                            m_FeatureCaps.RayTracing);
+                                            m_FeatureCaps.RayTracing,
+                                            AllowEmissiveTexture);
 
     if (ResourcesReady)
     {
@@ -1164,6 +1170,9 @@ void RTXPTSample::CreatePhase4Passes()
                                       m_Scene.GetIndexBuffer(m_pDevice, m_pImmediateContext),
                                       m_Scene.GetIndexType(),
                                       m_Lights.GetEmissiveTriangleBuffer(),
+                                      m_Materials.GetTextureBindings(),
+                                      m_Materials.GetTextureCount(),
+                                      EnableMaterialTextures,
                                       m_FeatureCaps.ComputeShaders);
 
     const bool RTReady =

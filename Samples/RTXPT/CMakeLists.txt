@@ -11,6 +11,7 @@ set(SOURCE
     src/RTXPTLights.cpp
     src/RTXPTLightsBaker.cpp
     src/RTXPTLightsBakerPass.cpp
+    src/RTXPTLightProxyBuildPass.cpp
     src/RTXPTEnvMapBaker.cpp
     src/RTXPTEnvMapBakerPass.cpp
     src/RTXPTAccelerationStructures.cpp
@@ -42,6 +43,7 @@ set(INCLUDE
     src/RTXPTLights.hpp
     src/RTXPTLightsBaker.hpp
     src/RTXPTLightsBakerPass.hpp
+    src/RTXPTLightProxyBuildPass.hpp
     src/RTXPTFrameConstants.hpp
     src/RTXPTRealtimeSettings.hpp
     src/RTXPTEnvMapBaker.hpp
@@ -92,6 +94,7 @@ set(SHADERS
     shaders/PathTracer/Lighting/PolymorphicLight.hlsli
     shaders/PathTracer/Lighting/LightSampler.hlsli
     shaders/PathTracer/Lighting/LightsBaker.hlsl
+    shaders/PathTracer/Lighting/LightProxyBuild.hlsl
     shaders/PathTracer/Lighting/EnvMapImportanceBaker.hlsl
     shaders/PathTracer/Utils/SampleGenerators.hlsli
     shaders/PathTracer/Utils/StatelessSampleGenerators.hlsli

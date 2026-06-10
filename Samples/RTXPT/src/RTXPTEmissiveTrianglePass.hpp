@@ -51,17 +51,20 @@ class RTXPTEmissiveTrianglePass
 public:
     void Reset();
 
-    bool Initialize(IRenderDevice*  pDevice,
-                    IEngineFactory* pEngineFactory,
-                    IBuffer*        pMaterialBuffer,
-                    IBuffer*        pSubInstanceBuffer,
-                    IBuffer*        pSubInstanceTransformBuffer,
-                    IBuffer*        pVertexBuffer,
-                    IBuffer*        pSkinnedVertexBuffer,
-                    IBuffer*        pIndexBuffer,
-                    VALUE_TYPE      IndexValueType,
-                    IBuffer*        pEmissiveTriangleBuffer,
-                    bool            ComputeSupported);
+    bool Initialize(IRenderDevice*        pDevice,
+                    IEngineFactory*       pEngineFactory,
+                    IBuffer*              pMaterialBuffer,
+                    IBuffer*              pSubInstanceBuffer,
+                    IBuffer*              pSubInstanceTransformBuffer,
+                    IBuffer*              pVertexBuffer,
+                    IBuffer*              pSkinnedVertexBuffer,
+                    IBuffer*              pIndexBuffer,
+                    VALUE_TYPE            IndexValueType,
+                    IBuffer*              pEmissiveTriangleBuffer,
+                    IDeviceObject* const* pMaterialTextures,
+                    Uint32                MaterialTextureCount,
+                    bool                  EnableMaterialTextures,
+                    bool                  ComputeSupported);
 
     bool Dispatch(IDeviceContext* pContext, Uint32 SubInstanceCount);
 

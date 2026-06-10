@@ -40,6 +40,7 @@
 
 #include "RTXPTLights.hpp"
 #include "RTXPTLightsBakerPass.hpp"
+#include "RTXPTLightProxyBuildPass.hpp"
 #include "RTXPTSceneGraph.hpp"
 
 namespace Diligent
@@ -123,23 +124,22 @@ public:
     ITextureView*                GetFeedbackCandidatesSRV() const { return m_FeedbackCandidatesSRV; }
 
 private:
-    struct ProxyBuildItem
-    {
-        Uint32 LightIndex = 0;
-        Uint32 Count      = 0;
-        float  Weight     = 0.0f;
-    };
-
-    bool BuildGlobalProxies(const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings);
+    // Allocates the per-light GPU buffers (weights, proxy counters, proxy table) sized to the current light
+    // count, and captures the analytic + emissive-triangle source buffers. The proxy contents are then filled
+    // on the GPU by RunProxyBuild() (RTXPTLightProxyBuildPass) per-triangle and power-proportionally.
+    bool CreateProxyBuffers(IRenderDevice* pDevice, const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings);
+    bool RunProxyBuild(IDeviceContext* pContext);
     bool UploadControlBuffer(IRenderDevice* pDevice, const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings);
-    bool UploadProxyBuffers(IRenderDevice* pDevice);
     bool CreateFeedbackTextures(IRenderDevice* pDevice, Uint32 Width, Uint32 Height);
     bool CreateLocalSamplingBuffer(IRenderDevice* pDevice, Uint32 Width, Uint32 Height);
 
     RefCntAutoPtr<IBuffer>      m_ControlBuffer;
+    RefCntAutoPtr<IBuffer>      m_LightWeights;
     RefCntAutoPtr<IBuffer>      m_LightProxyCounters;
     RefCntAutoPtr<IBuffer>      m_LightSamplingProxies;
     RefCntAutoPtr<IBuffer>      m_LocalSamplingBuffer;
+    IBuffer*                    m_AnalyticLightBuffer    = nullptr; // borrowed from RTXPTLights (analytic-light weights)
+    IBuffer*                    m_EmissiveTriangleBuffer = nullptr; // borrowed from RTXPTLights (emissive-triangle power)
     RefCntAutoPtr<ITexture>     m_FeedbackTotalWeight;
     RefCntAutoPtr<ITexture>     m_FeedbackCandidates;
     RefCntAutoPtr<ITextureView> m_FeedbackTotalWeightSRV;
@@ -151,8 +151,11 @@ private:
     RTXPTLightsBakerPass m_FillLocalSamplingPass;
     RTXPTLightsBakerPass m_ClearFeedbackPass;
 
-    std::vector<Uint32>   m_ProxyCounters;
-    std::vector<Uint32>   m_ProxyIndices;
+    RTXPTLightProxyBuildPass m_ProxyBuildPass;
+
+    Uint32                m_ProxyBudget          = 0;     // capacity of m_LightSamplingProxies
+    Uint32                m_ProxyImportanceType  = 1;     // 0 = uniform, otherwise power-proportional
+    bool                  m_ProxyBuildPending    = false; // run the GPU proxy build on the next UpdateEnd
     Uint32                m_AllocatedWidth       = 0;
     Uint32                m_AllocatedHeight      = 0;
     bool                  m_ResetFeedbackPending = false;

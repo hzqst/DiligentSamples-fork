@@ -105,8 +105,8 @@ struct RTXPTNrdReblurUiSettings
     bool                                  EnableAntiFirefly             = true;
     RTXPTNrdHitDistanceReconstructionMode HitDistanceReconstructionMode = RTXPTNrdHitDistanceReconstructionMode::Area5x5;
     Uint32                                MaxAccumulatedFrameNum        = 50;
-    Uint32                                MaxFastAccumulatedFrameNum    = 0;
-    Uint32                                HistoryFixFrameNum            = 0;
+    Uint32                                MaxFastAccumulatedFrameNum    = 6;
+    Uint32                                HistoryFixFrameNum            = 3;
     float                                 DiffusePrepassBlurRadius      = 15.0f;
     float                                 SpecularPrepassBlurRadius     = 40.0f;
 };
@@ -121,7 +121,7 @@ struct RTXPTNrdRelaxUiSettings
     Uint32                                SpecularMaxAccumulatedFrameNum     = 40;
     Uint32                                DiffuseMaxFastAccumulatedFrameNum  = 5;
     Uint32                                SpecularMaxFastAccumulatedFrameNum = 6;
-    Uint32                                HistoryFixFrameNum                 = 0;
+    Uint32                                HistoryFixFrameNum                 = 3;
     Uint32                                AtrousIterationNum                 = 5;
     float                                 LobeAngleFraction                  = 0.7f;
     float                                 SpecularLobeAngleSlack             = 0.2f;
@@ -155,7 +155,7 @@ struct RTXPTRealtimeSettings
 
     RTXPTDenoisingGuideDebugView DenoisingGuideDebugView = RTXPTDenoisingGuideDebugView::Disabled;
 
-    RTXPTNrdMethod           NRDMethod                               = RTXPTNrdMethod::RELAX;
+    RTXPTNrdMethod           NRDMethod                               = RTXPTNrdMethod::REBLUR;
     float                    NRDDisocclusionThreshold                = 0.03f;
     bool                     NRDUseAlternateDisocclusionThresholdMix = true;
     float                    NRDDisocclusionThresholdAlternate       = 0.2f;

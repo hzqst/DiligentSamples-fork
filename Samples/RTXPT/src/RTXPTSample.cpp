@@ -122,13 +122,48 @@ Int32 GetFirstTemporalSuperResolutionVariantIdx(const RTXPTSuperResolutionPass& 
     return 0;
 }
 
+// Maps the UI quality selection onto the provider-agnostic Diligent optimization type.
+SUPER_RESOLUTION_OPTIMIZATION_TYPE ToSuperResolutionOptimizationType(RTXPTSuperResolutionQuality Quality)
+{
+    switch (Quality)
+    {
+        case RTXPTSuperResolutionQuality::MaxQuality: return SUPER_RESOLUTION_OPTIMIZATION_TYPE_MAX_QUALITY;
+        case RTXPTSuperResolutionQuality::HighQuality: return SUPER_RESOLUTION_OPTIMIZATION_TYPE_HIGH_QUALITY;
+        case RTXPTSuperResolutionQuality::Balanced: return SUPER_RESOLUTION_OPTIMIZATION_TYPE_BALANCED;
+        case RTXPTSuperResolutionQuality::HighPerformance: return SUPER_RESOLUTION_OPTIMIZATION_TYPE_HIGH_PERFORMANCE;
+        case RTXPTSuperResolutionQuality::MaxPerformance: return SUPER_RESOLUTION_OPTIMIZATION_TYPE_MAX_PERFORMANCE;
+        default: return SUPER_RESOLUTION_OPTIMIZATION_TYPE_BALANCED;
+    }
+}
+
+// Resolves the persisted provider selection to a usable variant index. The realtime path only
+// runs temporal upscalers, so a stale/out-of-range/spatial selection falls back to the first
+// temporal variant. Shared by the UI (combo preview) and the per-frame settings builder.
+Int32 ResolveActiveSuperResolutionVariantIdx(const RTXPTRealtimeSettings&    RealtimeUI,
+                                             const RTXPTSuperResolutionPass& SuperResolutionPass)
+{
+    const auto& Variants = SuperResolutionPass.GetVariants();
+    const Int32 VariantIdx = RealtimeUI.SuperResolutionVariantIdx;
+    if (VariantIdx >= 0 && VariantIdx < static_cast<Int32>(Variants.size()) &&
+        Variants[static_cast<size_t>(VariantIdx)].Type == SUPER_RESOLUTION_TYPE_TEMPORAL)
+        return VariantIdx;
+    return GetFirstTemporalSuperResolutionVariantIdx(SuperResolutionPass);
+}
+
 RTXPTSuperResolutionSettings MakeRealtimeSuperResolutionSettings(const RTXPTRealtimeSettings&    RealtimeUI,
                                                                  const RTXPTSuperResolutionPass& SuperResolutionPass)
 {
     RTXPTSuperResolutionSettings Settings;
     Settings.Enabled = IsRealtimeSuperResolutionSelected(RealtimeUI);
-    if (Settings.Enabled)
-        Settings.ActiveVariantIdx = GetFirstTemporalSuperResolutionVariantIdx(SuperResolutionPass);
+    if (!Settings.Enabled)
+        return Settings;
+
+    const auto& Variants      = SuperResolutionPass.GetVariants();
+    Settings.ActiveVariantIdx = ResolveActiveSuperResolutionVariantIdx(RealtimeUI, SuperResolutionPass);
+    Settings.OptimizationType = ToSuperResolutionOptimizationType(RealtimeUI.SuperResolutionQuality);
+    if (Settings.ActiveVariantIdx >= 0 && Settings.ActiveVariantIdx < static_cast<Int32>(Variants.size()) &&
+        SuperResolutionPass.SupportsSharpness(Variants[static_cast<size_t>(Settings.ActiveVariantIdx)]))
+        Settings.Sharpness = RealtimeUI.SuperResolutionSharpness;
     return Settings;
 }
 
@@ -2163,6 +2198,67 @@ void RTXPTSample::UpdateUI()
                 }
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                     ImGui::SetTooltip("TAA and Super Resolution execute in G10. DLSS-RR is reserved by TODO(RTXPT-Realtime-DLSS-RR).");
+
+                if (m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution &&
+                    m_PostProcessPipeline.GetSuperResolutionPass().HasTemporalVariant())
+                {
+                    const RTXPTSuperResolutionPass& SuperResolutionPass = m_PostProcessPipeline.GetSuperResolutionPass();
+                    const auto&                     Variants            = SuperResolutionPass.GetVariants();
+                    const Int32                     ActiveVariantIdx    = ResolveActiveSuperResolutionVariantIdx(m_RealtimeUI, SuperResolutionPass);
+
+                    ImGui::Indent(Indent);
+
+                    // Provider (variant) selection. Only temporal providers can drive the realtime path.
+                    const char* ProviderPreview =
+                        (ActiveVariantIdx >= 0 && ActiveVariantIdx < static_cast<Int32>(Variants.size())) ?
+                        Variants[static_cast<size_t>(ActiveVariantIdx)].Name :
+                        "none";
+                    if (ImGui::BeginCombo("SR Provider", ProviderPreview))
+                    {
+                        for (size_t VariantIdx = 0; VariantIdx < Variants.size(); ++VariantIdx)
+                        {
+                            const bool IsTemporal = Variants[VariantIdx].Type == SUPER_RESOLUTION_TYPE_TEMPORAL;
+                            ImGui::BeginDisabled(!IsTemporal);
+                            const bool Selected = static_cast<Int32>(VariantIdx) == ActiveVariantIdx;
+                            if (ImGui::Selectable(Variants[VariantIdx].Name, Selected))
+                            {
+                                m_RealtimeUI.SuperResolutionVariantIdx = static_cast<Int32>(VariantIdx);
+                                ResetTaaSrOnChange(true, "Super resolution provider changed");
+                            }
+                            if (Selected)
+                                ImGui::SetItemDefaultFocus();
+                            ImGui::EndDisabled();
+                            if (!IsTemporal && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                                ImGui::SetTooltip("Spatial-only variant; the realtime path requires a temporal upscaler.");
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    // Quality / performance trade-off (provider-agnostic optimization type).
+                    const char* SRQualityItems[] = {
+                        "Max Quality",
+                        "High Quality",
+                        "Balanced",
+                        "High Performance",
+                        "Max Performance"};
+                    int SRQuality = static_cast<int>(m_RealtimeUI.SuperResolutionQuality);
+                    if (ImGui::Combo("SR Quality", &SRQuality, SRQualityItems, _countof(SRQualityItems)))
+                    {
+                        m_RealtimeUI.SuperResolutionQuality = static_cast<RTXPTSuperResolutionQuality>(
+                            std::clamp(SRQuality, 0, static_cast<int>(_countof(SRQualityItems) - 1)));
+                        ResetTaaSrOnChange(true, "Super resolution quality changed");
+                    }
+
+                    // Sharpness is only exposed when the active provider advertises sharpening support.
+                    if (ActiveVariantIdx >= 0 && ActiveVariantIdx < static_cast<Int32>(Variants.size()) &&
+                        SuperResolutionPass.SupportsSharpness(Variants[static_cast<size_t>(ActiveVariantIdx)]))
+                    {
+                        ResetTaaSrOnChange(ImGui::SliderFloat("SR Sharpness", &m_RealtimeUI.SuperResolutionSharpness, 0.0f, 1.0f),
+                                           "Super resolution sharpness changed");
+                    }
+
+                    ImGui::Unindent(Indent);
+                }
 
                 const bool DenoiserDisabled =
                     m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::DLSSRR ||

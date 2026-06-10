@@ -46,6 +46,20 @@ enum class RTXPTRealtimeAAMode : Uint32
     DLSSRR          = 3
 };
 
+// Quality / performance trade-off for the realtime super resolution upscaler. Mirrors
+// Diligent's SUPER_RESOLUTION_OPTIMIZATION_TYPE 1:1; the mapping lives in RTXPTSample.cpp
+// so this lean settings header stays free of graphics-interface includes.
+enum class RTXPTSuperResolutionQuality : Uint32
+{
+    MaxQuality      = 0,
+    HighQuality     = 1,
+    Balanced        = 2,
+    HighPerformance = 3,
+    MaxPerformance  = 4,
+};
+
+constexpr Uint32 kRTXPTSuperResolutionQualityCount = 5;
+
 enum class RTXPTNrdMethod : Uint32
 {
     REBLUR = 0,
@@ -139,6 +153,13 @@ struct RTXPTRealtimeSettings
     RTXPTRealtimeAAMode RealtimeAA              = RTXPTRealtimeAAMode::Disabled;
     bool                StandaloneDenoiser      = true;
 
+    // Super resolution provider/quality selection (active when RealtimeAA == SuperResolution).
+    // SuperResolutionVariantIdx indexes the full provider list reported by the pass; the
+    // realtime path only consumes temporal variants and falls back to the first temporal one.
+    Int32                       SuperResolutionVariantIdx = 0;
+    RTXPTSuperResolutionQuality SuperResolutionQuality    = RTXPTSuperResolutionQuality::Balanced;
+    float                       SuperResolutionSharpness  = 0.0f;
+
     bool  RealtimeFireflyFilterEnabled   = true;
     float RealtimeFireflyFilterThreshold = 0.10f;
     float TexLODBias                     = -1.0f;
@@ -187,6 +208,15 @@ inline void SanitizeRealtimeSettings(RTXPTRealtimeSettings& Settings)
                                      static_cast<Uint32>(RTXPTRealtimeAAMode::Disabled),
                                      static_cast<Uint32>(RTXPTRealtimeAAMode::DLSSRR));
     Settings.RealtimeAA = static_cast<RTXPTRealtimeAAMode>(AAMode);
+
+    // The upper bound of the variant index depends on the live provider count, which is
+    // enforced at runtime by the super resolution pass; here we only reject negatives.
+    Settings.SuperResolutionVariantIdx = std::max(Settings.SuperResolutionVariantIdx, Int32{0});
+    const Uint32 SuperResolutionQuality = std::clamp(static_cast<Uint32>(Settings.SuperResolutionQuality),
+                                                     0u,
+                                                     kRTXPTSuperResolutionQualityCount - 1u);
+    Settings.SuperResolutionQuality     = static_cast<RTXPTSuperResolutionQuality>(SuperResolutionQuality);
+    Settings.SuperResolutionSharpness   = std::clamp(Settings.SuperResolutionSharpness, 0.0f, 1.0f);
 
     const Uint32 GuideDebugView      = std::clamp(static_cast<Uint32>(Settings.DenoisingGuideDebugView),
                                              static_cast<Uint32>(RTXPTDenoisingGuideDebugView::Disabled),

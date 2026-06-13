@@ -183,15 +183,6 @@ RTXPTTemporalAASettings MakeRealtimeTemporalAASettings()
     return Settings;
 }
 
-float2 NormalizeSuperResolutionJitterForCamera(const RTXPTSuperResolutionFrameDesc& FrameDesc)
-{
-    const float SafeWidth  = static_cast<float>(std::max(FrameDesc.Dimensions.RenderWidth, Uint32{1}));
-    const float SafeHeight = static_cast<float>(std::max(FrameDesc.Dimensions.RenderHeight, Uint32{1}));
-    return float2{
-        FrameDesc.Jitter.x / (0.5f * SafeWidth),
-        -FrameDesc.Jitter.y / (0.5f * SafeHeight)};
-}
-
 const char* GetNrdMethodName(RTXPTNrdMethod Method)
 {
     switch (Method)
@@ -1044,7 +1035,7 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
              m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution &&
              m_CurrentSuperResolutionFrame.Enabled)
     {
-        CameraJitter = NormalizeSuperResolutionJitterForCamera(m_CurrentSuperResolutionFrame);
+        CameraJitter = m_CurrentSuperResolutionFrame.Jitter;
     }
     m_CurrentRealtimeCameraJitter = CameraJitter;
 

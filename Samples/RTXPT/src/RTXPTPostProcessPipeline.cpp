@@ -29,6 +29,7 @@
 #include <algorithm>
 
 #include "DebugUtilities.hpp"
+#include "RenderStateCache.h"
 
 namespace Diligent
 {
@@ -59,11 +60,12 @@ void RTXPTPostProcessPipeline::Reset()
     m_Stats = {};
 }
 
-bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
-                                          IEngineFactory* pEngineFactory,
-                                          ISwapChain*     pSwapChain,
-                                          IBuffer*        pFrameConstants,
-                                          bool            ComputeSupported)
+bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*     pDevice,
+                                          IEngineFactory*    pEngineFactory,
+                                          IRenderStateCache* pStateCache,
+                                          ISwapChain*        pSwapChain,
+                                          IBuffer*           pFrameConstants,
+                                          bool               ComputeSupported)
 {
     Reset();
 
@@ -91,20 +93,20 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
         return false;
     }
 
-    m_Stats.SuperResolutionStageReady = m_SuperResolutionPass.Initialize(pDevice);
+    m_Stats.SuperResolutionStageReady = m_SuperResolutionPass.Initialize(pDevice, pStateCache);
     if (!m_Stats.SuperResolutionStageReady)
     {
         DEV_ERROR("RTXPT super-resolution pass failed to initialize");
         return false;
     }
 
-    m_Stats.TemporalAAStageReady = m_TemporalAAPass.Initialize(pDevice);
+    m_Stats.TemporalAAStageReady = m_TemporalAAPass.Initialize(pDevice, pStateCache);
     if (!m_Stats.TemporalAAStageReady)
     {
         LOG_WARNING_MESSAGE("RTXPT temporal AA pass is unavailable: ", m_TemporalAAPass.GetStats().DisabledReason.c_str());
     }
 
-    m_Stats.AccumulationStageReady = m_AccumulationPass.Initialize(pDevice, pEngineFactory, ComputeSupported);
+    m_Stats.AccumulationStageReady = m_AccumulationPass.Initialize(pDevice, pEngineFactory, pStateCache, ComputeSupported);
     if (!m_Stats.AccumulationStageReady)
     {
         DEV_ERROR("RTXPT accumulation pass failed to initialize");
@@ -112,7 +114,7 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     }
 
     m_Stats.RealtimeMergeStageReady =
-        m_PostProcessPass.Initialize(pDevice, pEngineFactory, pFrameConstants, ComputeSupported);
+        m_PostProcessPass.Initialize(pDevice, pEngineFactory, pStateCache, pFrameConstants, ComputeSupported);
     if (!m_Stats.RealtimeMergeStageReady)
     {
         DEV_ERROR("RTXPT realtime post-process pass failed to initialize");
@@ -120,14 +122,14 @@ bool RTXPTPostProcessPipeline::Initialize(IRenderDevice*  pDevice,
     }
 
     m_Stats.ToneMappingStageReady =
-        m_ToneMappingPass.Initialize(pDevice, pEngineFactory, TEX_FORMAT_RGBA8_UNORM, ComputeSupported);
+        m_ToneMappingPass.Initialize(pDevice, pEngineFactory, pStateCache, TEX_FORMAT_RGBA8_UNORM, ComputeSupported);
     if (!m_Stats.ToneMappingStageReady)
     {
         DEV_ERROR("RTXPT tone mapping pass failed to initialize");
         return false;
     }
 
-    m_Stats.BloomStageReady = m_BloomPass.Initialize(pDevice, pEngineFactory);
+    m_Stats.BloomStageReady = m_BloomPass.Initialize(pDevice, pEngineFactory, pStateCache);
     if (!m_Stats.BloomStageReady)
     {
         DEV_ERROR("RTXPT bloom pass failed to initialize");

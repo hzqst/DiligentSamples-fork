@@ -45,6 +45,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTPostProcessPipelineStats
 {
     bool Ready                       = false;
@@ -68,11 +70,12 @@ class RTXPTPostProcessPipeline
 public:
     void Reset();
 
-    bool Initialize(IRenderDevice*  pDevice,
-                    IEngineFactory* pEngineFactory,
-                    ISwapChain*     pSwapChain,
-                    IBuffer*        pFrameConstants,
-                    bool            ComputeSupported);
+    bool Initialize(IRenderDevice*     pDevice,
+                    IEngineFactory*    pEngineFactory,
+                    IRenderStateCache* pStateCache,
+                    ISwapChain*        pSwapChain,
+                    IBuffer*           pFrameConstants,
+                    bool               ComputeSupported);
 
     bool ValidateRenderTargets(const RTXPTRenderTargets& RenderTargets);
 

@@ -40,6 +40,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTComputePassStats
 {
     bool   Ready                = false;
@@ -52,12 +54,13 @@ class RTXPTComputePass
 public:
     void Reset();
 
-    bool Initialize(IRenderDevice*  pDevice,
-                    IEngineFactory* pEngineFactory,
-                    const char*     PassName,
-                    const char*     ShaderFilePath,
-                    IBuffer*        pFrameConstants,
-                    bool            ComputeSupported);
+    bool Initialize(IRenderDevice*     pDevice,
+                    IEngineFactory*    pEngineFactory,
+                    IRenderStateCache* pStateCache,
+                    const char*        PassName,
+                    const char*        ShaderFilePath,
+                    IBuffer*           pFrameConstants,
+                    bool               ComputeSupported);
 
     bool Dispatch(IDeviceContext* pContext, ITextureView* pInputSRV, ITextureView* pOutputUAV, Uint32 Width, Uint32 Height);
 

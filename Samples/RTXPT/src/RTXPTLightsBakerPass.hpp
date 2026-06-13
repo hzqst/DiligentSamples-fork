@@ -38,12 +38,14 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 class RTXPTLightsBakerPass
 {
 public:
     void Reset();
 
-    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, const char* Name, const char* EntryPoint);
+    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, const char* Name, const char* EntryPoint);
     bool Bind(IBuffer* pControl, IBuffer* pProxyCounters, IBuffer* pProxyIndices, IBuffer* pLocalSamplingBuffer, ITextureView* pFeedbackTotalWeightSRV, ITextureView* pFeedbackCandidatesSRV, ITextureView* pFeedbackTotalWeightUAV = nullptr, ITextureView* pFeedbackCandidatesUAV = nullptr);
     bool Dispatch(IDeviceContext* pContext, Uint32 ThreadGroupsX, Uint32 ThreadGroupsY);
 

@@ -44,6 +44,7 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
 struct SampleMiniConstants;
 
 enum class RTXPTPathTraceVariant : Uint32
@@ -103,6 +104,7 @@ public:
     bool Initialize(IRenderDevice*        pDevice,
                     IDeviceContext*       pContext,
                     IEngineFactory*       pEngineFactory,
+                    IRenderStateCache*    pStateCache,
                     IBuffer*              pFrameConstants,
                     IBuffer*              pMaterialBuffer,
                     IBuffer*              pSubInstanceBuffer,

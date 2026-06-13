@@ -20,6 +20,7 @@
 
 #include "DebugUtilities.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 
 #include "GraphicsTypesX.hpp"
 
@@ -136,7 +137,7 @@ bool SetStaticVariable(IPipelineState* pPSO, const char* Name, IDeviceObject* pO
         return false;
     }
 
-    pVar->Set(pObject);
+    pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
     return true;
 }
 
@@ -171,7 +172,7 @@ void RTXPTTemporalAAPass::Reset()
     m_Stats       = {};
 }
 
-bool RTXPTTemporalAAPass::Initialize(IRenderDevice* pDevice)
+bool RTXPTTemporalAAPass::Initialize(IRenderDevice* pDevice, IRenderStateCache* pStateCache)
 {
     Reset();
     if (pDevice == nullptr)
@@ -189,7 +190,7 @@ bool RTXPTTemporalAAPass::Initialize(IRenderDevice* pDevice)
     TAACI.EnableAsyncCreation = false;
     m_TemporalAA              = std::make_unique<TemporalAntiAliasing>(pDevice, TAACI);
 
-    if (!CreateInputConversionPipeline(pDevice))
+    if (!CreateInputConversionPipeline(pDevice, pStateCache))
         return false;
 
     m_Stats.Ready = m_PostFXContext != nullptr && m_TemporalAA != nullptr && m_InputConversionPSO && m_InputConversionSRB;
@@ -198,7 +199,7 @@ bool RTXPTTemporalAAPass::Initialize(IRenderDevice* pDevice)
     return m_Stats.Ready;
 }
 
-bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
+bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice, IRenderStateCache* pStateCache)
 {
     if (pDevice->GetDeviceInfo().Features.ComputeShaders != DEVICE_FEATURE_STATE_ENABLED)
     {
@@ -259,7 +260,7 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create RTXPT Temporal AA input conversion shader");
     if (!pCS)
     {
@@ -282,7 +283,7 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice)
         .AddVariable(SHADER_TYPE_COMPUTE, "u_TAAMotion", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &m_InputConversionPSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &m_InputConversionPSO);
     VERIFY(m_InputConversionPSO, "Failed to create RTXPT Temporal AA input conversion PSO");
     if (!m_InputConversionPSO)
     {

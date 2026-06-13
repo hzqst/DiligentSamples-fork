@@ -28,6 +28,7 @@
 
 #include "DebugUtilities.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 
 #include "GraphicsTypesX.hpp"
 
@@ -59,7 +60,7 @@ void RTXPTAccumulationPass::Reset()
     m_Stats = {};
 }
 
-bool RTXPTAccumulationPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, bool ComputeSupported)
+bool RTXPTAccumulationPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, bool ComputeSupported)
 {
     Reset();
 
@@ -96,7 +97,7 @@ bool RTXPTAccumulationPass::Initialize(IRenderDevice* pDevice, IEngineFactory* p
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create RTXPT accumulation shader");
     if (!pCS)
         return false;
@@ -116,7 +117,7 @@ bool RTXPTAccumulationPass::Initialize(IRenderDevice* pDevice, IEngineFactory* p
         .AddVariable(SHADER_TYPE_COMPUTE, "s_LinearSampler", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
     VERIFY(m_PSO, "Failed to create RTXPT accumulation PSO");
     if (!m_PSO)
         return false;
@@ -159,7 +160,7 @@ bool RTXPTAccumulationPass::Initialize(IRenderDevice* pDevice, IEngineFactory* p
             return false;
         }
 
-        pVar->Set(pObject);
+        pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
         return true;
     };
 

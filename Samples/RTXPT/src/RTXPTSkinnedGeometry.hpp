@@ -42,6 +42,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTGeometryVertex
 {
     float3 position  = float3{0, 0, 0};
@@ -90,6 +92,7 @@ public:
 
     bool Initialize(IRenderDevice*             pDevice,
                     IEngineFactory*            pEngineFactory,
+                    IRenderStateCache*         pStateCache,
                     const RTXPTSceneGraphData& SceneData,
                     bool                       ComputeSupported);
 
@@ -116,7 +119,7 @@ private:
     static_assert(sizeof(SkinningConstants) == 16, "SkinningConstants must stay 16-byte aligned");
 
     bool CreateBuffers(IRenderDevice* pDevice);
-    bool CreatePipeline(IRenderDevice* pDevice, IEngineFactory* pEngineFactory);
+    bool CreatePipeline(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache);
     bool CreateAssetBindings(IRenderDevice* pDevice, const RTXPTSceneGraphData& SceneData);
     bool BuildNodeTable(const RTXPTSceneGraphData& SceneData);
     bool UploadJointMatrices(IDeviceContext* pContext, const RTXPTSceneGraphData& SceneData);

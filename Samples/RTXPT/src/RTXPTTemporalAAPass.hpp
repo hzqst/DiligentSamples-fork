@@ -36,6 +36,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTTemporalAASettings
 {
     float TemporalStabilityFactor = 0.9375f;
@@ -68,7 +70,7 @@ class RTXPTTemporalAAPass
 {
 public:
     void Reset();
-    bool Initialize(IRenderDevice* pDevice);
+    bool Initialize(IRenderDevice* pDevice, IRenderStateCache* pStateCache);
 
     bool CopyOutputToProcessed(IRenderDevice*            pDevice,
                                IDeviceContext*           pContext,
@@ -82,7 +84,7 @@ public:
     const RTXPTTemporalAAStats& GetStats() const { return m_Stats; }
 
 private:
-    bool          CreateInputConversionPipeline(IRenderDevice* pDevice);
+    bool          CreateInputConversionPipeline(IRenderDevice* pDevice, IRenderStateCache* pStateCache);
     bool          EnsureInputConversionResources(IRenderDevice* pDevice, const RTXPTRenderTargets& RenderTargets);
     bool          ConvertInputs(const RTXPTTemporalAAFrameAttribs& Attribs);
     bool          PreparePostFX(const RTXPTTemporalAAFrameAttribs& Attribs);

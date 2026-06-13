@@ -30,6 +30,7 @@
 #include "DebugUtilities.hpp"
 #include "FileSystem.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 #include "TextureUtilities.h"
 #include "PBR_Renderer.hpp"
 
@@ -325,7 +326,7 @@ void RTXPTEnvMapBaker::SceneReloaded()
     ++m_Stats.Version;
 }
 
-bool RTXPTEnvMapBaker::CreateResources(IRenderDevice* pDevice, IDeviceContext*, IEngineFactory*, bool)
+bool RTXPTEnvMapBaker::CreateResources(IRenderDevice* pDevice, IDeviceContext*, IEngineFactory*, IRenderStateCache* pStateCache, bool)
 {
     if (pDevice == nullptr)
     {
@@ -334,6 +335,8 @@ bool RTXPTEnvMapBaker::CreateResources(IRenderDevice* pDevice, IDeviceContext*, 
         LOG_ERROR_MESSAGE(m_Stats.LastError.c_str());
         return false;
     }
+
+    m_pStateCache = pStateCache;
 
     return CreateSamplers(pDevice) && CreateFallbackTextures(pDevice);
 }
@@ -351,7 +354,7 @@ bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, 
     if (!m_EnvironmentSampler || !m_ImportanceSampler || !m_FallbackEnvironmentMap || !m_FallbackDiffuseIrradiance ||
         !m_FallbackImportanceMap || !m_FallbackRadianceMap || !m_FallbackBRDFLUT)
     {
-        if (!CreateResources(pDevice, pContext, pEngineFactory, ComputeSupported))
+        if (!CreateResources(pDevice, pContext, pEngineFactory, m_pStateCache, ComputeSupported))
             return false;
     }
 
@@ -701,10 +704,10 @@ bool RTXPTEnvMapBaker::CreateImportanceMaps(IRenderDevice* pDevice, IDeviceConte
         return Fail("Failed to create RTXPT EnvMapBaker importance constants buffer");
     m_ImportanceConstants = NewImportanceConstants;
 
-    if (!m_BuildImportanceBasePass.Initialize(pDevice, pEngineFactory,
+    if (!m_BuildImportanceBasePass.Initialize(pDevice, pEngineFactory, m_pStateCache,
                                               "RTXPT EnvMapBaker build importance base", "BuildImportanceBaseCS"))
         return Fail("Failed to initialize RTXPT EnvMapBaker base importance pass");
-    if (!m_ReduceImportanceMipPass.Initialize(pDevice, pEngineFactory,
+    if (!m_ReduceImportanceMipPass.Initialize(pDevice, pEngineFactory, m_pStateCache,
                                               "RTXPT EnvMapBaker reduce importance mip", "ReduceImportanceMipCS"))
         return Fail("Failed to initialize RTXPT EnvMapBaker importance mip reduction pass");
 

@@ -383,6 +383,8 @@ PRIVATE
     Diligent-AssetLoader
     Diligent-JSON
     Diligent-SuperResolution-static
+    Diligent-GraphicsTools      # CreateRenderStateCache / RenderStateCache.h
+    Diligent-Archiver-static    # LoadAndGetArchiverFactory()
     DiligentFX
 )
 

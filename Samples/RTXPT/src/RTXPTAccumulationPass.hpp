@@ -40,6 +40,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTAccumulationPassStats
 {
     bool   Ready                = false;
@@ -64,7 +66,7 @@ class RTXPTAccumulationPass
 {
 public:
     void Reset();
-    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, bool ComputeSupported);
+    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, bool ComputeSupported);
     bool Render(IDeviceContext* pContext, const RTXPTAccumulationDispatch& Dispatch);
 
     bool                              IsReady() const { return m_Stats.Ready; }

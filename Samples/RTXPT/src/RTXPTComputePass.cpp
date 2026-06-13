@@ -26,6 +26,7 @@
 
 #include "RTXPTComputePass.hpp"
 #include "DebugUtilities.hpp"
+#include "RenderStateCache.h"
 
 #include "GraphicsTypesX.hpp"
 
@@ -40,12 +41,13 @@ void RTXPTComputePass::Reset()
     m_Name.clear();
 }
 
-bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
-                                  IEngineFactory* pEngineFactory,
-                                  const char*     PassName,
-                                  const char*     ShaderFilePath,
-                                  IBuffer*        pFrameConstants,
-                                  bool            ComputeSupported)
+bool RTXPTComputePass::Initialize(IRenderDevice*     pDevice,
+                                  IEngineFactory*    pEngineFactory,
+                                  IRenderStateCache* pStateCache,
+                                  const char*        PassName,
+                                  const char*        ShaderFilePath,
+                                  IBuffer*           pFrameConstants,
+                                  bool               ComputeSupported)
 {
     Reset();
     m_Name = PassName != nullptr ? PassName : "RTXPT compute pass";
@@ -83,7 +85,7 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create ", m_Name, " shader");
     if (!pCS)
         return false;
@@ -101,12 +103,12 @@ bool RTXPTComputePass::Initialize(IRenderDevice*  pDevice,
         .AddVariable(SHADER_TYPE_COMPUTE, "u_Output", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
     VERIFY(m_PSO, "Failed to create ", m_Name, " PSO");
     if (!m_PSO)
         return false;
 
-    m_PSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "g_Const")->Set(pFrameConstants);
+    m_PSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "g_Const")->Set(pFrameConstants, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
     m_PSO->CreateShaderResourceBinding(&m_SRB, true);
     VERIFY(m_SRB, "Failed to create ", m_Name, " SRB");
     if (!m_SRB)

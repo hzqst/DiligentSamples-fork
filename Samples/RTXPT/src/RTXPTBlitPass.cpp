@@ -28,6 +28,7 @@
 #include "DebugUtilities.hpp"
 
 #include "GraphicsTypesX.hpp"
+#include "RenderStateCache.h"
 
 namespace Diligent
 {
@@ -39,7 +40,7 @@ void RTXPTBlitPass::Reset()
     m_DrawCount = 0;
 }
 
-bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, ISwapChain* pSwapChain)
+bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, ISwapChain* pSwapChain)
 {
     Reset();
 
@@ -58,14 +59,14 @@ bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFa
     ShaderCI.Desc.Name       = "RTXPT blit VS";
     ShaderCI.FilePath        = "RTXPTBlit.vsh";
     ShaderCI.EntryPoint      = "main";
-    pDevice->CreateShader(ShaderCI, &pVS);
+    pStateCache->CreateShader(ShaderCI, &pVS);
 
     RefCntAutoPtr<IShader> pPS;
     ShaderCI.Desc.ShaderType = SHADER_TYPE_PIXEL;
     ShaderCI.Desc.Name       = "RTXPT blit PS";
     ShaderCI.FilePath        = "RTXPTBlit.psh";
     ShaderCI.EntryPoint      = "main";
-    pDevice->CreateShader(ShaderCI, &pPS);
+    pStateCache->CreateShader(ShaderCI, &pPS);
 
     VERIFY(pVS && pPS, "Failed to create RTXPT blit shaders");
     if (!pVS || !pPS)
@@ -83,7 +84,7 @@ bool RTXPTBlitPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFa
     PSOCreateInfo.pVS                                           = pVS;
     PSOCreateInfo.pPS                                           = pPS;
 
-    pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &m_PSO);
+    pStateCache->CreateGraphicsPipelineState(PSOCreateInfo, &m_PSO);
     VERIFY(m_PSO, "Failed to create RTXPT blit PSO");
     if (!m_PSO)
         return false;

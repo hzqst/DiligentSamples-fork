@@ -31,6 +31,10 @@
 #include "GraphicsUtilities.h"
 #include "FileSystem.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
+#include "ArchiverFactoryLoader.h"
+#include "FileWrapper.hpp"
+#include "DataBlobImpl.hpp"
 #include "imgui.h"
 
 #include <algorithm>
@@ -65,6 +69,10 @@ constexpr bool        kRTXPTDlssRrAvailable = false;
 constexpr const char* kRTXPTRealtimeRoutePendingReason =
     "Realtime mode uses standalone NRD when available; otherwise it uses no-denoiser final merge and presentation.";
 constexpr Uint32 kRTXPTRealtimeNoisePeriod = 8192u;
+
+// Disk file used to persist the render state cache (compiled shaders + pipeline states)
+// across runs. Resolved relative to the working directory set in Initialize().
+constexpr char kStateCachePath[] = "RTXPT.cache";
 
 bool IsStandaloneNrdAvailable()
 {
@@ -734,13 +742,14 @@ bool RTXPTSample::RebuildSceneDependentResources()
     ResourcesReady &= m_Lights.UploadEmissiveTriangles(m_pDevice, SceneData);
 
     const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
-    ResourcesReady &= m_EnvMapBaker.CreateResources(m_pDevice, m_pImmediateContext, m_pEngineFactory, m_FeatureCaps.ComputeShaders);
+    ResourcesReady &= m_EnvMapBaker.CreateResources(m_pDevice, m_pImmediateContext, m_pEngineFactory, m_pStateCache, m_FeatureCaps.ComputeShaders);
     ResourcesReady &= UpdateEnvMapBaker(true);
-    ResourcesReady &= m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, SCDesc.Width, SCDesc.Height, m_FeatureCaps.ComputeShaders);
+    ResourcesReady &= m_LightsBaker.CreateResources(m_pDevice, m_pEngineFactory, m_pStateCache, SCDesc.Width, SCDesc.Height, m_FeatureCaps.ComputeShaders);
     ResourcesReady &= UpdateLightsBaker(true);
 
     ResourcesReady &= m_SkinnedGeometry.Initialize(m_pDevice,
                                                    m_pEngineFactory,
+                                                   m_pStateCache,
                                                    SceneData,
                                                    m_FeatureCaps.ComputeShaders);
 
@@ -906,6 +915,23 @@ bool RTXPTSample::ApplySceneCamera(Uint32 CameraIndex)
     return true;
 }
 
+RTXPTSample::~RTXPTSample()
+{
+    if (!m_pStateCache)
+        return;
+
+    // Persist the render state cache so the next run can reuse compiled shaders and pipelines.
+    RefCntAutoPtr<IDataBlob> pCacheData;
+    if (m_pStateCache->WriteToBlob(0, &pCacheData) && pCacheData)
+    {
+        FileWrapper CacheDataFile{kStateCachePath, EFileAccessMode::Overwrite};
+        if (CacheDataFile->Write(pCacheData->GetConstDataPtr(), pCacheData->GetSize()))
+            LOG_INFO_MESSAGE("Saved render state cache to '", kStateCachePath, "'");
+        else
+            LOG_ERROR_MESSAGE("Failed to write render state cache to '", kStateCachePath, "'");
+    }
+}
+
 void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
 {
     SampleBase::Initialize(InitInfo);
@@ -919,6 +945,35 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
     std::filesystem::current_path(SampleRoot, WorkingDirError);
     if (!WorkingDirError)
         FileSystem::SetWorkingDirectory(SampleRoot.c_str());
+
+    // Create the render state cache (now that the working directory is set) and load any
+    // previously saved cache. All passes route their shader/PSO creation through it.
+    {
+        RenderStateCacheCreateInfo CacheCI;
+        CacheCI.pDevice          = m_pDevice;
+        CacheCI.pArchiverFactory = LoadAndGetArchiverFactory();
+        // RTXPT shaders use relative #includes (e.g. LightsBaker.hlsl -> "LightingConfig.h") that DXC
+        // resolves against the including file's directory. The cache's by-content hash scanner instead
+        // looks up bare include names against the factory's flat search dirs and cannot find them, so we
+        // hash by file name + compile params instead. NOTE: editing a shader's source no longer
+        // invalidates the cache automatically - delete RTXPT.cache to force a recompile after shader edits.
+        CacheCI.FileHashMode = RENDER_STATE_CACHE_FILE_HASH_MODE_BY_NAME;
+        CreateRenderStateCache(CacheCI, &m_pStateCache);
+        VERIFY_EXPR(m_pStateCache);
+
+        if (m_pStateCache && FileSystem::FileExists(kStateCachePath))
+        {
+            FileWrapper                 CacheDataFile{kStateCachePath};
+            RefCntAutoPtr<DataBlobImpl> pCacheData = DataBlobImpl::Create();
+            if (CacheDataFile->Read(pCacheData))
+            {
+                if (m_pStateCache->Load(pCacheData))
+                    LOG_INFO_MESSAGE("Loaded render state cache from '", kStateCachePath, "'");
+                else
+                    LOG_ERROR_MESSAGE("Failed to load render state cache from '", kStateCachePath, "'");
+            }
+        }
+    }
 
     EnumerateEnvironmentMaps();
     EnumerateAvailableScenes();
@@ -1183,14 +1238,16 @@ bool RTXPTSample::UpdateLightsBaker(bool ResetFeedback)
 
 void RTXPTSample::CreateSceneIndependentPasses()
 {
-    m_BlitPass.Initialize(m_pDevice, m_pEngineFactory, m_pSwapChain);
+    m_BlitPass.Initialize(m_pDevice, m_pEngineFactory, m_pStateCache, m_pSwapChain);
     m_PostProcessPipeline.Initialize(m_pDevice,
                                      m_pEngineFactory,
+                                     m_pStateCache,
                                      m_pSwapChain,
                                      m_FrameConstantsCB,
                                      m_FeatureCaps.ComputeShaders);
     m_DenoisingGuidesBaker.Initialize(m_pDevice,
                                       m_pEngineFactory,
+                                      m_pStateCache,
                                       m_FrameConstantsCB,
                                       m_FeatureCaps.ComputeShaders);
 }
@@ -1205,6 +1262,7 @@ void RTXPTSample::CreateSceneDependentPasses()
 
     m_EmissiveTrianglePass.Initialize(m_pDevice,
                                       m_pEngineFactory,
+                                      m_pStateCache,
                                       m_Materials.GetMaterialBuffer(),
                                       m_AccelerationStructures.GetSubInstanceBuffer(),
                                       m_AccelerationStructures.GetSubInstanceTransformBuffer(),
@@ -1222,6 +1280,7 @@ void RTXPTSample::CreateSceneDependentPasses()
         m_RayTracingPass.Initialize(m_pDevice,
                                     m_pImmediateContext,
                                     m_pEngineFactory,
+                                    m_pStateCache,
                                     m_FrameConstantsCB,
                                     m_Materials.GetMaterialBuffer(),
                                     m_AccelerationStructures.GetSubInstanceBuffer(),
@@ -1696,6 +1755,7 @@ bool RTXPTSample::EnsureNrdIntegrations()
         if (NeedsRecreate &&
             !Integration.Initialize(m_pDevice,
                                     m_pEngineFactory,
+                                    m_pStateCache,
                                     m_RealtimeUI.NRDMethod,
                                     Width,
                                     Height,
@@ -1953,6 +2013,7 @@ void RTXPTSample::WindowResize(Uint32 Width, Uint32 Height)
             const bool LightsResourcesReady =
                 m_LightsBaker.CreateResources(m_pDevice,
                                               m_pEngineFactory,
+                                              m_pStateCache,
                                               m_CurrentTargetDimensions.DisplayWidth,
                                               m_CurrentTargetDimensions.DisplayHeight,
                                               m_FeatureCaps.ComputeShaders);

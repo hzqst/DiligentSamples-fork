@@ -31,6 +31,7 @@
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 
 namespace Diligent
 {
@@ -173,7 +174,7 @@ bool RTXPTSkinnedSceneGeometry::CreateBuffers(IRenderDevice* pDevice)
     return m_SkinningConstantsCB != nullptr;
 }
 
-bool RTXPTSkinnedSceneGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory* pEngineFactory)
+bool RTXPTSkinnedSceneGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache)
 {
     if (m_Nodes.empty())
         return true;
@@ -193,7 +194,7 @@ bool RTXPTSkinnedSceneGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFa
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create RTXPT skinned vertex build shader");
     if (!pCS)
         return false;
@@ -213,7 +214,7 @@ bool RTXPTSkinnedSceneGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFa
         .AddVariable(SHADER_TYPE_COMPUTE, "u_SkinnedVertices", SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
     VERIFY(m_PSO, "Failed to create RTXPT skinned vertex build PSO");
     if (!m_PSO)
         return false;
@@ -222,7 +223,7 @@ bool RTXPTSkinnedSceneGeometry::CreatePipeline(IRenderDevice* pDevice, IEngineFa
         IShaderResourceVariable* pVar = m_PSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, Name);
         if (pVar == nullptr || pObject == nullptr)
             return false;
-        pVar->Set(pObject);
+        pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
         return true;
     };
 
@@ -294,6 +295,7 @@ bool RTXPTSkinnedSceneGeometry::CreateAssetBindings(IRenderDevice* pDevice, cons
 
 bool RTXPTSkinnedSceneGeometry::Initialize(IRenderDevice*             pDevice,
                                            IEngineFactory*            pEngineFactory,
+                                           IRenderStateCache*         pStateCache,
                                            const RTXPTSceneGraphData& SceneData,
                                            bool                       ComputeSupported)
 {
@@ -323,7 +325,7 @@ bool RTXPTSkinnedSceneGeometry::Initialize(IRenderDevice*             pDevice,
         return false;
     }
 
-    if (!CreatePipeline(pDevice, pEngineFactory))
+    if (!CreatePipeline(pDevice, pEngineFactory, pStateCache))
         return false;
 
     if (!CreateAssetBindings(pDevice, SceneData))

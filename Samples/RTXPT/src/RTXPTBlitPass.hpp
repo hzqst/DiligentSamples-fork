@@ -38,11 +38,13 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 class RTXPTBlitPass
 {
 public:
     void Reset();
-    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, ISwapChain* pSwapChain);
+    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, ISwapChain* pSwapChain);
     bool Render(IDeviceContext* pContext, ISwapChain* pSwapChain, ITextureView* pSourceSRV);
 
     bool   IsReady() const { return m_PSO && m_SRB; }

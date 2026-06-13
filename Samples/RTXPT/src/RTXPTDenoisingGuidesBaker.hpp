@@ -41,6 +41,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTDenoisingGuidesBakerStats
 {
     bool   Ready                         = false;
@@ -66,10 +68,11 @@ public:
 
     void Reset();
 
-    bool Initialize(IRenderDevice*  pDevice,
-                    IEngineFactory* pEngineFactory,
-                    IBuffer*        pFrameConstants,
-                    bool            ComputeSupported);
+    bool Initialize(IRenderDevice*     pDevice,
+                    IEngineFactory*    pEngineFactory,
+                    IRenderStateCache* pStateCache,
+                    IBuffer*           pFrameConstants,
+                    bool               ComputeSupported);
 
     bool Bake(IDeviceContext*              pContext,
               const RTXPTRenderTargets&    RenderTargets,
@@ -86,6 +89,7 @@ private:
     };
 
     bool CreatePass(IRenderDevice*                   pDevice,
+                    IRenderStateCache*               pStateCache,
                     IShaderSourceInputStreamFactory* pShaderSourceFactory,
                     PassId                           Pass);
     bool DispatchPass(IDeviceContext*              pContext,

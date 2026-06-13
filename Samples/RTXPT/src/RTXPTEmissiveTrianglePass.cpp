@@ -29,6 +29,7 @@
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 #include "ShaderMacroHelper.hpp"
 
 namespace Diligent
@@ -57,6 +58,7 @@ void RTXPTEmissiveTrianglePass::Reset()
 
 bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*        pDevice,
                                            IEngineFactory*       pEngineFactory,
+                                           IRenderStateCache*    pStateCache,
                                            IBuffer*              pMaterialBuffer,
                                            IBuffer*              pSubInstanceBuffer,
                                            IBuffer*              pSubInstanceTransformBuffer,
@@ -120,7 +122,7 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*        pDevice,
     ShaderCI.Macros = Macros;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create RTXPT emissive triangle build shader");
     if (!pCS)
         return false;
@@ -155,7 +157,7 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*        pDevice,
     }
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
     VERIFY(m_PSO, "Failed to create RTXPT emissive triangle build PSO");
     if (!m_PSO)
         return false;
@@ -199,7 +201,7 @@ bool RTXPTEmissiveTrianglePass::Initialize(IRenderDevice*        pDevice,
             return false;
         }
 
-        pVar->Set(pObject);
+        pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
         return true;
     };
 

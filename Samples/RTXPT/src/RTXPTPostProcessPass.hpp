@@ -46,6 +46,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 enum class RTXPTPostProcessPassId : Uint32
 {
     StablePlanesDebugViz,
@@ -85,7 +87,7 @@ class RTXPTPostProcessPass
 {
 public:
     void Reset();
-    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IBuffer* pFrameConstants, bool ComputeSupported);
+    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, IBuffer* pFrameConstants, bool ComputeSupported);
     bool RunStablePlanesDebugViz(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
     bool RunDenoiserPrepare(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
     bool RunDenoiserFinalMerge(IDeviceContext* pContext, const RTXPTDenoiserPostProcessAttribs& Attribs);
@@ -102,6 +104,7 @@ private:
     };
 
     bool CreatePostProcessPSO(IRenderDevice*          pDevice,
+                              IRenderStateCache*      pStateCache,
                               const ShaderCreateInfo& BaseShaderCI,
                               RTXPTPostProcessPassId  Pass);
     bool DispatchPass(IDeviceContext*                        pContext,

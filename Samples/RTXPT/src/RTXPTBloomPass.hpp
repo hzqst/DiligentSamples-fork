@@ -36,6 +36,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTBloomParameters
 {
     bool  Enabled   = true;
@@ -68,7 +70,7 @@ class RTXPTBloomPass
 {
 public:
     void Reset();
-    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory);
+    bool Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache);
     bool ResizeResources(IRenderDevice* pDevice, Uint32 Width, Uint32 Height, TEXTURE_FORMAT Format);
     bool Render(IDeviceContext* pContext, const RTXPTBloomRenderAttribs& Attribs);
 
@@ -77,7 +79,7 @@ public:
 
 private:
     bool CreateSampler(IRenderDevice* pDevice);
-    bool CreateShaders(IRenderDevice* pDevice, IEngineFactory* pEngineFactory);
+    bool CreateShaders(IRenderStateCache* pStateCache, IEngineFactory* pEngineFactory);
     bool CreatePipelines(IRenderDevice* pDevice, TEXTURE_FORMAT Format);
     bool CreateIntermediateTexture(IRenderDevice* pDevice, const char* Name, Uint32 Width, Uint32 Height, TEXTURE_FORMAT Format, RefCntAutoPtr<ITexture>& Texture);
     bool CreateIntermediateTextures(IRenderDevice*           pDevice,
@@ -97,6 +99,7 @@ private:
 
 private:
     RTXPTBloomPassStats                   m_Stats;
+    IRenderStateCache*                    m_pStateCache = nullptr; // Owned by RTXPTSample; set in Initialize.
     RefCntAutoPtr<IShader>                m_FullscreenVS;
     RefCntAutoPtr<IShader>                m_CopyPS;
     RefCntAutoPtr<IShader>                m_BlurPS;

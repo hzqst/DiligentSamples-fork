@@ -44,6 +44,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTSuperResolutionSettings
 {
     bool                               Enabled          = false;
@@ -88,7 +90,7 @@ class RTXPTSuperResolutionPass
 {
 public:
     void Reset();
-    bool Initialize(IRenderDevice* pDevice);
+    bool Initialize(IRenderDevice* pDevice, IRenderStateCache* pStateCache);
 
     RTXPTSuperResolutionFrameDesc ResolveFrameDesc(const RTXPTSuperResolutionSettings& Settings,
                                                    Uint32                              DisplayWidth,
@@ -112,7 +114,7 @@ public:
 
 private:
     const SuperResolutionInfo* GetActiveVariant(const RTXPTSuperResolutionSettings& Settings) const;
-    bool                       CreateMotionConversionPipeline(IRenderDevice* pDevice);
+    bool                       CreateMotionConversionPipeline(IRenderDevice* pDevice, IRenderStateCache* pStateCache);
     bool                       EnsureMotionConversionResources(IRenderDevice* pDevice, const RTXPTRenderTargets& RenderTargets);
     bool                       ConvertMotionVectors(IDeviceContext* pContext, const RTXPTRenderTargets& RenderTargets);
     ITextureView*              GetSRMotionSRV() const;

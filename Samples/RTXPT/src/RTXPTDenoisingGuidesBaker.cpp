@@ -29,6 +29,7 @@
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 
 namespace Diligent
 {
@@ -111,10 +112,11 @@ void RTXPTDenoisingGuidesBaker::Reset()
     m_Stats = {};
 }
 
-bool RTXPTDenoisingGuidesBaker::Initialize(IRenderDevice*  pDevice,
-                                           IEngineFactory* pEngineFactory,
-                                           IBuffer*        pFrameConstants,
-                                           bool            ComputeSupported)
+bool RTXPTDenoisingGuidesBaker::Initialize(IRenderDevice*     pDevice,
+                                           IEngineFactory*    pEngineFactory,
+                                           IRenderStateCache* pStateCache,
+                                           IBuffer*           pFrameConstants,
+                                           bool               ComputeSupported)
 {
     Reset();
 
@@ -149,7 +151,7 @@ bool RTXPTDenoisingGuidesBaker::Initialize(IRenderDevice*  pDevice,
 
     for (Uint32 Index = 0; Index < static_cast<Uint32>(PassId::Count); ++Index)
     {
-        if (!CreatePass(pDevice, pShaderSourceFactory, static_cast<PassId>(Index)))
+        if (!CreatePass(pDevice, pStateCache, pShaderSourceFactory, static_cast<PassId>(Index)))
         {
             Reset();
             return false;
@@ -161,6 +163,7 @@ bool RTXPTDenoisingGuidesBaker::Initialize(IRenderDevice*  pDevice,
 }
 
 bool RTXPTDenoisingGuidesBaker::CreatePass(IRenderDevice*                   pDevice,
+                                           IRenderStateCache*               pStateCache,
                                            IShaderSourceInputStreamFactory* pShaderSourceFactory,
                                            PassId                           Pass)
 {
@@ -178,7 +181,7 @@ bool RTXPTDenoisingGuidesBaker::CreatePass(IRenderDevice*                   pDev
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create RTXPT denoising guides shader");
     if (!pCS)
         return false;
@@ -204,7 +207,7 @@ bool RTXPTDenoisingGuidesBaker::CreatePass(IRenderDevice*                   pDev
         .AddVariable(SHADER_TYPE_COMPUTE, "u_DebugOutput", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &State.PSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &State.PSO);
     VERIFY(State.PSO, "Failed to create RTXPT denoising guides PSO");
     if (!State.PSO)
         return false;
@@ -215,7 +218,7 @@ bool RTXPTDenoisingGuidesBaker::CreatePass(IRenderDevice*                   pDev
             return true;
         if (pObject == nullptr)
             return false;
-        pVar->Set(pObject);
+        pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
         return true;
     };
 

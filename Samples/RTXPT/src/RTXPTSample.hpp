@@ -56,6 +56,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTFeatureCaps
 {
     bool RayTracing                  = false;
@@ -97,6 +99,8 @@ struct RTXPTReferenceUIState
 class RTXPTSample final : public SampleBase
 {
 public:
+    ~RTXPTSample() override;
+
     virtual void        Initialize(const SampleInitInfo& InitInfo) override final;
     virtual void        Render() override final;
     virtual void        Update(double CurrTime, double ElapsedTime, bool DoUpdateUI) override final;
@@ -147,7 +151,8 @@ private:
     bool DispatchPathTraceLoop(bool UseStablePlanes, const RTXPTRayTracingDispatch& BaseDispatch);
     void RecordRealtimePathTraceStatus(const char* Status);
 
-    RTXPTFeatureCaps                                        m_FeatureCaps;
+    RefCntAutoPtr<IRenderStateCache>                       m_pStateCache;
+    RTXPTFeatureCaps                                       m_FeatureCaps;
     std::string                                             m_AssetsRoot;
     std::vector<std::string>                                m_AvailableScenes;
     std::string                                             m_CurrentSceneName;

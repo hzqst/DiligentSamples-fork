@@ -30,6 +30,7 @@
 
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
+#include "RenderStateCache.h"
 #include "SuperResolutionFactoryLoader.h"
 
 namespace Diligent
@@ -140,7 +141,7 @@ void RTXPTSuperResolutionPass::Reset()
     m_SRMotionHeight = 0;
 }
 
-bool RTXPTSuperResolutionPass::Initialize(IRenderDevice* pDevice)
+bool RTXPTSuperResolutionPass::Initialize(IRenderDevice* pDevice, IRenderStateCache* pStateCache)
 {
     Reset();
 
@@ -179,7 +180,7 @@ bool RTXPTSuperResolutionPass::Initialize(IRenderDevice* pDevice)
     }
 
     const bool HasTemporalVariant = ContainsTemporalVariant(m_Variants);
-    if (HasTemporalVariant && !CreateMotionConversionPipeline(pDevice))
+    if (HasTemporalVariant && !CreateMotionConversionPipeline(pDevice, pStateCache))
         return true;
 
     m_Stats.DisabledReason = HasTemporalVariant ? "" : "temporal super resolution variant unavailable";
@@ -366,7 +367,7 @@ bool RTXPTSuperResolutionPass::EnsureUpscaler(const RTXPTSuperResolutionFrameDes
     return true;
 }
 
-bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDevice)
+bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDevice, IRenderStateCache* pStateCache)
 {
     if (pDevice->GetDeviceInfo().Features.ComputeShaders != DEVICE_FEATURE_STATE_ENABLED)
     {
@@ -407,7 +408,7 @@ bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDe
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create RTXPT super resolution motion conversion shader");
     if (!pCS)
     {
@@ -427,7 +428,7 @@ bool RTXPTSuperResolutionPass::CreateMotionConversionPipeline(IRenderDevice* pDe
         .AddVariable(SHADER_TYPE_COMPUTE, "u_SRMotionVectors", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &m_MotionConversionPSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &m_MotionConversionPSO);
     VERIFY(m_MotionConversionPSO, "Failed to create RTXPT super resolution motion conversion PSO");
     if (!m_MotionConversionPSO)
     {

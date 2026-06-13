@@ -33,6 +33,7 @@
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 
 namespace Diligent
 {
@@ -58,7 +59,7 @@ bool SetStaticVariable(IPipelineState* pPSO, SHADER_TYPE ShaderType, const char*
     if (pObject == nullptr)
         return !Required;
 
-    pVar->Set(pObject);
+    pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
     return true;
 }
 
@@ -105,7 +106,7 @@ bool CreateBloomSRBs(IPipelineState*                        pCopyPSO,
         CreateSRB(pBlurPSO, VBlurSRB);
 }
 
-bool CreateShader(IRenderDevice*          pDevice,
+bool CreateShader(IRenderStateCache*      pStateCache,
                   const ShaderCreateInfo& BaseCI,
                   SHADER_TYPE             ShaderType,
                   const char*             Name,
@@ -120,7 +121,7 @@ bool CreateShader(IRenderDevice*          pDevice,
     ShaderCI.EntryPoint       = EntryPoint;
 
     Shader.Release();
-    pDevice->CreateShader(ShaderCI, &Shader);
+    pStateCache->CreateShader(ShaderCI, &Shader);
     VERIFY(Shader, "Failed to create shader: ", Name);
     return Shader != nullptr;
 }
@@ -142,7 +143,7 @@ void InitFullscreenPipeline(GraphicsPipelineStateCreateInfo& PSOCreateInfo,
     PSOCreateInfo.pPS                                           = pPS;
 }
 
-bool CreateCopyPipeline(IRenderDevice*                 pDevice,
+bool CreateCopyPipeline(IRenderStateCache*             pStateCache,
                         const char*                    Name,
                         TEXTURE_FORMAT                 Format,
                         IShader*                       pVS,
@@ -169,11 +170,11 @@ bool CreateCopyPipeline(IRenderDevice*                 pDevice,
         .AddVariable(SHADER_TYPE_PIXEL, "t_Source", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &PSO);
+    pStateCache->CreateGraphicsPipelineState(PSOCreateInfo, &PSO);
     return PSO != nullptr;
 }
 
-bool CreateBlurPipeline(IRenderDevice*                 pDevice,
+bool CreateBlurPipeline(IRenderStateCache*             pStateCache,
                         TEXTURE_FORMAT                 Format,
                         IShader*                       pVS,
                         IShader*                       pPS,
@@ -190,7 +191,7 @@ bool CreateBlurPipeline(IRenderDevice*                 pDevice,
         .AddVariable(SHADER_TYPE_PIXEL, "t_Source", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &PSO);
+    pStateCache->CreateGraphicsPipelineState(PSOCreateInfo, &PSO);
     return PSO != nullptr;
 }
 
@@ -272,7 +273,7 @@ bool RTXPTBloomPass::CreateSampler(IRenderDevice* pDevice)
     return m_LinearSampler != nullptr;
 }
 
-bool RTXPTBloomPass::CreateShaders(IRenderDevice* pDevice, IEngineFactory* pEngineFactory)
+bool RTXPTBloomPass::CreateShaders(IRenderStateCache* pStateCache, IEngineFactory* pEngineFactory)
 {
     RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
     pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders;shaders\\PostProcessing", &pShaderSourceFactory);
@@ -284,12 +285,12 @@ bool RTXPTBloomPass::CreateShaders(IRenderDevice* pDevice, IEngineFactory* pEngi
     ShaderCI.ShaderOptimizationLevel    = SHADER_OPTIMIZATION_LEVEL_3;
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
-    return CreateShader(pDevice, ShaderCI, SHADER_TYPE_VERTEX, "RTXPT bloom VS", "PostProcessing/RTXPTFullscreen.vsh", "main", m_FullscreenVS) &&
-        CreateShader(pDevice, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT bloom copy PS", "PostProcessing/RTXPTBloomCopy.psh", "main", m_CopyPS) &&
-        CreateShader(pDevice, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT bloom blur PS", "PostProcessing/RTXPTBloomBlur.psh", "main", m_BlurPS);
+    return CreateShader(pStateCache, ShaderCI, SHADER_TYPE_VERTEX, "RTXPT bloom VS", "PostProcessing/RTXPTFullscreen.vsh", "main", m_FullscreenVS) &&
+        CreateShader(pStateCache, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT bloom copy PS", "PostProcessing/RTXPTBloomCopy.psh", "main", m_CopyPS) &&
+        CreateShader(pStateCache, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT bloom blur PS", "PostProcessing/RTXPTBloomBlur.psh", "main", m_BlurPS);
 }
 
-bool RTXPTBloomPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory)
+bool RTXPTBloomPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache)
 {
     Reset();
 
@@ -299,7 +300,9 @@ bool RTXPTBloomPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineF
         return false;
     }
 
-    if (!CreateSampler(pDevice) || !CreateShaders(pDevice, pEngineFactory))
+    m_pStateCache = pStateCache;
+
+    if (!CreateSampler(pDevice) || !CreateShaders(pStateCache, pEngineFactory))
     {
         DEV_ERROR("RTXPT bloom pass failed to create shaders or sampler");
         return false;
@@ -327,7 +330,7 @@ bool RTXPTBloomPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineF
 
 bool RTXPTBloomPass::CreatePipelines(IRenderDevice* pDevice, TEXTURE_FORMAT Format)
 {
-    if (pDevice == nullptr || Format == TEX_FORMAT_UNKNOWN || !m_FullscreenVS || !m_CopyPS || !m_BlurPS || !m_LinearSampler || !m_HBlurCB || !m_VBlurCB)
+    if (pDevice == nullptr || m_pStateCache == nullptr || Format == TEX_FORMAT_UNKNOWN || !m_FullscreenVS || !m_CopyPS || !m_BlurPS || !m_LinearSampler || !m_HBlurCB || !m_VBlurCB)
         return false;
 
     RefCntAutoPtr<IPipelineState>         CopyPSO;
@@ -339,9 +342,9 @@ bool RTXPTBloomPass::CreatePipelines(IRenderDevice* pDevice, TEXTURE_FORMAT Form
     RefCntAutoPtr<IShaderResourceBinding> VBlurSRB;
 
     const bool PSOsReady =
-        CreateCopyPipeline(pDevice, "RTXPT bloom copy PSO", Format, m_FullscreenVS, m_CopyPS, false, CopyPSO) &&
-        CreateCopyPipeline(pDevice, "RTXPT bloom apply PSO", Format, m_FullscreenVS, m_CopyPS, true, ApplyPSO) &&
-        CreateBlurPipeline(pDevice, Format, m_FullscreenVS, m_BlurPS, BlurPSO);
+        CreateCopyPipeline(m_pStateCache, "RTXPT bloom copy PSO", Format, m_FullscreenVS, m_CopyPS, false, CopyPSO) &&
+        CreateCopyPipeline(m_pStateCache, "RTXPT bloom apply PSO", Format, m_FullscreenVS, m_CopyPS, true, ApplyPSO) &&
+        CreateBlurPipeline(m_pStateCache, Format, m_FullscreenVS, m_BlurPS, BlurPSO);
     if (!PSOsReady)
         return false;
 

@@ -29,6 +29,7 @@
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 #include "ShaderMacroHelper.hpp"
 
 #include <string>
@@ -105,7 +106,7 @@ bool SetStaticVariable(IPipelineState*        pPSO,
         return !Required;
     }
 
-    pVar->Set(pObject);
+    pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
     return true;
 }
 
@@ -214,7 +215,7 @@ void RTXPTPostProcessPass::Reset()
     m_Stats = {};
 }
 
-bool RTXPTPostProcessPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IBuffer* pFrameConstants, bool ComputeSupported)
+bool RTXPTPostProcessPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, IBuffer* pFrameConstants, bool ComputeSupported)
 {
     Reset();
 
@@ -291,7 +292,7 @@ bool RTXPTPostProcessPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
     for (Uint32 PassIndex = 0; PassIndex < static_cast<Uint32>(RTXPTPostProcessPassId::Count); ++PassIndex)
     {
         const auto Pass = static_cast<RTXPTPostProcessPassId>(PassIndex);
-        if (!CreatePostProcessPSO(pDevice, ShaderCI, Pass))
+        if (!CreatePostProcessPSO(pDevice, pStateCache, ShaderCI, Pass))
         {
             DEV_ERROR("Failed to create RTXPT post-process pipeline: ", GetPassName(Pass));
             Reset();
@@ -304,6 +305,7 @@ bool RTXPTPostProcessPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
 }
 
 bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
+                                                IRenderStateCache*      pStateCache,
                                                 const ShaderCreateInfo& BaseShaderCI,
                                                 RTXPTPostProcessPassId  Pass)
 {
@@ -328,7 +330,7 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
     ShaderCI.Macros           = Macros;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create shader: ", GetPassName(Pass));
     if (!pCS)
         return false;
@@ -364,7 +366,7 @@ bool RTXPTPostProcessPass::CreatePostProcessPSO(IRenderDevice*          pDevice,
         .AddVariable(SHADER_TYPE_COMPUTE, "u_CombinedHistoryClampRelax", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &State.PSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &State.PSO);
     VERIFY(State.PSO, "Failed to create RTXPT post-process PSO: ", GetPassName(Pass));
     if (!State.PSO)
         return false;

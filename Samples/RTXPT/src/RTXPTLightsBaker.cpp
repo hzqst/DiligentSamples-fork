@@ -28,6 +28,7 @@
 
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
+#include "RenderStateCache.h"
 
 #include "imgui.h"
 
@@ -170,7 +171,7 @@ void RTXPTLightsBaker::RequestFeedbackReset()
     m_ResetFeedbackPending = true;
 }
 
-bool RTXPTLightsBaker::CreateResources(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, Uint32 Width, Uint32 Height, bool ComputeSupported)
+bool RTXPTLightsBaker::CreateResources(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, Uint32 Width, Uint32 Height, bool ComputeSupported)
 {
     if (pDevice == nullptr)
     {
@@ -194,12 +195,12 @@ bool RTXPTLightsBaker::CreateResources(IRenderDevice* pDevice, IEngineFactory* p
     const bool FeedbackOk          = CreateFeedbackTextures(pDevice, Width, Height);
     const bool LocalOk             = CreateLocalSamplingBuffer(pDevice, Width, Height);
     const bool ClearFeedbackPassOk = FeedbackOk &&
-        m_ClearFeedbackPass.Initialize(pDevice, pEngineFactory, "RTXPT LightsBaker clear feedback", "ClearFeedbackCS");
+        m_ClearFeedbackPass.Initialize(pDevice, pEngineFactory, pStateCache, "RTXPT LightsBaker clear feedback", "ClearFeedbackCS");
     const bool ClearPassOk = FeedbackOk && LocalOk && ClearFeedbackPassOk &&
-        m_ClearLocalSamplingPass.Initialize(pDevice, pEngineFactory, "RTXPT LightsBaker clear local sampling", "ClearLocalSamplingCS");
+        m_ClearLocalSamplingPass.Initialize(pDevice, pEngineFactory, pStateCache, "RTXPT LightsBaker clear local sampling", "ClearLocalSamplingCS");
     const bool FillPassOk = ClearPassOk &&
-        m_FillLocalSamplingPass.Initialize(pDevice, pEngineFactory, "RTXPT LightsBaker fill local sampling", "FillLocalSamplingCS");
-    const bool ProxyBuildOk = FillPassOk && m_ProxyBuildPass.Initialize(pDevice, pEngineFactory);
+        m_FillLocalSamplingPass.Initialize(pDevice, pEngineFactory, pStateCache, "RTXPT LightsBaker fill local sampling", "FillLocalSamplingCS");
+    const bool ProxyBuildOk = FillPassOk && m_ProxyBuildPass.Initialize(pDevice, pEngineFactory, pStateCache);
     m_Stats.Ready = FeedbackOk && LocalOk && ClearFeedbackPassOk && ClearPassOk && FillPassOk && ProxyBuildOk;
     return m_Stats.Ready;
 }

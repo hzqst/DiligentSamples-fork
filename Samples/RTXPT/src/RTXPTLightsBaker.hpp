@@ -46,6 +46,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTFloat3x4
 {
     float4 Row0 = {};
@@ -108,7 +110,7 @@ public:
     // rebuilt the emissive-triangle buffer in place, so the power weights/proxies reflect current geometry).
     void RequestProxyRebuild();
 
-    bool CreateResources(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, Uint32 Width, Uint32 Height, bool ComputeSupported);
+    bool CreateResources(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, Uint32 Width, Uint32 Height, bool ComputeSupported);
     bool UpdateBegin(IRenderDevice* pDevice, const RTXPTLights& Lights, const RTXPTLightsBakerSettings& Settings);
     // Depth and motion-vector SRVs preserve the future NEE-AT feedback contract; they are accepted but not consumed yet.
     bool UpdateEnd(IDeviceContext* pContext, ITextureView* pDepthSRV, ITextureView* pMotionVectorsSRV);

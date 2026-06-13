@@ -48,6 +48,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 enum class RTXPTEnvMapSourceKind
 {
     ProceduralSky,
@@ -97,7 +99,7 @@ public:
     void Reset();
     void SceneReloaded();
 
-    bool CreateResources(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory, bool ComputeSupported);
+    bool CreateResources(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, bool ComputeSupported);
     bool Update(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory, const std::string& AssetsRoot, const RTXPTEnvMapSettings& Settings, bool ForceRebuild, bool ComputeSupported);
 
     bool InfoGUI(float Indent);
@@ -149,6 +151,7 @@ private:
     RefCntAutoPtr<ISampler>             m_EnvironmentSampler;
     RefCntAutoPtr<ISampler>             m_ImportanceSampler;
     std::unique_ptr<class PBR_Renderer> m_IBLPrecompute;
+    IRenderStateCache*                  m_pStateCache = nullptr; // Owned by RTXPTSample; set in CreateResources.
     RTXPTEnvMapBakerPass                m_BuildImportanceBasePass;
     RTXPTEnvMapBakerPass                m_ReduceImportanceMipPass;
 

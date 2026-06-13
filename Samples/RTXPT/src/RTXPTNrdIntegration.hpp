@@ -47,6 +47,8 @@
 namespace Diligent
 {
 
+struct IRenderStateCache;
+
 struct RTXPTNrdFrameAttribs
 {
     const RTXPTRenderTargets*    pRenderTargets   = nullptr;
@@ -79,12 +81,13 @@ public:
 
     void Reset();
 
-    bool Initialize(IRenderDevice*  pDevice,
-                    IEngineFactory* pEngineFactory,
-                    RTXPTNrdMethod  Method,
-                    Uint32          Width,
-                    Uint32          Height,
-                    bool            ComputeSupported);
+    bool Initialize(IRenderDevice*     pDevice,
+                    IEngineFactory*    pEngineFactory,
+                    IRenderStateCache* pStateCache,
+                    RTXPTNrdMethod     Method,
+                    Uint32             Width,
+                    Uint32             Height,
+                    bool               ComputeSupported);
 
     bool Dispatch(IDeviceContext* pContext, const RTXPTNrdFrameAttribs& Attribs);
 
@@ -112,7 +115,7 @@ private:
     bool CreateInstance(RTXPTNrdMethod Method);
     bool CreateConstantBuffer(IRenderDevice* pDevice);
     bool CreateSamplers(IRenderDevice* pDevice);
-    bool CreatePipelines(IRenderDevice* pDevice, IEngineFactory* pEngineFactory);
+    bool CreatePipelines(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache);
     bool CreatePoolTextures(IRenderDevice* pDevice, Uint32 Width, Uint32 Height);
     bool BindDispatchResources(IDeviceContext*             pContext,
                                const nrd::DispatchDesc&    DispatchDesc,

@@ -33,6 +33,7 @@
 #include "GraphicsAccessories.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 
 namespace Diligent
 {
@@ -275,7 +276,7 @@ bool SetStaticVariable(IPipelineState* pPSO, SHADER_TYPE ShaderType, const char*
     if (pObject == nullptr)
         return !Required;
 
-    pVar->Set(pObject);
+    pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
     return true;
 }
 
@@ -291,7 +292,7 @@ bool SetSRBVariable(IShaderResourceBinding* pSRB, SHADER_TYPE ShaderType, const 
     return true;
 }
 
-bool CreateShader(IRenderDevice*          pDevice,
+bool CreateShader(IRenderStateCache*      pStateCache,
                   const ShaderCreateInfo& BaseCI,
                   SHADER_TYPE             ShaderType,
                   const char*             Name,
@@ -306,7 +307,7 @@ bool CreateShader(IRenderDevice*          pDevice,
     ShaderCI.EntryPoint       = EntryPoint;
 
     Shader.Release();
-    pDevice->CreateShader(ShaderCI, &Shader);
+    pStateCache->CreateShader(ShaderCI, &Shader);
     VERIFY(Shader, "Failed to create shader: ", Name);
     return Shader != nullptr;
 }
@@ -390,10 +391,11 @@ bool RTXPTToneMappingPass::CreateSamplers(IRenderDevice* pDevice)
     return m_LinearSampler && m_PointSampler;
 }
 
-bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
-                                      IEngineFactory* pEngineFactory,
-                                      TEXTURE_FORMAT  LdrFormat,
-                                      bool            ComputeSupported)
+bool RTXPTToneMappingPass::Initialize(IRenderDevice*     pDevice,
+                                      IEngineFactory*    pEngineFactory,
+                                      IRenderStateCache* pStateCache,
+                                      TEXTURE_FORMAT     LdrFormat,
+                                      bool               ComputeSupported)
 {
     Reset();
 
@@ -410,6 +412,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
     }
 
     m_ComputeSupported = ComputeSupported;
+    m_pStateCache      = pStateCache;
 
     if (!CreateSamplers(pDevice))
     {
@@ -434,8 +437,8 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
 
     RefCntAutoPtr<IShader> pToneMapPS;
     const bool             GraphicsShadersReady =
-        CreateShader(pDevice, ShaderCI, SHADER_TYPE_VERTEX, "RTXPT tone mapping VS", "PostProcessing/RTXPTFullscreen.vsh", "main", m_FullscreenVS) &&
-        CreateShader(pDevice, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT tone mapping PS", "PostProcessing/ToneMapper/ToneMapping.hlsl", "main_ps", pToneMapPS);
+        CreateShader(pStateCache, ShaderCI, SHADER_TYPE_VERTEX, "RTXPT tone mapping VS", "PostProcessing/RTXPTFullscreen.vsh", "main", m_FullscreenVS) &&
+        CreateShader(pStateCache, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT tone mapping PS", "PostProcessing/ToneMapper/ToneMapping.hlsl", "main_ps", pToneMapPS);
     if (!GraphicsShadersReady)
     {
         DEV_ERROR("RTXPT tone mapping pass failed to create shaders");
@@ -444,7 +447,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
     if (m_ComputeSupported)
     {
         const bool AutoExposureShadersReady =
-            CreateShader(pDevice, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT luminance PS", "PostProcessing/ToneMapper/Luminance.psh", "main", m_LuminancePS);
+            CreateShader(pStateCache, ShaderCI, SHADER_TYPE_PIXEL, "RTXPT luminance PS", "PostProcessing/ToneMapper/Luminance.psh", "main", m_LuminancePS);
         if (!AutoExposureShadersReady)
         {
             DEV_ERROR("RTXPT tone mapping pass failed to create auto-exposure shaders");
@@ -486,7 +489,7 @@ bool RTXPTToneMappingPass::Initialize(IRenderDevice*  pDevice,
         .AddVariable(SHADER_TYPE_PIXEL, "t_Luminance", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     ToneMapPSOCreateInfo.PSODesc.ResourceLayout = ToneMapLayout;
 
-    pDevice->CreateGraphicsPipelineState(ToneMapPSOCreateInfo, &m_ToneMapPSO);
+    pStateCache->CreateGraphicsPipelineState(ToneMapPSOCreateInfo, &m_ToneMapPSO);
     if (!m_ToneMapPSO)
     {
         DEV_ERROR("RTXPT tone mapping pass failed to create tone-map PSO");
@@ -593,7 +596,7 @@ bool RTXPTToneMappingPass::ResizeResources(IRenderDevice* pDevice, Uint32 Width,
 
         m_LuminancePSO.Release();
         m_LuminanceSRB.Release();
-        pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &m_LuminancePSO);
+        m_pStateCache->CreateGraphicsPipelineState(PSOCreateInfo, &m_LuminancePSO);
         if (!m_LuminancePSO ||
             !SetStaticVariable(m_LuminancePSO, SHADER_TYPE_PIXEL, "s_ColorSampler", m_LinearSampler, true))
         {

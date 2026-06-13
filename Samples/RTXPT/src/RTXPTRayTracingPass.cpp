@@ -30,6 +30,7 @@
 
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 #include "ShaderMacroHelper.hpp"
 
 namespace Diligent
@@ -88,6 +89,7 @@ void RTXPTRayTracingPass::Reset()
 bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                                      IDeviceContext*       pContext,
                                      IEngineFactory*       pEngineFactory,
+                                     IRenderStateCache*    pStateCache,
                                      IBuffer*              pFrameConstants,
                                      IBuffer*              pMaterialBuffer,
                                      IBuffer*              pSubInstanceBuffer,
@@ -268,28 +270,28 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         ShaderCI.Desc.Name       = "RTXPT path trace raygen";
         ShaderCI.FilePath        = "PathTracer/PathTracerSample.rgen";
         ShaderCI.EntryPoint      = "main";
-        pDevice->CreateShader(ShaderCI, &pRayGen);
+        pStateCache->CreateShader(ShaderCI, &pRayGen);
 
         RefCntAutoPtr<IShader> pMiss;
         ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
         ShaderCI.Desc.Name       = "RTXPT path trace miss";
         ShaderCI.FilePath        = "PathTracer/PathTracerMiss.rmiss";
         ShaderCI.EntryPoint      = "main";
-        pDevice->CreateShader(ShaderCI, &pMiss);
+        pStateCache->CreateShader(ShaderCI, &pMiss);
 
         RefCntAutoPtr<IShader> pVisibilityMiss;
         ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_MISS;
         ShaderCI.Desc.Name       = "RTXPT path trace visibility miss";
         ShaderCI.FilePath        = "PathTracer/PathTracerVisibilityMiss.rmiss";
         ShaderCI.EntryPoint      = "main";
-        pDevice->CreateShader(ShaderCI, &pVisibilityMiss);
+        pStateCache->CreateShader(ShaderCI, &pVisibilityMiss);
 
         RefCntAutoPtr<IShader> pClosestHit;
         ShaderCI.Desc.ShaderType = SHADER_TYPE_RAY_CLOSEST_HIT;
         ShaderCI.Desc.Name       = "RTXPT path trace closest hit";
         ShaderCI.FilePath        = "PathTracer/PathTracerClosestHit.rchit";
         ShaderCI.EntryPoint      = "main";
-        pDevice->CreateShader(ShaderCI, &pClosestHit);
+        pStateCache->CreateShader(ShaderCI, &pClosestHit);
 
         RefCntAutoPtr<IShader> pAnyHit;
         if (UseAnyHit)
@@ -298,7 +300,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
             ShaderCI.Desc.Name       = "RTXPT path trace any hit";
             ShaderCI.FilePath        = "PathTracer/PathTracerAnyHit.rahit";
             ShaderCI.EntryPoint      = "main";
-            pDevice->CreateShader(ShaderCI, &pAnyHit);
+            pStateCache->CreateShader(ShaderCI, &pAnyHit);
         }
 
         VERIFY(pRayGen && pMiss && pVisibilityMiss && pClosestHit && (!UseAnyHit || pAnyHit),
@@ -376,7 +378,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
         }
         PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-        pDevice->CreateRayTracingPipelineState(PSOCreateInfo, &State.PSO);
+        pStateCache->CreateRayTracingPipelineState(PSOCreateInfo, &State.PSO);
         VERIFY(State.PSO, "Failed to create RTXPT path trace RT PSO");
         if (!State.PSO)
         {
@@ -405,7 +407,7 @@ bool RTXPTRayTracingPass::Initialize(IRenderDevice*        pDevice,
                     continue;
                 }
 
-                pVar->Set(pObject);
+                pVar->Set(pObject, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
             }
             if (pFoundAny != nullptr)
                 *pFoundAny = FoundAny;

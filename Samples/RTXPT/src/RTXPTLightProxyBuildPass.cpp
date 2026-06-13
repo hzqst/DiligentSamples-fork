@@ -29,6 +29,7 @@
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
+#include "RenderStateCache.h"
 
 namespace Diligent
 {
@@ -75,7 +76,7 @@ void RTXPTLightProxyBuildPass::Reset()
     m_Ready = false;
 }
 
-bool RTXPTLightProxyBuildPass::CreatePSO(IRenderDevice*                         pDevice,
+bool RTXPTLightProxyBuildPass::CreatePSO(IRenderStateCache*                     pStateCache,
                                          IShader*                               pCS,
                                          const char*                            Name,
                                          RefCntAutoPtr<IPipelineState>&         PSO,
@@ -98,7 +99,7 @@ bool RTXPTLightProxyBuildPass::CreatePSO(IRenderDevice*                         
         .AddVariable(SHADER_TYPE_COMPUTE, "u_LightSamplingProxies", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &PSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &PSO);
     if (!PSO)
     {
         UNEXPECTED("Failed to create RTXPT light proxy build PSO: ", Name);
@@ -114,7 +115,7 @@ bool RTXPTLightProxyBuildPass::CreatePSO(IRenderDevice*                         
     return true;
 }
 
-bool RTXPTLightProxyBuildPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory)
+bool RTXPTLightProxyBuildPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache)
 {
     Reset();
     if (pDevice == nullptr || pEngineFactory == nullptr)
@@ -136,7 +137,7 @@ bool RTXPTLightProxyBuildPass::Initialize(IRenderDevice* pDevice, IEngineFactory
         ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
         RefCntAutoPtr<IShader> pCS;
-        pDevice->CreateShader(ShaderCI, &pCS);
+        pStateCache->CreateShader(ShaderCI, &pCS);
         return pCS;
     };
 
@@ -164,10 +165,10 @@ bool RTXPTLightProxyBuildPass::Initialize(IRenderDevice* pDevice, IEngineFactory
     }
 
     const bool Ok =
-        CreatePSO(pDevice, pResetCS, "RTXPT light proxy reset PSO", m_ResetPSO, m_ResetSRB) &&
-        CreatePSO(pDevice, pWeightsCS, "RTXPT light proxy weights PSO", m_WeightsPSO, m_WeightsSRB) &&
-        CreatePSO(pDevice, pCountsCS, "RTXPT light proxy counts PSO", m_CountsPSO, m_CountsSRB) &&
-        CreatePSO(pDevice, pScatterCS, "RTXPT light proxy scatter PSO", m_ScatterPSO, m_ScatterSRB);
+        CreatePSO(pStateCache, pResetCS, "RTXPT light proxy reset PSO", m_ResetPSO, m_ResetSRB) &&
+        CreatePSO(pStateCache, pWeightsCS, "RTXPT light proxy weights PSO", m_WeightsPSO, m_WeightsSRB) &&
+        CreatePSO(pStateCache, pCountsCS, "RTXPT light proxy counts PSO", m_CountsPSO, m_CountsSRB) &&
+        CreatePSO(pStateCache, pScatterCS, "RTXPT light proxy scatter PSO", m_ScatterPSO, m_ScatterSRB);
 
     m_Ready = Ok;
     return Ok;

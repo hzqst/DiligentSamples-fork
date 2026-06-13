@@ -31,6 +31,7 @@
 #if RTXPT_HAS_NRD
 #    include "GraphicsTypesX.hpp"
 #    include "MapHelper.hpp"
+#    include "RenderStateCache.h"
 #    include "Shader.h"
 #    include "ShaderMacroHelper.hpp"
 #    if RTXPT_HAS_D3D_SHADER_REFLECTION
@@ -90,6 +91,7 @@ void RTXPTNrdIntegration::Reset()
 
 bool RTXPTNrdIntegration::Initialize(IRenderDevice*,
                                      IEngineFactory*,
+                                     IRenderStateCache*,
                                      RTXPTNrdMethod Method,
                                      Uint32         Width,
                                      Uint32         Height,
@@ -313,12 +315,13 @@ void RTXPTNrdIntegration::Reset()
     ResetNrdStats(m_Stats);
 }
 
-bool RTXPTNrdIntegration::Initialize(IRenderDevice*  pDevice,
-                                     IEngineFactory* pEngineFactory,
-                                     RTXPTNrdMethod  Method,
-                                     Uint32          Width,
-                                     Uint32          Height,
-                                     bool            ComputeSupported)
+bool RTXPTNrdIntegration::Initialize(IRenderDevice*     pDevice,
+                                     IEngineFactory*    pEngineFactory,
+                                     IRenderStateCache* pStateCache,
+                                     RTXPTNrdMethod     Method,
+                                     Uint32             Width,
+                                     Uint32             Height,
+                                     bool               ComputeSupported)
 {
     Reset();
     m_Stats.Method = Method;
@@ -351,7 +354,7 @@ bool RTXPTNrdIntegration::Initialize(IRenderDevice*  pDevice,
     if (!CreateInstance(Method) ||
         !CreateConstantBuffer(pDevice) ||
         !CreateSamplers(pDevice) ||
-        !CreatePipelines(pDevice, pEngineFactory) ||
+        !CreatePipelines(pDevice, pEngineFactory, pStateCache) ||
         !CreatePoolTextures(pDevice, Width, Height))
     {
         ReleaseResources();
@@ -427,7 +430,7 @@ bool RTXPTNrdIntegration::CreateSamplers(IRenderDevice* pDevice)
     return true;
 }
 
-bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory* pEngineFactory)
+bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache)
 {
     const nrd::InstanceDesc* pInstanceDesc = nrd::GetInstanceDesc(*m_Instance);
     if (pInstanceDesc == nullptr)
@@ -465,7 +468,7 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
         ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
         RefCntAutoPtr<IShader> pCS;
-        pDevice->CreateShader(ShaderCI, &pCS);
+        pStateCache->CreateShader(ShaderCI, &pCS);
         if (!pCS)
             return Fail("Failed to create NRD compute shader");
 
@@ -521,7 +524,7 @@ bool RTXPTNrdIntegration::CreatePipelines(IRenderDevice* pDevice, IEngineFactory
         ResourceLayout.DefaultVariableType   = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
         PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-        pDevice->CreateComputePipelineState(PSOCreateInfo, &Pipeline.PSO);
+        pStateCache->CreateComputePipelineState(PSOCreateInfo, &Pipeline.PSO);
         if (!Pipeline.PSO)
             return Fail("Failed to create NRD compute PSO");
 

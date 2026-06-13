@@ -28,6 +28,7 @@
 
 #include "DebugUtilities.hpp"
 #include "GraphicsTypesX.hpp"
+#include "RenderStateCache.h"
 
 namespace Diligent
 {
@@ -38,7 +39,7 @@ void RTXPTLightsBakerPass::Reset()
     m_SRB.Release();
 }
 
-bool RTXPTLightsBakerPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, const char* Name, const char* EntryPoint)
+bool RTXPTLightsBakerPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, IRenderStateCache* pStateCache, const char* Name, const char* EntryPoint)
 {
     Reset();
     if (pDevice == nullptr || pEngineFactory == nullptr || EntryPoint == nullptr)
@@ -59,7 +60,7 @@ bool RTXPTLightsBakerPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
     ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
 
     RefCntAutoPtr<IShader> pCS;
-    pDevice->CreateShader(ShaderCI, &pCS);
+    pStateCache->CreateShader(ShaderCI, &pCS);
     VERIFY(pCS, "Failed to create RTXPT LightsBaker shader");
     if (!pCS)
         return false;
@@ -82,7 +83,7 @@ bool RTXPTLightsBakerPass::Initialize(IRenderDevice* pDevice, IEngineFactory* pE
         .AddVariable(SHADER_TYPE_COMPUTE, "u_LocalSamplingBuffer", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
     PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
 
-    pDevice->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
+    pStateCache->CreateComputePipelineState(PSOCreateInfo, &m_PSO);
     VERIFY(m_PSO, "Failed to create RTXPT LightsBaker PSO");
     if (!m_PSO)
         return false;

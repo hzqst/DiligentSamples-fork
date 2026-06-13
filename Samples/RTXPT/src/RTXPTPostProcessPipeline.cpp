@@ -288,9 +288,9 @@ bool RTXPTPostProcessPipeline::RunSuperResolution(IDeviceContext*               
     return Executed;
 }
 
-float2 RTXPTPostProcessPipeline::GetRealtimeTAAJitter(Uint32 FrameIndex, Uint32 Width, Uint32 Height) const
+float2 RTXPTPostProcessPipeline::GetRealtimeTAAPixelJitter(Uint32 FrameIndex) const
 {
-    return RTXPTTemporalAAPass::ComputeJitter(FrameIndex, Width, Height);
+    return RTXPTTemporalAAPass::ComputePixelJitter(FrameIndex);
 }
 
 bool RTXPTPostProcessPipeline::CopyRealtimeOutputToProcessed(IDeviceContext*           pContext,

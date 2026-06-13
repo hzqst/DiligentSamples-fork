@@ -113,7 +113,7 @@ public:
                             float                                CameraFar,
                             float                                CameraFovAngleVert);
 
-    float2 GetRealtimeTAAJitter(Uint32 FrameIndex, Uint32 Width, Uint32 Height) const;
+    float2 GetRealtimeTAAPixelJitter(Uint32 FrameIndex) const;
 
     bool CopyRealtimeOutputToProcessed(IDeviceContext*           pContext,
                                        const RTXPTRenderTargets& RenderTargets);

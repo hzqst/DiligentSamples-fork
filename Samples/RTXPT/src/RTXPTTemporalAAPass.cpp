@@ -49,12 +49,20 @@ float Halton(Uint32 Base, Uint32 Index)
     return Result;
 }
 
+float2 PixelJitterToDiligentFXTAAJitter(const float2& PixelJitter, const float2& ViewportSizeInv)
+{
+    return float2{
+        2.0f * PixelJitter.x * ViewportSizeInv.x,
+        -2.0f * PixelJitter.y * ViewportSizeInv.y};
+}
+
 HLSL::CameraAttribs MakeCameraAttribs(const SampleConstants&      Constants,
                                       const PathTracerViewData&   View,
                                       const PathTracerCameraData& Camera,
                                       Uint32                      FrameIndex)
 {
-    const float4x4 JitteredProj = TemporalAntiAliasing::GetJitteredProjMatrix(View.MatViewToClip, View.PixelOffset);
+    const float2   TAAJitter    = PixelJitterToDiligentFXTAAJitter(View.PixelOffset, View.ViewportSizeInv);
+    const float4x4 JitteredProj = TemporalAntiAliasing::GetJitteredProjMatrix(View.MatViewToClip, TAAJitter);
     const float4x4 ViewProj     = View.MatWorldToView * JitteredProj;
 
     HLSL::CameraAttribs Attribs = {};
@@ -69,7 +77,7 @@ HLSL::CameraAttribs MakeCameraAttribs(const SampleConstants&      Constants,
     Attribs.fSensorWidth   = 36.0f;
     Attribs.fSensorHeight  = 24.0f;
     Attribs.fExposure      = 0.0f;
-    Attribs.f2Jitter       = View.PixelOffset;
+    Attribs.f2Jitter       = TAAJitter;
     Attribs.mView          = View.MatWorldToView;
     Attribs.mProj          = JitteredProj;
     Attribs.mViewProj      = ViewProj;
@@ -308,15 +316,13 @@ bool RTXPTTemporalAAPass::CreateInputConversionPipeline(IRenderDevice* pDevice, 
     return true;
 }
 
-float2 RTXPTTemporalAAPass::ComputeJitter(Uint32 FrameIndex, Uint32 Width, Uint32 Height)
+float2 RTXPTTemporalAAPass::ComputePixelJitter(Uint32 FrameIndex)
 {
-    const float    SafeWidth   = static_cast<float>(std::max(Width, Uint32{1}));
-    const float    SafeHeight  = static_cast<float>(std::max(Height, Uint32{1}));
     constexpr auto SampleCount = Uint32{16};
     const Uint32   Sample      = (FrameIndex % SampleCount) + 1u;
     return float2{
-        (Halton(2u, Sample) - 0.5f) / (0.5f * SafeWidth),
-        (Halton(3u, Sample) - 0.5f) / (0.5f * SafeHeight)};
+        Halton(2u, Sample) - 0.5f,
+        Halton(3u, Sample) - 0.5f};
 }
 
 ITextureView* RTXPTTemporalAAPass::GetTAADepthSRV() const

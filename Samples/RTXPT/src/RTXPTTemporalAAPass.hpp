@@ -78,7 +78,7 @@ public:
 
     bool Execute(const RTXPTTemporalAAFrameAttribs& Attribs);
 
-    static float2 ComputeJitter(Uint32 FrameIndex, Uint32 Width, Uint32 Height);
+    static float2 ComputePixelJitter(Uint32 FrameIndex);
 
     bool                        IsReady() const { return m_Stats.Ready; }
     const RTXPTTemporalAAStats& GetStats() const { return m_Stats; }

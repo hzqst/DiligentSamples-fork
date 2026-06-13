@@ -1028,8 +1028,7 @@ void RTXPTSample::UpdateFrameConstants(double CurrTime)
     float2 CameraJitter = float2{0.0f, 0.0f};
     if (RealtimeMode && m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::TAA)
     {
-        CameraJitter =
-            m_PostProcessPipeline.GetRealtimeTAAJitter(m_FrameIndex, RenderWidth, RenderHeight);
+        CameraJitter = m_PostProcessPipeline.GetRealtimeTAAPixelJitter(m_FrameIndex);
     }
     else if (RealtimeMode &&
              m_RealtimeUI.RealtimeAA == RTXPTRealtimeAAMode::SuperResolution &&

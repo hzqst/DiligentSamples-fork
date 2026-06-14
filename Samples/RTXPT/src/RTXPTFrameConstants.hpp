@@ -86,7 +86,7 @@ struct PathTracerConstants
     Uint32 sampleBaseIndex       = 0;
     float  perPixelJitterAAScale = 1.0f;
 
-    Uint32 bounceCount                         = 4;
+    Uint32 bounceCount                         = 20;
     Uint32 diffuseBounceCount                  = 2;
     float  EnvironmentMapDiffuseSampleMIPLevel = 0.0f;
     float  texLODBias                          = 0.0f;

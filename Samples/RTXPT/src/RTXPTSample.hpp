@@ -200,7 +200,7 @@ private:
     float                         m_CameraFarPlane              = 10000.0f;
     Uint32                        m_FrameIndex                  = 0;
     Uint32                        m_AccumulationFrame           = 0;
-    Uint32                        m_MaxBounces                  = 4;
+    Uint32                        m_MaxBounces                  = 20;
     Uint32                        m_MinBounces                  = 3;
     Uint32                        m_MaxNEEBounces               = 16;
     bool                          m_EnableNEE                   = true;

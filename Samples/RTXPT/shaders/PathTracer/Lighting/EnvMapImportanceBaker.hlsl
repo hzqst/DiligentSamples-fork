@@ -51,6 +51,62 @@ float3 OctToDirEqualArea(float2 uv)
     return float3(x, y, z);
 }
 
+// ------------------------------------------------------------------------------------------------
+// High-resolution environment-cube bake (graphics pass).
+//
+// Renders the loaded source (a cube map, or a 2D equirectangular sky) into a high-resolution cube
+// map that the path tracer samples directly as the distant environment. This mirrors upstream RTXPT
+// (Rtxpt/Lighting/Distant/EnvMapBaker), which bakes a high-res environment cube instead of relying on
+// the low-resolution GGX-prefiltered IBL cube; the latter washes out fine detail seen through small
+// apertures such as windows. The vertex stage (EnvCubeBakeVS) replicates DiligentFX's CubemapFace.vsh
+// and is driven with the same per-face rotations as PBR_Renderer::PrecomputeCubemaps, so the baked
+// cube keeps the same orientation as the prefiltered cube it replaces.
+// ENV_BAKE_SOURCE_CUBE selects between a cube source and a 2D equirectangular source.
+cbuffer cbEnvCubeBake
+{
+    // Per-face rotation that maps the full-screen quad position to the world direction for that cube
+    // face. Matches the rotations used by DiligentFX CubemapFace.vsh / PBR_Renderer::PrecomputeCubemaps,
+    // so the baked cube keeps the same orientation as the previously used prefiltered cube.
+    float4x4 g_EnvCubeRotation;
+}
+
+void EnvCubeBakeVS(in uint vertexId : SV_VertexID, out float4 position : SV_Position, out float3 worldPos : WORLD_POS)
+{
+    float2 quadXY[4];
+    quadXY[0] = float2(-1.0, -1.0);
+    quadXY[1] = float2(-1.0, +1.0);
+    quadXY[2] = float2(+1.0, -1.0);
+    quadXY[3] = float2(+1.0, +1.0);
+    position             = float4(quadXY[vertexId], 1.0, 1.0);
+    const float4 worldH  = mul(g_EnvCubeRotation, position);
+    worldPos             = worldH.xyz / worldH.w;
+}
+
+#if defined(ENV_BAKE_SOURCE_CUBE)
+TextureCube<float4> g_EnvBakeSource;
+#else
+Texture2D<float4>   g_EnvBakeSource;
+#endif
+SamplerState g_EnvBakeSourceSampler;
+
+// Matches DiligentFX ShaderUtilities.fxh TransformDirectionToSphereMapUV so 2D sources keep their
+// existing orientation.
+float2 RTXPTDirToSphereMapUV(float3 dir)
+{
+    const float OneOverPi = 0.3183098862;
+    return OneOverPi * float2(0.5 * atan2(dir.z, dir.x), asin(clamp(dir.y, -1.0, 1.0))) + float2(0.5, 0.5);
+}
+
+float4 SampleEnvToCubePS(float4 position : SV_Position, float3 worldPos : WORLD_POS) : SV_Target
+{
+    const float3 dir = normalize(worldPos);
+#if defined(ENV_BAKE_SOURCE_CUBE)
+    return g_EnvBakeSource.SampleLevel(g_EnvBakeSourceSampler, dir, 0.0);
+#else
+    return g_EnvBakeSource.SampleLevel(g_EnvBakeSourceSampler, RTXPTDirToSphereMapUV(dir), 0.0);
+#endif
+}
+
 [numthreads(RTXPT_ENVMAP_IMPORTANCE_THREADS, RTXPT_ENVMAP_IMPORTANCE_THREADS, 1)]
 void BuildImportanceBaseCS(uint3 tid : SV_DispatchThreadID)
 {

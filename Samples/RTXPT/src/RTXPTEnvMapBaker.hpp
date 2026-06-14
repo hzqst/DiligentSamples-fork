@@ -123,7 +123,9 @@ public:
 private:
     bool LoadSourceTexture(IRenderDevice* pDevice, const std::string& AssetsRoot, const RTXPTEnvMapSettings& Settings);
     bool CreateProceduralSourceTexture(IRenderDevice* pDevice, const RTXPTEnvMapSettings& Settings);
-    bool PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext* pContext, const RTXPTEnvMapSettings& Settings);
+    bool PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory, const RTXPTEnvMapSettings& Settings);
+    bool BakeHighResEnvironmentCube(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory);
+    bool EnsureEnvCubeBakePipeline(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, bool SourceIsCube);
     bool CreateImportanceMaps(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory, const RTXPTEnvMapSettings& Settings, bool ComputeSupported);
     bool CreateImportanceTextures(IRenderDevice* pDevice, Uint32 Resolution);
     bool DispatchImportanceBuild(IDeviceContext* pContext, Uint32 Resolution);
@@ -151,6 +153,16 @@ private:
     RefCntAutoPtr<ISampler>             m_EnvironmentSampler;
     RefCntAutoPtr<ISampler>             m_ImportanceSampler;
     std::unique_ptr<class PBR_Renderer> m_IBLPrecompute;
+    // High-resolution environment cube baked from the source (cube or 2D equirect). Bound to the path
+    // tracer's t_EnvironmentMap instead of the low-resolution GGX-prefiltered IBL cube. See
+    // BakeHighResEnvironmentCube.
+    RefCntAutoPtr<ITexture>               m_EnvironmentCube;
+    RefCntAutoPtr<IBuffer>                m_EnvCubeBakeConstants;
+    RefCntAutoPtr<IPipelineState>         m_EnvCubeBakePSOCube;
+    RefCntAutoPtr<IShaderResourceBinding> m_EnvCubeBakeSRBCube;
+    RefCntAutoPtr<IPipelineState>         m_EnvCubeBakePSOSphere;
+    RefCntAutoPtr<IShaderResourceBinding> m_EnvCubeBakeSRBSphere;
+    Uint32                                m_EnvironmentCubeResolution = 0;
     IRenderStateCache*                  m_pStateCache = nullptr; // Owned by RTXPTSample; set in CreateResources.
     RTXPTEnvMapBakerPass                m_BuildImportanceBasePass;
     RTXPTEnvMapBakerPass                m_ReduceImportanceMipPass;

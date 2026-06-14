@@ -29,14 +29,18 @@
 
 #include "DebugUtilities.hpp"
 #include "FileSystem.hpp"
+#include "GraphicsAccessories.hpp"
+#include "GraphicsTypesX.hpp"
 #include "MapHelper.hpp"
 #include "RenderStateCache.h"
+#include "ShaderMacroHelper.hpp"
 #include "TextureUtilities.h"
 #include "PBR_Renderer.hpp"
 
 #include "imgui.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -309,6 +313,13 @@ void RTXPTEnvMapBaker::Reset()
     m_EnvironmentSampler.Release();
     m_ImportanceSampler.Release();
     m_IBLPrecompute.reset();
+    m_EnvironmentCube.Release();
+    m_EnvCubeBakeConstants.Release();
+    m_EnvCubeBakePSOCube.Release();
+    m_EnvCubeBakeSRBCube.Release();
+    m_EnvCubeBakePSOSphere.Release();
+    m_EnvCubeBakeSRBSphere.Release();
+    m_EnvironmentCubeResolution = 0;
     m_BuildImportanceBasePass.Reset();
     m_ReduceImportanceMipPass.Reset();
     m_Constants         = {};
@@ -368,7 +379,7 @@ bool RTXPTEnvMapBaker::Update(IRenderDevice* pDevice, IDeviceContext* pContext, 
     if (SourceChanged)
     {
         UpdateOk = LoadSourceTexture(pDevice, AssetsRoot, Settings) &&
-            PrecomputeCubemap(pDevice, pContext, Settings);
+            PrecomputeCubemap(pDevice, pContext, pEngineFactory, Settings);
         if (UpdateOk && !IsProceduralSkyPath(Settings.SourceRelativePath) &&
             m_Stats.Procedural && !m_Stats.LastError.empty())
         {
@@ -623,7 +634,7 @@ bool RTXPTEnvMapBaker::CreateProceduralSourceTexture(IRenderDevice* pDevice, con
     return true;
 }
 
-bool RTXPTEnvMapBaker::PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext* pContext, const RTXPTEnvMapSettings&)
+bool RTXPTEnvMapBaker::PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory, const RTXPTEnvMapSettings&)
 {
     if (pDevice == nullptr || pContext == nullptr || m_SourceSRV == nullptr)
     {
@@ -649,6 +660,21 @@ bool RTXPTEnvMapBaker::PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext*
         return false;
     }
 
+    // Replace the low-resolution GGX-prefiltered IBL cube with a high-resolution environment cube baked
+    // straight from the source. The prefiltered cube (kept above only for the IBL irradiance/BRDF
+    // products) is PrefilteredEnvMapDim (256) and washes out fine detail seen through small apertures
+    // such as windows; upstream RTXPT bakes a high-res environment cube instead. On failure the
+    // prefiltered cube remains bound so rendering still works (just lower resolution).
+    if (BakeHighResEnvironmentCube(pDevice, pContext, pEngineFactory))
+    {
+        m_EnvironmentMapSRV = m_EnvironmentCube->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
+    }
+    else
+    {
+        LOG_WARNING_MESSAGE("RTXPT EnvMapBaker high-resolution environment cube bake failed; "
+                            "falling back to the low-resolution prefiltered environment cube");
+    }
+
     const ITexture* pEnvTexture = m_EnvironmentMapSRV->GetTexture();
     if (pEnvTexture == nullptr)
     {
@@ -664,6 +690,190 @@ bool RTXPTEnvMapBaker::PrecomputeCubemap(IRenderDevice* pDevice, IDeviceContext*
     m_Stats.BRDFLUTReady       = true;
     m_Stats.ImportanceReady    = false;
     m_Stats.CompressedOutput   = false;
+    return true;
+}
+
+bool RTXPTEnvMapBaker::EnsureEnvCubeBakePipeline(IRenderDevice* pDevice, IEngineFactory* pEngineFactory, bool SourceIsCube)
+{
+    RefCntAutoPtr<IPipelineState>&         PSO = SourceIsCube ? m_EnvCubeBakePSOCube : m_EnvCubeBakePSOSphere;
+    RefCntAutoPtr<IShaderResourceBinding>& SRB = SourceIsCube ? m_EnvCubeBakeSRBCube : m_EnvCubeBakeSRBSphere;
+    if (PSO && SRB)
+        return true;
+    if (pDevice == nullptr || pEngineFactory == nullptr)
+        return false;
+
+    RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
+    pEngineFactory->CreateDefaultShaderSourceStreamFactory("shaders;shaders\\PathTracer;shaders\\PathTracer\\Lighting", &pShaderSourceFactory);
+    if (!pShaderSourceFactory)
+        return false;
+
+    ShaderMacroHelper Macros;
+    if (SourceIsCube)
+        Macros.Add("ENV_BAKE_SOURCE_CUBE", 1);
+
+    ShaderCreateInfo ShaderCI;
+    ShaderCI.SourceLanguage                  = SHADER_SOURCE_LANGUAGE_HLSL;
+    ShaderCI.ShaderCompiler                  = SHADER_COMPILER_DXC;
+    ShaderCI.CompileFlags                    = SHADER_COMPILE_FLAG_PACK_MATRIX_ROW_MAJOR;
+    ShaderCI.Desc.UseCombinedTextureSamplers = false;
+    ShaderCI.pShaderSourceStreamFactory      = pShaderSourceFactory;
+    ShaderCI.FilePath                        = "PathTracer/Lighting/EnvMapImportanceBaker.hlsl";
+    ShaderCI.Macros                          = Macros;
+
+    RefCntAutoPtr<IShader> pVS;
+    ShaderCI.Desc.ShaderType = SHADER_TYPE_VERTEX;
+    ShaderCI.Desc.Name       = "RTXPT EnvCube bake VS";
+    ShaderCI.EntryPoint      = "EnvCubeBakeVS";
+    pDevice->CreateShader(ShaderCI, &pVS);
+
+    RefCntAutoPtr<IShader> pPS;
+    ShaderCI.Desc.ShaderType = SHADER_TYPE_PIXEL;
+    ShaderCI.Desc.Name       = "RTXPT EnvCube bake PS";
+    ShaderCI.EntryPoint      = "SampleEnvToCubePS";
+    pDevice->CreateShader(ShaderCI, &pPS);
+
+    if (!pVS || !pPS)
+        return false;
+
+    GraphicsPipelineStateCreateInfo PSOCreateInfo;
+    PSOCreateInfo.PSODesc.Name                                  = SourceIsCube ? "RTXPT EnvCube bake PSO (cube)" : "RTXPT EnvCube bake PSO (sphere)";
+    PSOCreateInfo.PSODesc.PipelineType                          = PIPELINE_TYPE_GRAPHICS;
+    PSOCreateInfo.GraphicsPipeline.NumRenderTargets             = 1;
+    PSOCreateInfo.GraphicsPipeline.RTVFormats[0]                = TEX_FORMAT_RGBA16_FLOAT;
+    PSOCreateInfo.GraphicsPipeline.PrimitiveTopology            = PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode      = CULL_MODE_NONE;
+    PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
+    PSOCreateInfo.pVS                                           = pVS;
+    PSOCreateInfo.pPS                                           = pPS;
+
+    SamplerDesc LinearClamp;
+    LinearClamp.MinFilter = FILTER_TYPE_LINEAR;
+    LinearClamp.MagFilter = FILTER_TYPE_LINEAR;
+    LinearClamp.MipFilter = FILTER_TYPE_LINEAR;
+    LinearClamp.AddressU  = TEXTURE_ADDRESS_CLAMP;
+    LinearClamp.AddressV  = TEXTURE_ADDRESS_CLAMP;
+    LinearClamp.AddressW  = TEXTURE_ADDRESS_CLAMP;
+
+    PipelineResourceLayoutDescX ResourceLayout;
+    ResourceLayout
+        .AddVariable(SHADER_TYPE_VERTEX, "cbEnvCubeBake", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddVariable(SHADER_TYPE_PIXEL, "g_EnvBakeSource", SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC)
+        .AddImmutableSampler(SHADER_TYPE_PIXEL, "g_EnvBakeSourceSampler", LinearClamp);
+    PSOCreateInfo.PSODesc.ResourceLayout = ResourceLayout;
+
+    pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &PSO);
+    if (!PSO)
+        return false;
+    PSO->CreateShaderResourceBinding(&SRB, true);
+    return SRB != nullptr;
+}
+
+bool RTXPTEnvMapBaker::BakeHighResEnvironmentCube(IRenderDevice* pDevice, IDeviceContext* pContext, IEngineFactory* pEngineFactory)
+{
+    if (pDevice == nullptr || pContext == nullptr || pEngineFactory == nullptr || m_SourceSRV == nullptr || m_SourceTexture == nullptr)
+        return false;
+
+    const bool SourceIsCube = m_SourceTexture->GetDesc().IsCube();
+    if (!EnsureEnvCubeBakePipeline(pDevice, pEngineFactory, SourceIsCube))
+        return false;
+
+    IPipelineState*         pPSO = SourceIsCube ? m_EnvCubeBakePSOCube : m_EnvCubeBakePSOSphere;
+    IShaderResourceBinding* pSRB = SourceIsCube ? m_EnvCubeBakeSRBCube : m_EnvCubeBakeSRBSphere;
+    if (pPSO == nullptr || pSRB == nullptr)
+        return false;
+
+    // Upstream RTXPT EnvMapBaker bakes a 2048-texel environment cube (1024 for the procedural sky); we
+    // use a fixed 2048 for every source so the cube texture -- and therefore the SRV the path tracer
+    // binds to t_EnvironmentMap as a STATIC resource -- is created once and reused across re-bakes
+    // (e.g. runtime environment swaps), only its contents are re-rendered. This is still 8x the
+    // resolution of the 256-texel prefiltered IBL cube it replaces, which washed out detail seen
+    // through small apertures such as windows.
+    const Uint32 TargetRes = 2048u;
+
+    if (!m_EnvironmentCube || m_EnvironmentCubeResolution != TargetRes)
+    {
+        m_EnvironmentCube.Release();
+
+        TextureDesc CubeDesc;
+        CubeDesc.Name      = "RTXPT high-resolution environment cube";
+        CubeDesc.Type      = RESOURCE_DIM_TEX_CUBE;
+        CubeDesc.Width     = TargetRes;
+        CubeDesc.Height    = TargetRes;
+        CubeDesc.ArraySize = 6;
+        CubeDesc.Format    = TEX_FORMAT_RGBA16_FLOAT;
+        CubeDesc.MipLevels = ComputeMipLevelsCount(TargetRes, TargetRes);
+        CubeDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_RENDER_TARGET;
+        CubeDesc.MiscFlags = MISC_TEXTURE_FLAG_GENERATE_MIPS;
+        CubeDesc.Usage     = USAGE_DEFAULT;
+        pDevice->CreateTexture(CubeDesc, nullptr, &m_EnvironmentCube);
+        if (!m_EnvironmentCube)
+        {
+            m_EnvironmentCubeResolution = 0;
+            return false;
+        }
+        m_EnvironmentCubeResolution = TargetRes;
+    }
+
+    if (!m_EnvCubeBakeConstants)
+    {
+        BufferDesc CBDesc;
+        CBDesc.Name           = "RTXPT EnvCube bake constants";
+        CBDesc.Size           = sizeof(float4x4);
+        CBDesc.BindFlags      = BIND_UNIFORM_BUFFER;
+        CBDesc.Usage          = USAGE_DYNAMIC;
+        CBDesc.CPUAccessFlags = CPU_ACCESS_WRITE;
+        pDevice->CreateBuffer(CBDesc, nullptr, &m_EnvCubeBakeConstants);
+        if (!m_EnvCubeBakeConstants)
+            return false;
+    }
+
+    // Same per-face rotations as DiligentFX PBR_Renderer::PrecomputeCubemaps so the baked cube keeps
+    // the orientation the path tracer already expects.
+    const std::array<float4x4, 6> FaceRotations =
+        {
+            float4x4::RotationY(-PI_F / 2.f), // +X
+            float4x4::RotationY(+PI_F / 2.f), // -X
+            float4x4::RotationX(+PI_F / 2.f), // +Y
+            float4x4::RotationX(-PI_F / 2.f), // -Y
+            float4x4::Identity(),             // +Z
+            float4x4::RotationY(-PI_F)        // -Z
+        };
+
+    if (IShaderResourceVariable* pSourceVar = pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_EnvBakeSource"))
+        pSourceVar->Set(m_SourceSRV);
+    if (IShaderResourceVariable* pRotationVar = pSRB->GetVariableByName(SHADER_TYPE_VERTEX, "cbEnvCubeBake"))
+        pRotationVar->Set(m_EnvCubeBakeConstants);
+
+    pContext->SetPipelineState(pPSO);
+
+    for (Uint32 Face = 0; Face < 6; ++Face)
+    {
+        {
+            MapHelper<float4x4> MappedRotation{pContext, m_EnvCubeBakeConstants, MAP_WRITE, MAP_FLAG_DISCARD};
+            if (MappedRotation == nullptr)
+                return false;
+            *MappedRotation = FaceRotations[Face];
+        }
+
+        TextureViewDesc RTVDesc;
+        RTVDesc.ViewType        = TEXTURE_VIEW_RENDER_TARGET;
+        RTVDesc.TextureDim      = RESOURCE_DIM_TEX_2D_ARRAY;
+        RTVDesc.MostDetailedMip = 0;
+        RTVDesc.FirstArraySlice = Face;
+        RTVDesc.NumArraySlices  = 1;
+        RefCntAutoPtr<ITextureView> pRTV;
+        m_EnvironmentCube->CreateView(RTVDesc, &pRTV);
+        if (!pRTV)
+            return false;
+
+        ITextureView* ppRTVs[] = {pRTV};
+        pContext->SetRenderTargets(1, ppRTVs, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        pContext->CommitShaderResources(pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        pContext->Draw(DrawAttribs{4, DRAW_FLAG_VERIFY_ALL});
+    }
+
+    pContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    pContext->GenerateMips(m_EnvironmentCube->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
     return true;
 }
 

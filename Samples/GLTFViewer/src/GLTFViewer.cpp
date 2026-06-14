@@ -1,5 +1,5 @@
 /*
- *  Copyright 2019-2025 Diligent Graphics LLC
+ *  Copyright 2019-2026 Diligent Graphics LLC
  *  Copyright 2015-2019 Egor Yusov
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,6 +72,7 @@ SampleBase* CreateSample()
 // clang-format off
 const std::pair<const char*, const char*> DefaultGLTFModels[] =
 {
+    {"Kitchen",                      "models/Kitchen/kitchen.gltf"},
     {"Damaged Helmet",               "models/DamagedHelmet/DamagedHelmet.gltf"},
 #if !PLATFORM_WEB
     {"Barbie Dodge Pickup",          "models/BarbieDodgePickup/scene.gltf"},
@@ -534,6 +535,11 @@ void GLTFViewer::CreateGLTFRenderer()
     if (m_bUseResourceCache)
         m_RenderParams.Flags |= GLTF_PBR_Renderer::PSO_FLAG_USE_TEXTURE_ATLAS;
 
+    if (RendererCI.EnableTransmission)
+    {
+        m_RenderParams.Flags |= GLTF_PBR_Renderer::PSO_FLAG_ENABLE_TRANSMISSION_COMPOSITE;
+    }
+
     if (m_bEnablePostProcessing)
     {
         m_RenderParams.Flags &= ~GLTF_PBR_Renderer::PSO_FLAG_ENABLE_TONE_MAPPING;
@@ -668,6 +674,37 @@ void GLTFViewer::CreateVectorFieldRenderer()
     CI.RTVFormats[0]    = m_pSwapChain->GetDesc().ColorBufferFormat;
 
     m_VectorFieldRenderer = std::make_unique<VectorFieldRenderer>(CI);
+}
+
+void GLTFViewer::PrepareTransmissionSceneColor(Uint32 Width, Uint32 Height, TEXTURE_FORMAT Format)
+{
+    if (Width == 0 || Height == 0 || Format == TEX_FORMAT_UNKNOWN)
+    {
+        m_TransmissionSceneColor.Release();
+        return;
+    }
+
+    if (m_TransmissionSceneColor)
+    {
+        const TextureDesc& Desc = m_TransmissionSceneColor->GetDesc();
+        if (Desc.Width == Width && Desc.Height == Height && Desc.Format == Format)
+            return;
+
+        m_TransmissionSceneColor.Release();
+    }
+
+    TextureDesc Desc;
+    Desc.Name      = "GLTFViewer transmission scene color";
+    Desc.Type      = RESOURCE_DIM_TEX_2D;
+    Desc.Width     = Width;
+    Desc.Height    = Height;
+    Desc.Format    = Format;
+    Desc.MipLevels = 0;
+    Desc.BindFlags = BIND_SHADER_RESOURCE | BIND_RENDER_TARGET;
+    Desc.MiscFlags = MISC_TEXTURE_FLAG_GENERATE_MIPS;
+
+    m_pDevice->CreateTexture(Desc, nullptr, &m_TransmissionSceneColor);
+    VERIFY_EXPR(m_TransmissionSceneColor);
 }
 
 void GLTFViewer::Initialize(const SampleInitInfo& InitInfo)
@@ -1122,6 +1159,7 @@ void GLTFViewer::Render()
     ITextureView*        pRTV   = m_pSwapChain->GetCurrentBackBufferRTV();
     ITextureView*        pDSV   = m_pSwapChain->GetDepthBufferDSV();
     const SwapChainDesc& SCDesc = m_pSwapChain->GetDesc();
+    Uint32               GBufferRenderMask = 0;
 
     if (m_bEnablePostProcessing)
     {
@@ -1139,12 +1177,15 @@ void GLTFViewer::Render()
         m_SSR->PrepareResources(m_pDevice, m_pImmediateContext, m_PostFXContext.get(), ScreenSpaceReflection::FEATURE_FLAG_NONE);
 
         m_GBuffer->Resize(m_pDevice, SCDesc.Width, SCDesc.Height);
+        PrepareTransmissionSceneColor(SCDesc.Width, SCDesc.Height, m_GBuffer->GetElementDesc(GBUFFER_RT_RADIANCE).Format);
 
-        Uint32 BuffersMask = GBUFFER_RT_FLAG_ALL_COLOR_TARGETS | ((m_CurrentFrameNumber & 0x01) ? GBUFFER_RT_FLAG_DEPTH1 : GBUFFER_RT_FLAG_DEPTH0);
-        m_GBuffer->Bind(m_pImmediateContext, BuffersMask, nullptr, BuffersMask);
+        GBufferRenderMask = GBUFFER_RT_FLAG_ALL_COLOR_TARGETS | ((m_CurrentFrameNumber & 0x01) ? GBUFFER_RT_FLAG_DEPTH1 : GBUFFER_RT_FLAG_DEPTH0);
+        m_GBuffer->Bind(m_pImmediateContext, GBufferRenderMask, nullptr, GBufferRenderMask);
     }
     else
     {
+        PrepareTransmissionSceneColor(SCDesc.Width, SCDesc.Height, pRTV->GetTexture()->GetDesc().Format);
+
         // Clear the back buffer
         const float ClearColor[] = {0.032f, 0.032f, 0.032f, 0.0f};
         m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -1255,11 +1296,21 @@ void GLTFViewer::Render()
         m_GLTFRenderer->Begin(m_pImmediateContext);
     }
 
-    auto RenderModel = [&](GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAGS AlphaModes) {
+    auto RenderModel = [&](GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAGS AlphaModes,
+                           GLTF_PBR_Renderer::RenderInfo::SURFACE_FLAGS    SurfaceFlags,
+                           ITextureView*                                    pTransmissionSceneColorSRV,
+                           const float3*                                    pCameraPosition) {
         const GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAGS OrigAlphaModes = m_RenderParams.AlphaModes;
+        const GLTF_PBR_Renderer::RenderInfo::SURFACE_FLAGS    OrigSurfaceFlags = m_RenderParams.SurfaceFlags;
+        ITextureView* const                                    pOrigTransmissionSceneColorSRV = m_RenderParams.pTransmissionSceneColorSRV;
+        const float3* const                                    pOrigCameraPosition = m_RenderParams.pCameraPosition;
 
         m_RenderParams.AlphaModes &= AlphaModes;
-        if (m_RenderParams.AlphaModes != GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_NONE)
+        m_RenderParams.SurfaceFlags &= SurfaceFlags;
+        m_RenderParams.pTransmissionSceneColorSRV = pTransmissionSceneColorSRV;
+        m_RenderParams.pCameraPosition            = pCameraPosition;
+        if (m_RenderParams.AlphaModes != GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_NONE &&
+            m_RenderParams.SurfaceFlags != GLTF_PBR_Renderer::RenderInfo::SURFACE_FLAG_NONE)
         {
             if (m_pResourceMgr)
             {
@@ -1271,9 +1322,15 @@ void GLTFViewer::Render()
             }
         }
 
-        m_RenderParams.AlphaModes = OrigAlphaModes;
+        m_RenderParams.AlphaModes                 = OrigAlphaModes;
+        m_RenderParams.SurfaceFlags               = OrigSurfaceFlags;
+        m_RenderParams.pTransmissionSceneColorSRV = pOrigTransmissionSceneColorSRV;
+        m_RenderParams.pCameraPosition            = pOrigCameraPosition;
     };
-    RenderModel(GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_OPAQUE | GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_MASK);
+    RenderModel(GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_OPAQUE | GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_MASK,
+                GLTF_PBR_Renderer::RenderInfo::SURFACE_FLAG_OPAQUE | GLTF_PBR_Renderer::RenderInfo::SURFACE_FLAG_MASK,
+                nullptr,
+                nullptr);
 
     if (m_BackgroundMode != BackgroundMode::None)
     {
@@ -1318,7 +1375,47 @@ void GLTFViewer::Render()
         m_EnvMapRenderer->Render(m_pImmediateContext);
     }
 
-    RenderModel(GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_BLEND);
+    ITextureView* pTransmissionSceneColorSRV = nullptr;
+    if (m_TransmissionSceneColor &&
+        (m_RenderParams.Flags & GLTF_PBR_Renderer::PSO_FLAG_ENABLE_TRANSMISSION) != 0 &&
+        (m_RenderParams.Flags & GLTF_PBR_Renderer::PSO_FLAG_ENABLE_TRANSMISSION_COMPOSITE) != 0)
+    {
+        m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+        CopyTextureAttribs CopyAttribs;
+        CopyAttribs.pSrcTexture              = m_bEnablePostProcessing ? m_GBuffer->GetBuffer(GBUFFER_RT_RADIANCE) : pRTV->GetTexture();
+        CopyAttribs.pDstTexture              = m_TransmissionSceneColor;
+        CopyAttribs.SrcMipLevel              = 0;
+        CopyAttribs.DstMipLevel              = 0;
+        CopyAttribs.SrcSlice                 = 0;
+        CopyAttribs.DstSlice                 = 0;
+        CopyAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+        CopyAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+        m_pImmediateContext->CopyTexture(CopyAttribs);
+
+        pTransmissionSceneColorSRV = m_TransmissionSceneColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
+        m_pImmediateContext->GenerateMips(pTransmissionSceneColorSRV);
+
+        if (m_bEnablePostProcessing)
+        {
+            m_GBuffer->Bind(m_pImmediateContext, GBufferRenderMask, nullptr, 0);
+        }
+        else
+        {
+            m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        }
+    }
+
+    const float3 CameraPosition = float3::MakeVector(CurrCamAttribs.f4Position);
+    RenderModel(GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_ALL,
+                GLTF_PBR_Renderer::RenderInfo::SURFACE_FLAG_TRANSMISSION,
+                pTransmissionSceneColorSRV,
+                &CameraPosition);
+
+    RenderModel(GLTF_PBR_Renderer::RenderInfo::ALPHA_MODE_FLAG_BLEND,
+                GLTF_PBR_Renderer::RenderInfo::SURFACE_FLAG_BLEND,
+                nullptr,
+                nullptr);
 
     if (m_BoundBoxMode != BoundBoxMode::None)
     {

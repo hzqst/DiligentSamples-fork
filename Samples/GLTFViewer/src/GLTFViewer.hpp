@@ -1,5 +1,5 @@
 /*
- *  Copyright 2019-2025 Diligent Graphics LLC
+ *  Copyright 2019-2026 Diligent Graphics LLC
  *  Copyright 2015-2019 Egor Yusov
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -79,6 +79,7 @@ private:
     void CrateEnvMapRenderer();
     void CrateBoundBoxRenderer();
     void CreateVectorFieldRenderer();
+    void PrepareTransmissionSceneColor(Uint32 Width, Uint32 Height, TEXTURE_FORMAT Format);
 
     enum class BackgroundMode : int
     {
@@ -150,6 +151,7 @@ private:
     ITextureView* m_pCurrentEnvMapSRV = nullptr;
 
     std::unique_ptr<GBuffer> m_GBuffer;
+    RefCntAutoPtr<ITexture>  m_TransmissionSceneColor;
 
     struct ApplyPosteffects
     {

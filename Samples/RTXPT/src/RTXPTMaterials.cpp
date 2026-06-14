@@ -51,6 +51,16 @@ bool HasNonZeroEmission(const float3& Emission)
     return Emission.x > 0.0f || Emission.y > 0.0f || Emission.z > 0.0f;
 }
 
+bool RTXPTMaterialHasTransmission(const GLTF::Material&         Material,
+                                  const RTXPTMaterialExtension* pExtension)
+{
+    const bool GltfTransmission = Material.Transmission != nullptr;
+    const bool ExtensionTransmission =
+        pExtension != nullptr && pExtension->Loaded &&
+        (pExtension->EnableTransmission || pExtension->TransmissionFactor > 0.0f || pExtension->DiffuseTransmissionFactor > 0.0f);
+    return GltfTransmission || ExtensionTransmission;
+}
+
 RefCntAutoPtr<ITextureView> CreateMaterialTextureView(ITexture* pTexture)
 {
     if (pTexture == nullptr)
@@ -140,6 +150,9 @@ void FillMaterialPTDataFromGLTF(const GLTF::Material& Material, MaterialPTData& 
             Data.thicknessTextureSlice = Material.GetTextureAttrib(GLTF::DefaultThicknessTextureAttribId).TextureSlice;
         }
     }
+
+    if ((Data.flags & kMaterialFlag_HasTransmission) != 0u && Material.Volume == nullptr)
+        Data.flags |= kMaterialFlag_ThinSurface;
 
     if (RTXPTMaterialIsAlphaBlended(Material, nullptr))
         Data.flags |= kMaterialFlag_AlphaBlend;
@@ -327,10 +340,8 @@ bool RTXPTMaterialIsAlphaTested(const GLTF::Material&         Material,
 bool RTXPTMaterialIsAlphaBlended(const GLTF::Material&         Material,
                                  const RTXPTMaterialExtension* pExtension)
 {
-    const bool ExtensionTransmission =
-        pExtension != nullptr && pExtension->Loaded &&
-        (pExtension->EnableTransmission || pExtension->TransmissionFactor > 0.0f || pExtension->DiffuseTransmissionFactor > 0.0f);
-    return Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_BLEND || ExtensionTransmission;
+    return Material.Attribs.AlphaMode == GLTF::Material::ALPHA_MODE_BLEND &&
+        !RTXPTMaterialHasTransmission(Material, pExtension);
 }
 
 bool RTXPTMaterialNeedsAnyHit(const GLTF::Material&         Material,

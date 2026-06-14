@@ -177,6 +177,8 @@ bool                          RTXPTMaterialIsAlphaTested(const GLTF::Material&  
                                                          bool                          HasBaseColorTexture);
 bool                          RTXPTMaterialIsEmissiveAreaLight(const GLTF::Material&         Material,
                                                                const RTXPTMaterialExtension* pExtension);
+// Transmission is resolved by the closest-hit BSDF. Only non-transmissive BLEND materials use
+// stochastic alpha blending in any-hit.
 bool                          RTXPTMaterialIsAlphaBlended(const GLTF::Material&         Material,
                                                           const RTXPTMaterialExtension* pExtension);
 bool                          RTXPTMaterialNeedsAnyHit(const GLTF::Material&         Material,

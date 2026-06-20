@@ -72,7 +72,7 @@ constexpr Uint32 kRTXPTRealtimeNoisePeriod = 8192u;
 
 // Disk file used to persist the render state cache (compiled shaders + pipeline states)
 // across runs. Resolved relative to the working directory set in Initialize().
-constexpr char kStateCachePath[] = "RTXPT.cache";
+constexpr char kStateCachePath[] = "RTXPTCache_001.bin";
 
 bool IsStandaloneNrdAvailable()
 {
@@ -948,7 +948,7 @@ void RTXPTSample::Initialize(const SampleInitInfo& InitInfo)
         // looks up bare include names against the factory's flat search dirs and cannot find them, so we
         // hash by file name + compile params instead. NOTE: editing a shader's source no longer
         // invalidates the cache automatically - delete RTXPT.cache to force a recompile after shader edits.
-        CacheCI.FileHashMode = RENDER_STATE_CACHE_FILE_HASH_MODE_BY_NAME;
+        CacheCI.FileHashMode = RENDER_STATE_CACHE_FILE_HASH_MODE_BY_CONTENT;
         CreateRenderStateCache(CacheCI, &m_pStateCache);
         VERIFY_EXPR(m_pStateCache);
 
